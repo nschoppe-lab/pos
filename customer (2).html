@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Order Here</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+body{background:#1a1a1a;color:#fff;min-height:100vh}
+.topnav{background:#111;padding:0 16px;height:52px;display:flex;align-items:center;border-bottom:1px solid #333}
+.brand{font-size:18px;font-weight:700;color:#ff6b35}
+.content{display:flex;min-height:calc(100vh - 52px)}
+.menu-panel{flex:1;padding:16px;overflow-y:auto}
+.cart-panel{width:320px;background:#111;border-left:1px solid #333;display:flex;flex-direction:column}
+.cat-hdr{font-size:10px;font-weight:700;color:#ff6b35;text-transform:uppercase;letter-spacing:1px;margin:14px 0 7px;padding-bottom:5px;border-bottom:1px solid #333}
+.cat-hdr:first-child{margin-top:0}
+.menu-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:4px}
+.mi{background:#222;border:1.5px solid #333;border-radius:9px;padding:14px 12px;cursor:pointer;transition:all 0.15s}
+.mi:hover{border-color:#ff6b35;background:#2a2a2a}
+.mi:active{transform:scale(0.97)}
+.mi-name{font-size:13px;font-weight:600;color:#fff;margin-bottom:4px}
+.mi-price{font-size:12px;color:#ff6b35;font-weight:700}
+.cart-hdr{padding:14px 16px;border-bottom:1px solid #333;font-size:14px;font-weight:700;display:flex;justify-content:space-between;align-items:center}
+.cart-items{flex:1;overflow-y:auto;padding:10px}
+.ci{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #2a2a2a}
+.ci-name{flex:1;font-size:13px}
+.qb{width:24px;height:24px;border-radius:50%;border:1px solid #444;background:#222;color:#fff;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.qb:hover{background:#333}
+.ci-price{font-size:13px;color:#ff6b35;font-weight:600;min-width:48px;text-align:right}
+.cart-empty{text-align:center;padding:40px 16px;color:#555;font-size:13px}
+.cust-form{padding:12px 16px;border-top:1px solid #333;border-bottom:1px solid #333}
+.cust-form label{font-size:11px;color:#888;font-weight:600;display:block;margin-bottom:4px;margin-top:8px}
+.cust-form label:first-child{margin-top:0}
+.cust-form input{width:100%;background:#1a1a1a;border:1px solid #333;border-radius:6px;padding:8px 10px;font-size:13px;color:#fff}
+.cust-form input:focus{outline:none;border-color:#ff6b35}
+.cust-form input::placeholder{color:#555}
+.cust-form textarea{width:100%;background:#1a1a1a;border:1px solid #333;border-radius:6px;padding:8px 10px;font-size:13px;color:#fff;resize:none;height:70px;font-family:inherit}
+.cust-form textarea:focus{outline:none;border-color:#ff6b35}
+.cust-form textarea::placeholder{color:#555}
+.disc-row{display:flex;gap:6px;margin-top:8px}
+.disc-row input{flex:1;background:#1a1a1a;border:1px solid #333;border-radius:6px;padding:8px 10px;font-size:13px;color:#fff;text-transform:uppercase}
+.disc-row input::placeholder{text-transform:none;color:#555}
+.disc-row input:focus{outline:none;border-color:#ff6b35}
+.apply-btn{background:#2a2a2a;border:1px solid #444;color:#ccc;border-radius:6px;padding:8px 12px;font-size:12px;cursor:pointer;white-space:nowrap}
+.apply-btn:hover{background:#333}
+.disc-msg{font-size:11px;margin-top:5px;padding:5px 8px;border-radius:5px;display:none}
+.disc-msg.ok{background:#052e16;color:#22c55e;display:block}
+.disc-msg.err{background:#2a0e0e;color:#ef4444;display:block}
+.cart-footer{padding:14px 16px}
+.tr{display:flex;justify-content:space-between;font-size:12px;color:#888;margin-bottom:4px}
+.tr.disc{color:#22c55e}
+.tr.loyalty{color:#f59e0b}
+.tr.total{font-size:14px;font-weight:700;color:#fff;margin-top:6px;padding-top:6px;border-top:1px solid #333}
+/* LOYALTY BANNER */
+.loyalty-banner{margin:8px 16px 0;padding:10px 12px;background:#1f1a0e;border:1px solid #f59e0b44;border-radius:8px;display:none}
+.loyalty-banner.show{display:block}
+.loyalty-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px}
+.loyalty-title{font-size:12px;font-weight:700;color:#f59e0b}
+.loyalty-count{font-size:11px;color:#888}
+.loyalty-bar-bg{height:5px;background:#333;border-radius:3px;overflow:hidden}
+.loyalty-bar-fill{height:100%;background:linear-gradient(90deg,#f59e0b,#ff6b35);border-radius:3px;transition:width 0.4s ease}
+.loyalty-next{font-size:10px;color:#888;margin-top:4px}
+.loyalty-reward{font-size:11px;font-weight:600;margin-top:4px;padding:4px 8px;border-radius:5px;display:none}
+.loyalty-reward.half{display:block;background:#2a1f0e;color:#f59e0b}
+.loyalty-reward.credit{display:block;background:#052e16;color:#22c55e}
+.place-btn{width:100%;background:#ff6b35;color:#fff;border:none;border-radius:8px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;margin-top:10px;transition:all 0.15s}
+.place-btn:hover{background:#e55a2b}
+.place-btn:active{transform:scale(0.98)}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#22c55e;color:#fff;padding:14px 24px;border-radius:10px;font-size:14px;font-weight:600;display:none;z-index:999;text-align:center;max-width:320px}
+.loading{text-align:center;padding:60px;color:#555}
+/* CUSTOMIZATION MODAL */
+.cust-modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.8);display:flex;align-items:flex-end;justify-content:center;z-index:998;opacity:0;pointer-events:none;transition:opacity 0.2s}
+.cust-modal-bg.open{opacity:1;pointer-events:all}
+.cust-modal{background:#1e1e1e;border:1px solid #333;border-radius:16px 16px 0 0;width:100%;max-width:480px;padding:20px;transform:translateY(100%);transition:transform 0.25s ease;max-height:85vh;overflow-y:auto}
+.cust-modal-bg.open .cust-modal{transform:translateY(0)}
+.cust-modal-title{font-size:17px;font-weight:700;margin-bottom:2px}
+.cust-modal-price{font-size:14px;color:#ff6b35;font-weight:700;margin-bottom:16px}
+.cust-section-lbl{font-size:10px;font-weight:700;color:#ff6b35;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;margin-top:14px}
+.cust-option{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:#252525;border:1.5px solid #333;border-radius:8px;margin-bottom:6px;cursor:pointer;transition:all 0.12s;user-select:none}
+.cust-option:hover{border-color:#555}
+.cust-option.selected{border-color:#ff6b35;background:#2d1f15}
+.cust-option-left{display:flex;align-items:center;gap:10px}
+.cust-check{width:18px;height:18px;border-radius:5px;border:1.5px solid #444;background:#333;display:flex;align-items:center;justify-content:center;font-size:11px;color:transparent;transition:all 0.12s;flex-shrink:0}
+.cust-option.selected .cust-check{background:#ff6b35;border-color:#ff6b35;color:#fff}
+.cust-option-name{font-size:13px;font-weight:500}
+.cust-option-badge{font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px}
+.cust-option-badge.remove{background:#2a1010;color:#ef4444}
+.cust-option-badge.add{background:#0a2a0a;color:#22c55e}
+.cust-option-price{font-size:12px;color:#888}
+.cust-modal-footer{display:flex;gap:8px;margin-top:18px}
+.cust-cancel-btn{flex:1;background:#2a2a2a;border:1px solid #444;color:#ccc;border-radius:8px;padding:13px;font-size:14px;font-weight:600;cursor:pointer}
+.cust-cancel-btn:hover{background:#333}
+.cust-add-btn{flex:2;background:#ff6b35;color:#fff;border:none;border-radius:8px;padding:13px;font-size:15px;font-weight:700;cursor:pointer;transition:all 0.15s}
+.cust-add-btn:hover{background:#e55a2b}
+.cust-add-btn:active{transform:scale(0.98)}
+.cust-no-options{font-size:13px;color:#666;text-align:center;padding:20px 0}
+.mi-arrow{font-size:10px;color:#888;margin-top:5px}
+@media(max-width:600px){.content{flex-direction:column}.cart-panel{width:100%;border-left:none;border-top:1px solid #333}}
+</style>
+</head>
+<body>
+<div class="topnav"><div class="brand">&#9654; Order Here</div></div>
+<div class="content">
+  <div class="menu-panel" id="menu-panel"><div class="loading">Loading menu...</div></div>
+  <div class="cart-panel">
+    <div class="cart-hdr"><span>Your Order</span><button onclick="clearCart()" style="background:none;border:none;color:#666;font-size:12px;cursor:pointer">Clear</button></div>
+    <div class="cart-items" id="cart-items"><div class="cart-empty">Tap items to add them</div></div>
+    <!-- LOYALTY BANNER -->
+    <div class="loyalty-banner" id="loyalty-banner">
+      <div class="loyalty-top">
+        <span class="loyalty-title">⭐ Loyalty Rewards</span>
+        <span class="loyalty-count" id="loyalty-count"></span>
+      </div>
+      <div class="loyalty-bar-bg"><div class="loyalty-bar-fill" id="loyalty-bar"></div></div>
+      <div class="loyalty-next" id="loyalty-next"></div>
+      <div class="loyalty-reward" id="loyalty-reward"></div>
+    </div>
+    <div class="cust-form">
+      <label>Your Name</label>
+      <input type="text" id="cust-name" placeholder="e.g. Mike Smith">
+      <label>Email (we'll email you when your order is ready)</label>
+      <input type="email" id="cust-email" placeholder="e.g. youremail@gmail.com">
+      <label>Comments / Special Requests (optional)</label>
+      <textarea id="cust-comments" placeholder="e.g. No onions, extra sauce, allergy info..."></textarea>
+      <label>Discount Code (optional)</label>
+      <div class="disc-row">
+        <input type="text" id="disc-code" placeholder="Enter code" oninput="this.value=this.value.toUpperCase()">
+        <button class="apply-btn" onclick="applyDiscount()">Apply</button>
+      </div>
+      <div class="disc-msg" id="disc-msg"></div>
+    </div>
+    <div class="cart-footer">
+      <div class="tr"><span>Subtotal</span><span id="subtotal">$0.00</span></div>
+      <div class="tr disc" id="disc-row" style="display:none"><span id="disc-label">Discount</span><span id="disc-amt">-$0.00</span></div>
+      <div class="tr loyalty" id="loyalty-row" style="display:none"><span id="loyalty-label">Loyalty</span><span id="loyalty-amt">-$0.00</span></div>
+      <div class="tr total"><span>Total</span><span id="cart-total">$0.00</span></div>
+      <button class="place-btn" onclick="placeOrder()">Place Order</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<!-- CUSTOMIZATION MODAL -->
+<div class="cust-modal-bg" id="cust-modal-bg" onclick="if(event.target===this)closeCustModal()">
+  <div class="cust-modal" id="cust-modal">
+    <div class="cust-modal-title" id="cust-modal-name"></div>
+    <div class="cust-modal-price" id="cust-modal-price"></div>
+    <div id="cust-modal-body"></div>
+    <div class="cust-modal-footer">
+      <button class="cust-cancel-btn" onclick="closeCustModal()">Cancel</button>
+      <button class="cust-add-btn" id="cust-add-btn" onclick="confirmAddToCart()">Add to Order</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getDatabase, ref, push, onValue, serverTimestamp, get, update } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCG5nhzdAHBTGg2eXXmhqH8pF8S8qFqM7o",
+  authDomain: "duncan--the-buff.firebaseapp.com",
+  databaseURL: "https://duncan--the-buff-default-rtdb.firebaseio.com",
+  projectId: "duncan--the-buff",
+  storageBucket: "duncan--the-buff.firebasestorage.app",
+  messagingSenderId: "561324530375",
+  appId: "1:561324530375:web:e6927aefd39ac790737ce2"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
+let menu = [];
+let coupons = [];
+let cart = [];
+let appliedCoupon = null;
+let loyaltyData = null; // { orderCount, credits }
+let loyaltyDiscount = 0; // computed per checkout
+
+// Customization modal state
+let custItem = null;
+let custSelections = {}; // optionId -> true/false
+
+// Load menu
+onValue(ref(db, 'menu'), snap => {
+  const data = snap.val();
+  menu = data ? Object.values(data) : [];
+  renderMenu();
+});
+
+// Load coupons
+onValue(ref(db, 'coupons'), snap => {
+  const data = snap.val();
+  coupons = data ? Object.entries(data).map(([k,v]) => ({fbKey:k,...v})) : [];
+});
+
+// Watch email field — load loyalty data when email entered
+document.getElementById('cust-email').addEventListener('blur', () => {
+  const email = document.getElementById('cust-email').value.trim().toLowerCase();
+  if (email) loadLoyalty(email);
+  else { loyaltyData = null; loyaltyDiscount = 0; hideLoyaltyBanner(); updateTotals(); }
+});
+
+async function loadLoyalty(email) {
+  const key = emailToKey(email);
+  const snap = await get(ref(db, `loyalty/${key}`));
+  loyaltyData = snap.exists() ? snap.val() : { orderCount: 0, credits: 0 };
+  loyaltyDiscount = 0;
+  renderLoyaltyBanner();
+  updateTotals();
+}
+
+function emailToKey(email) {
+  // Firebase keys can't have . so replace with comma
+  return email.replace(/\./g, ',').replace(/@/g, '_at_');
+}
+
+function renderLoyaltyBanner() {
+  if (!loyaltyData) { hideLoyaltyBanner(); return; }
+  const banner = document.getElementById('loyalty-banner');
+  banner.classList.add('show');
+  const count = loyaltyData.orderCount || 0;
+  const credits = loyaltyData.credits || 0;
+
+  // Progress toward next milestone
+  // Milestones: 5th order = 50% off, 10th = $5 credit (repeating every 10)
+  const cyclePos = count % 10; // position in current 10-order cycle
+  const nextMilestone = cyclePos < 5 ? 5 : 10;
+  const remaining = nextMilestone - cyclePos;
+  const pct = (cyclePos / nextMilestone) * 100;
+
+  document.getElementById('loyalty-count').textContent = `${count} order${count !== 1 ? 's' : ''}`;
+  document.getElementById('loyalty-bar').style.width = `${Math.min(100, pct)}%`;
+
+  const rewardEl = document.getElementById('loyalty-reward');
+  rewardEl.className = 'loyalty-reward';
+
+  // NEXT ORDER is a milestone
+  const nextOrderNum = count + 1;
+  if (nextOrderNum % 10 === 5 % 10 && nextOrderNum % 10 !== 0) {
+    // Next order is the 5th in cycle (pos 5)
+  }
+
+  // Show active rewards
+  if (credits > 0) {
+    document.getElementById('loyalty-next').textContent = `$${credits.toFixed(2)} credit will be applied to this order!`;
+    rewardEl.className = 'loyalty-reward credit';
+    rewardEl.textContent = `🎉 $${credits.toFixed(2)} credit applied automatically!`;
+    loyaltyDiscount = Math.min(credits, cart.reduce((s,c)=>s+c.price*c.qty,0));
+  } else if ((count + 1) % 10 === 5 || count + 1 === 5) {
+    // Upcoming 5th order
+    document.getElementById('loyalty-next').textContent = `🎉 Your next order is your 5th — you get 50% off!`;
+    rewardEl.className = 'loyalty-reward';
+    rewardEl.textContent = '';
+  } else if ((count + 1) % 10 === 0) {
+    document.getElementById('loyalty-next').textContent = `🎉 Your next order is your ${count+1}th — you get a free $5 credit!`;
+    rewardEl.className = 'loyalty-reward';
+    rewardEl.textContent = '';
+  } else {
+    document.getElementById('loyalty-next').textContent = `${remaining} more order${remaining !== 1 ? 's' : ''} until your next reward`;
+    rewardEl.className = 'loyalty-reward';
+    rewardEl.textContent = '';
+  }
+
+  updateTotals();
+}
+
+function hideLoyaltyBanner() {
+  document.getElementById('loyalty-banner').classList.remove('show');
+}
+
+function renderMenu() {
+  const panel = document.getElementById('menu-panel');
+  if (!menu.length) { panel.innerHTML = '<div class="loading">Menu coming soon...</div>'; return; }
+  panel.innerHTML = '';
+  menu.forEach(cat => {
+    if (!cat.items || !cat.items.length) return;
+    const h = document.createElement('div'); h.className = 'cat-hdr'; h.textContent = cat.label; panel.appendChild(h);
+    const g = document.createElement('div'); g.className = 'menu-grid';
+    cat.items.forEach(item => {
+      const el = document.createElement('div'); el.className = 'mi';
+      const hasOptions = item.customizations && item.customizations.length > 0;
+      el.innerHTML = `<div class="mi-name">${item.name}</div><div class="mi-price">$${parseFloat(item.price).toFixed(2)}</div>${hasOptions ? '<div class="mi-arrow">Tap to customize ›</div>' : ''}`;
+      el.onclick = () => openCustModal(item);
+      g.appendChild(el);
+    });
+    panel.appendChild(g);
+  });
+}
+
+// Open customization modal
+window.openCustModal = function(item) {
+  custItem = item;
+  custSelections = {};
+  document.getElementById('cust-modal-name').textContent = item.name;
+  document.getElementById('cust-modal-price').textContent = `$${parseFloat(item.price).toFixed(2)}`;
+
+  const body = document.getElementById('cust-modal-body');
+  const options = item.customizations || [];
+
+  if (!options.length) {
+    body.innerHTML = '<div class="cust-no-options">No customization options for this item.</div>';
+  } else {
+    const removes = options.filter(o => o.type === 'remove');
+    const adds = options.filter(o => o.type === 'add');
+    let html = '';
+    if (removes.length) {
+      html += `<div class="cust-section-lbl">Remove / Leave out</div>`;
+      removes.forEach(opt => {
+        html += `<div class="cust-option" id="opt-${opt.id}" onclick="toggleOption('${opt.id}')">
+          <div class="cust-option-left">
+            <div class="cust-check" id="chk-${opt.id}">✓</div>
+            <div class="cust-option-name">${opt.name}</div>
+          </div>
+          <span class="cust-option-badge remove">Remove</span>
+        </div>`;
+      });
+    }
+    if (adds.length) {
+      html += `<div class="cust-section-lbl">Add / Extras</div>`;
+      adds.forEach(opt => {
+        const priceStr = opt.price && opt.price > 0 ? `+$${parseFloat(opt.price).toFixed(2)}` : 'Free';
+        html += `<div class="cust-option" id="opt-${opt.id}" onclick="toggleOption('${opt.id}')">
+          <div class="cust-option-left">
+            <div class="cust-check" id="chk-${opt.id}">✓</div>
+            <div class="cust-option-name">${opt.name}</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span class="cust-option-badge add">Add</span>
+            <span class="cust-option-price">${priceStr}</span>
+          </div>
+        </div>`;
+      });
+    }
+    body.innerHTML = html;
+  }
+
+  updateCustAddBtn();
+  document.getElementById('cust-modal-bg').classList.add('open');
+}
+
+window.toggleOption = function(id) {
+  custSelections[id] = !custSelections[id];
+  const el = document.getElementById(`opt-${id}`);
+  el.classList.toggle('selected', custSelections[id]);
+  updateCustAddBtn();
+}
+
+function updateCustAddBtn() {
+  if (!custItem) return;
+  const options = custItem.customizations || [];
+  let extraPrice = 0;
+  options.forEach(opt => {
+    if (custSelections[opt.id] && opt.type === 'add' && opt.price > 0) {
+      extraPrice += parseFloat(opt.price);
+    }
+  });
+  const total = parseFloat(custItem.price) + extraPrice;
+  document.getElementById('cust-add-btn').textContent = `Add to Order — $${total.toFixed(2)}`;
+}
+
+window.closeCustModal = function() {
+  document.getElementById('cust-modal-bg').classList.remove('open');
+  custItem = null;
+  custSelections = {};
+}
+
+window.confirmAddToCart = function() {
+  if (!custItem) return;
+  const options = custItem.customizations || [];
+  let extraPrice = 0;
+  const selectedOpts = [];
+
+  options.forEach(opt => {
+    if (custSelections[opt.id]) {
+      if (opt.type === 'add' && opt.price > 0) extraPrice += parseFloat(opt.price);
+      selectedOpts.push(opt);
+    }
+  });
+
+  const finalPrice = parseFloat(custItem.price) + extraPrice;
+  // Build a unique cart key combining item id + selected option ids
+  const optKey = selectedOpts.map(o=>o.id).sort().join(',');
+  const cartKey = custItem.id + '|' + optKey;
+
+  const ex = cart.find(c => c.cartKey === cartKey);
+  if (ex) {
+    ex.qty++;
+  } else {
+    cart.push({
+      ...custItem,
+      cartKey,
+      price: finalPrice,
+      qty: 1,
+      customizations: selectedOpts
+    });
+  }
+
+  closeCustModal();
+  renderCart();
+}
+
+window.addToCart = function(item) {
+  // Legacy direct add (no customizations)
+  const ex = cart.find(c => c.id === item.id && (!c.customizations || !c.customizations.length));
+  if (ex) ex.qty++; else cart.push({...item, cartKey: item.id+'|', qty: 1, customizations: []});
+  renderCart();
+}
+
+window.changeQty = function(cartKey, d) {
+  const i = cart.findIndex(c => c.cartKey === cartKey);
+  if (i === -1) return;
+  cart[i].qty += d;
+  if (cart[i].qty <= 0) cart.splice(i, 1);
+  renderCart();
+}
+
+window.clearCart = function() {
+  cart = []; appliedCoupon = null;
+  document.getElementById('disc-code').value = '';
+  document.getElementById('disc-msg').className = 'disc-msg';
+  renderCart();
+}
+
+function renderCart() {
+  const el = document.getElementById('cart-items');
+  if (!cart.length) { el.innerHTML = '<div class="cart-empty">Tap items to add them</div>'; updateTotals(); return; }
+  el.innerHTML = '';
+  cart.forEach(c => {
+    const customNote = c.customizations && c.customizations.length
+      ? `<div style="font-size:10px;color:#888;margin-top:2px">${c.customizations.map(o=>(o.type==='remove'?'No ':'+')+o.name).join(', ')}</div>`
+      : '';
+    const row = document.createElement('div'); row.className = 'ci';
+    row.innerHTML = `<div class="ci-name">${c.name}${customNote}</div><div style="display:flex;align-items:center;gap:6px"><button class="qb" onclick="changeQty('${c.cartKey}',-1)">&#8722;</button><span style="font-size:13px;min-width:16px;text-align:center">${c.qty}</span><button class="qb" onclick="changeQty('${c.cartKey}',1)">+</button></div><div class="ci-price">$${(c.price*c.qty).toFixed(2)}</div>`;
+    el.appendChild(row);
+  });
+  updateTotals();
+  if (loyaltyData) renderLoyaltyBanner();
+}
+
+function updateTotals() {
+  const sub = cart.reduce((s,c) => s + c.price * c.qty, 0);
+  let disc = 0;
+  const dr = document.getElementById('disc-row');
+  if (appliedCoupon) {
+    disc = appliedCoupon.type === 'percent' ? sub * (appliedCoupon.value/100) : Math.min(appliedCoupon.value, sub);
+    disc = Math.round(disc*100)/100;
+    dr.style.display = 'flex';
+    document.getElementById('disc-label').textContent = `${appliedCoupon.code} (${appliedCoupon.type==='percent'?appliedCoupon.value+'% off':'$'+appliedCoupon.value+' off'})`;
+    document.getElementById('disc-amt').textContent = `-$${disc.toFixed(2)}`;
+  } else { dr.style.display = 'none'; }
+
+  // Loyalty discount
+  let loyDisc = 0;
+  const lr = document.getElementById('loyalty-row');
+  if (loyaltyData) {
+    const count = loyaltyData.orderCount || 0;
+    const credits = loyaltyData.credits || 0;
+    const nextOrder = count + 1;
+    // 5th order (and every 5th within a cycle of 10 that isn't also 10th) = 50% off
+    const isFifthOrder = (nextOrder % 10 === 5) && (nextOrder % 10 !== 0);
+    // 10th, 20th, etc = $5 credit (awarded AFTER order, not deducted now)
+    if (credits > 0) {
+      loyDisc = Math.round(Math.min(credits, sub) * 100) / 100;
+      lr.style.display = 'flex';
+      document.getElementById('loyalty-label').textContent = `⭐ Loyalty Credit`;
+      document.getElementById('loyalty-amt').textContent = `-$${loyDisc.toFixed(2)}`;
+    } else if (isFifthOrder) {
+      loyDisc = Math.round(sub * 0.5 * 100) / 100;
+      lr.style.display = 'flex';
+      document.getElementById('loyalty-label').textContent = `⭐ 5th Order (50% off)`;
+      document.getElementById('loyalty-amt').textContent = `-$${loyDisc.toFixed(2)}`;
+    } else {
+      lr.style.display = 'none';
+    }
+  } else { lr.style.display = 'none'; }
+
+  document.getElementById('subtotal').textContent = `$${sub.toFixed(2)}`;
+  document.getElementById('cart-total').textContent = `$${Math.max(0, sub - disc - loyDisc).toFixed(2)}`;
+  return {sub, disc, loyDisc, total: Math.max(0, sub - disc - loyDisc)};
+}
+
+window.applyDiscount = function() {
+  const code = document.getElementById('disc-code').value.trim().toUpperCase();
+  const msg = document.getElementById('disc-msg');
+  if (!code) { msg.className='disc-msg err'; msg.textContent='Enter a code first.'; return; }
+  const cp = coupons.find(c => c.code === code);
+  if (!cp) { msg.className='disc-msg err'; msg.textContent='Code not found.'; return; }
+  if (cp.singleUse && cp.used) { msg.className='disc-msg err'; msg.textContent='This code has already been used.'; return; }
+  const sub = cart.reduce((s,c) => s + c.price*c.qty, 0);
+  if (cp.minOrder && sub < cp.minOrder) { msg.className='disc-msg err'; msg.textContent=`Minimum order $${cp.minOrder.toFixed(2)} required.`; return; }
+  appliedCoupon = cp;
+  const disc = cp.type==='percent' ? sub*(cp.value/100) : Math.min(cp.value,sub);
+  msg.className='disc-msg ok'; msg.textContent=`Applied! ${cp.type==='percent'?cp.value+'% off':'$'+cp.value.toFixed(2)+' off'} (-$${(Math.round(disc*100)/100).toFixed(2)})`;
+  updateTotals();
+}
+
+window.placeOrder = async function() {
+  const name = document.getElementById('cust-name').value.trim();
+  const email = document.getElementById('cust-email').value.trim().toLowerCase();
+  const comments = document.getElementById('cust-comments').value.trim();
+  if (!name) { alert('Please enter your name'); return; }
+  if (!email) { alert('Please enter your email'); return; }
+  if (!cart.length) { alert('Your cart is empty'); return; }
+  const t = updateTotals();
+
+  // Loyalty processing
+  const loyaltyKey = emailToKey(email);
+  const loySnap = await get(ref(db, `loyalty/${loyaltyKey}`));
+  const currentLoyalty = loySnap.exists() ? loySnap.val() : { orderCount: 0, credits: 0 };
+  const newOrderCount = (currentLoyalty.orderCount || 0) + 1;
+  let creditsUsed = 0;
+  let creditsEarned = 0;
+  let newCredits = currentLoyalty.credits || 0;
+  let loyaltyMsg = '';
+
+  // Spend credits if available
+  if (newCredits > 0) {
+    creditsUsed = Math.round(Math.min(newCredits, t.sub) * 100) / 100;
+    newCredits = Math.max(0, Math.round((newCredits - creditsUsed) * 100) / 100);
+    loyaltyMsg = `$${creditsUsed.toFixed(2)} loyalty credit used!`;
+  }
+
+  // Award $5 credit on every 10th order
+  if (newOrderCount % 10 === 0) {
+    creditsEarned = 5;
+    newCredits = Math.round((newCredits + 5) * 100) / 100;
+    loyaltyMsg = `🎉 You've reached order #${newOrderCount}! $5 credit added for your next visit!`;
+  }
+
+  // Update loyalty record
+  try {
+    await update(ref(db, `loyalty/${loyaltyKey}`), {
+      email,
+      name,
+      orderCount: newOrderCount,
+      credits: newCredits,
+      lastOrder: new Date().toISOString()
+    });
+    console.log('Loyalty updated:', loyaltyKey, newOrderCount);
+  } catch(e) {
+    console.error('Loyalty write failed (check Firebase rules):', e);
+  }
+
+  const order = {
+    name, email, comments,
+    items: cart.map(c => ({
+      id: c.id,
+      name: c.name,
+      price: c.price,
+      qty: c.qty,
+      customizations: c.customizations || []
+    })),
+    subtotal: t.sub,
+    discount: t.disc,
+    loyaltyDiscount: t.loyDisc,
+    loyaltyOrderNum: newOrderCount,
+    total: t.total,
+    coupon: appliedCoupon ? appliedCoupon.code : null,
+    time: new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),
+    date: new Date().toLocaleDateString(),
+    status: 'pending',
+    createdAt: serverTimestamp()
+  };
+
+  try {
+    await push(ref(db, 'orders'), order);
+    cart = []; appliedCoupon = null; loyaltyData = null; loyaltyDiscount = 0;
+    document.getElementById('cust-name').value = '';
+    document.getElementById('cust-email').value = '';
+    document.getElementById('cust-comments').value = '';
+    document.getElementById('disc-code').value = '';
+    document.getElementById('disc-msg').className = 'disc-msg';
+    hideLoyaltyBanner();
+    renderCart();
+    const baseMsg = `Order placed! We'll email you at ${email} when it's ready.`;
+    showToast(loyaltyMsg ? `${baseMsg}\n${loyaltyMsg}` : baseMsg, loyaltyMsg ? 6000 : 4000);
+  } catch(e) { alert('Error placing order. Please try again.'); console.error(e); }
+}
+
+function showToast(msg, duration = 4000) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.style.display = 'block';
+  setTimeout(() => t.style.display = 'none', duration);
+}
+</script>
+</body>
+</html>
