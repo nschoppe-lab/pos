@@ -135,6 +135,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
       <button class="tb" onclick="switchTab('history')">History</button>
       <button class="tb" onclick="switchTab('menu')">Menu</button>
       <button class="tb" onclick="switchTab('coupons')">Coupons</button>
+      <button class="tb" onclick="switchTab('loyalty')">Loyalty</button>
       <button class="tb" onclick="switchTab('staff')">Staff</button>
     </div>
     <button class="logout-btn" onclick="doLogout()">Sign out</button>
@@ -220,6 +221,31 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
     </div></div>
   </div>
 
+  <!-- LOYALTY TAB -->
+  <div class="tab-content" id="tab-loyalty">
+    <div class="admin-scroll"><div class="admin-wrap">
+      <div class="admin-title">Loyalty Program</div>
+      <div class="admin-sub">Customers earn rewards automatically by email. 5th order = 50% off. Every 10th order = $5 credit.</div>
+      <div class="asec" style="border-color:#f59e0b44;background:#1f1a0e">
+        <div class="asec-title" style="color:#f59e0b">How It Works</div>
+        <div style="font-size:12px;color:#aaa;line-height:1.7">
+          When a customer enters their email and places an order, their order count increments automatically.<br>
+          <strong style="color:#f59e0b">Order #5 (and #15, #25…)</strong> — 50% off applied automatically at checkout.<br>
+          <strong style="color:#22c55e">Order #10 (and #20, #30…)</strong> — $5 credit added to their account, auto-applied next visit.
+        </div>
+      </div>
+      <div class="asec">
+        <div class="asec-title">Member Lookup</div>
+        <div class="arow"><input type="email" id="loyalty-search" placeholder="Search by email..." oninput="searchLoyalty()"><button class="aadd" onclick="searchLoyalty()">Search</button></div>
+      </div>
+      <div class="asec">
+        <div class="asec-title">All Members</div>
+        <table class="mtable"><thead><tr><th>Name</th><th>Email</th><th>Orders</th><th>Credits</th><th>Last Order</th><th></th></tr></thead>
+        <tbody id="loyalty-body"></tbody></table>
+      </div>
+    </div></div>
+  </div>
+
   <!-- STAFF TAB -->
   <div class="tab-content" id="tab-staff">
     <div class="admin-scroll"><div class="admin-wrap">
@@ -294,7 +320,7 @@ emailjs.init("yoxsvEb1uuAA4Ytcd");
 const auth = getAuth(app);
 const db = getDatabase(app);
 
-let orders = {}, menu = [], coupons = [], staffList = [];
+let orders = {}, menu = [], coupons = [], staffList = [], loyaltyList = [];
 let tapTimers = {}, currentTab = 'orders';
 
 onAuthStateChanged(auth, async user => {
@@ -331,13 +357,14 @@ function showAdmin() {
   onValue(ref(db,'menu'), snap => { const d = snap.val(); menu = d ? Object.values(d) : []; renderMenuAdmin(); });
   onValue(ref(db,'coupons'), snap => { const d = snap.val(); coupons = d ? Object.entries(d).map(([k,v])=>({fbKey:k,...v})) : []; renderCoupons(); });
   onValue(ref(db,'users'), snap => { const d = snap.val(); staffList = d ? Object.entries(d).map(([k,v])=>({uid:k,...v})) : []; renderStaff(); });
+  onValue(ref(db,'loyalty'), snap => { const d = snap.val(); loyaltyList = d ? Object.entries(d).map(([k,v])=>({fbKey:k,...v})) : []; renderLoyalty(); });
 }
 
 window.switchTab = function(t) {
   currentTab = t;
   document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
   document.getElementById('tab-'+t).classList.add('active');
-  document.querySelectorAll('.tb').forEach((b,i) => b.classList.toggle('active', ['orders','history','menu','coupons','staff'][i]===t));
+  document.querySelectorAll('.tb').forEach((b,i) => b.classList.toggle('active', ['orders','history','menu','coupons','loyalty','staff'][i]===t));
   if (t==='history') renderHistory();
 }
 
@@ -416,7 +443,7 @@ window.renderHistory = function() {
     const hdr=document.createElement('div');hdr.className='hcard-hdr';
     hdr.innerHTML=`<div style="display:flex;align-items:center;gap:8px"><span style="font-size:12px;font-weight:700;color:#ff6b35">#${order.fbKey.slice(-4).toUpperCase()}</span><span style="font-size:12px;font-weight:600">${order.name}</span><span class="hbadge ${order.status==='done'?'done':'pending'}">${order.status==='done'?'Done':'Pending'}</span></div><div style="display:flex;align-items:center;gap:8px"><span style="font-size:12px;font-weight:700;color:#ff6b35">$${parseFloat(order.total||0).toFixed(2)}</span><span style="font-size:11px;color:#666">${order.date||''} ${order.time||''}</span><span style="color:#555">&#9660;</span></div>`;
     const body=document.createElement('div');body.className='hcard-body';
-    body.innerHTML=(order.items||[]).map(i=>`<div style="font-size:12px;color:#ccc;padding:2px 0"><span style="color:#777">${i.qty}x</span> ${i.name} — $${(i.price*i.qty).toFixed(2)}</div>`).join('')+(order.discount>0?`<div style="font-size:11px;color:#22c55e;margin-top:5px">Discount (${order.coupon}): -$${parseFloat(order.discount).toFixed(2)}</div>`:'')+`<div style="font-size:11px;color:#888;margin-top:6px">${order.email?'Email: '+order.email:'No email'}${order.coupon?' | Code: '+order.coupon:''}</div>`;
+    body.innerHTML=(order.items||[]).map(i=>`<div style="font-size:12px;color:#ccc;padding:2px 0"><span style="color:#777">${i.qty}x</span> ${i.name} — $${(i.price*i.qty).toFixed(2)}</div>`).join('')+(order.discount>0?`<div style="font-size:11px;color:#22c55e;margin-top:5px">Coupon (${order.coupon}): -$${parseFloat(order.discount).toFixed(2)}</div>`:'')+(order.loyaltyDiscount>0?`<div style="font-size:11px;color:#f59e0b;margin-top:3px">⭐ Loyalty discount: -$${parseFloat(order.loyaltyDiscount).toFixed(2)} (order #${order.loyaltyOrderNum||'?'})</div>`:'')+`<div style="font-size:11px;color:#888;margin-top:6px">${order.email?'Email: '+order.email:'No email'}${order.coupon?' | Code: '+order.coupon:''}</div>`;
     hdr.onclick=()=>body.classList.toggle('open');
     card.appendChild(hdr);card.appendChild(body);el.appendChild(card);
   });
@@ -582,6 +609,64 @@ window.deleteCustOption = async function(optIndex) {
 function fmtPhone(p){return p&&p.length===10?`(${p.slice(0,3)}) ${p.slice(3,6)}-${p.slice(6)}`:p;}
 window.showModal = function(html){document.getElementById('modal-content').innerHTML=html;document.getElementById('modal').style.display='flex';}
 window.closeModal = function(){document.getElementById('modal').style.display='none';}
+
+// LOYALTY
+function renderLoyalty(filtered) {
+  const tbody = document.getElementById('loyalty-body');
+  if (!tbody) return;
+  const list = filtered !== undefined ? filtered : loyaltyList;
+  list.sort((a,b) => (b.orderCount||0) - (a.orderCount||0));
+  if (!list.length) { tbody.innerHTML = '<tr><td colspan="6" style="color:#555;text-align:center;padding:12px;font-size:12px">No loyalty members yet</td></tr>'; return; }
+  tbody.innerHTML = list.map(m => {
+    const count = m.orderCount || 0;
+    const credits = m.credits || 0;
+    const lastDate = m.lastOrder ? new Date(m.lastOrder).toLocaleDateString() : '—';
+    const milestone = count % 10 === 0 && count > 0 ? '🎉' : count % 5 === 0 && count > 0 ? '⭐' : '';
+    return `<tr>
+      <td>${m.name || '—'}</td>
+      <td style="font-size:11px;color:#888">${m.email || '—'}</td>
+      <td><strong style="color:#ff6b35">${count}</strong> ${milestone}</td>
+      <td>${credits > 0 ? `<strong style="color:#22c55e">$${parseFloat(credits).toFixed(2)}</strong>` : '—'}</td>
+      <td style="font-size:11px;color:#666">${lastDate}</td>
+      <td style="display:flex;gap:4px;flex-wrap:wrap">
+        <button onclick="editLoyalty('${m.fbKey}',${count},${credits})" style="background:#1a2a1a;border:1px solid #333;color:#aaa;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">Edit</button>
+        <button class="delbtn" onclick="deleteLoyalty('${m.fbKey}')">Del</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+window.searchLoyalty = function() {
+  const q = (document.getElementById('loyalty-search').value || '').toLowerCase();
+  if (!q) { renderLoyalty(); return; }
+  renderLoyalty(loyaltyList.filter(m => (m.email||'').includes(q) || (m.name||'').toLowerCase().includes(q)));
+}
+
+window.editLoyalty = function(key, currentCount, currentCredits) {
+  showModal(`
+    <h3>Edit Loyalty Member</h3>
+    <p style="font-size:12px;color:#888;margin-bottom:14px">Manually adjust order count or credits.</p>
+    <label style="font-size:11px;color:#888;display:block;margin-bottom:4px">Order Count</label>
+    <input type="number" id="edit-lcount" value="${currentCount}" min="0" style="width:100%;background:#1a1a1a;border:1px solid #333;border-radius:6px;padding:8px;font-size:13px;color:#fff;margin-bottom:10px">
+    <label style="font-size:11px;color:#888;display:block;margin-bottom:4px">Credits ($)</label>
+    <input type="number" id="edit-lcredits" value="${currentCredits}" min="0" step="0.5" style="width:100%;background:#1a1a1a;border:1px solid #333;border-radius:6px;padding:8px;font-size:13px;color:#fff;margin-bottom:4px">
+    <div class="mbtns">
+      <button class="mbtn cancel" onclick="closeModal()">Cancel</button>
+      <button class="mbtn ok" onclick="saveLoyaltyEdit('${key}')">Save</button>
+    </div>`);
+}
+
+window.saveLoyaltyEdit = async function(key) {
+  const count = parseInt(document.getElementById('edit-lcount').value) || 0;
+  const credits = parseFloat(document.getElementById('edit-lcredits').value) || 0;
+  await update(ref(db, `loyalty/${key}`), { orderCount: count, credits });
+  closeModal();
+}
+
+window.deleteLoyalty = async function(key) {
+  if (!confirm('Remove this loyalty member? Their history will be lost.')) return;
+  await remove(ref(db, `loyalty/${key}`));
+}
 </script>
 </body>
 </html>

@@ -49,7 +49,20 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 .cart-footer{padding:14px 16px}
 .tr{display:flex;justify-content:space-between;font-size:12px;color:#888;margin-bottom:4px}
 .tr.disc{color:#22c55e}
+.tr.loyalty{color:#f59e0b}
 .tr.total{font-size:14px;font-weight:700;color:#fff;margin-top:6px;padding-top:6px;border-top:1px solid #333}
+/* LOYALTY BANNER */
+.loyalty-banner{margin:8px 16px 0;padding:10px 12px;background:#1f1a0e;border:1px solid #f59e0b44;border-radius:8px;display:none}
+.loyalty-banner.show{display:block}
+.loyalty-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px}
+.loyalty-title{font-size:12px;font-weight:700;color:#f59e0b}
+.loyalty-count{font-size:11px;color:#888}
+.loyalty-bar-bg{height:5px;background:#333;border-radius:3px;overflow:hidden}
+.loyalty-bar-fill{height:100%;background:linear-gradient(90deg,#f59e0b,#ff6b35);border-radius:3px;transition:width 0.4s ease}
+.loyalty-next{font-size:10px;color:#888;margin-top:4px}
+.loyalty-reward{font-size:11px;font-weight:600;margin-top:4px;padding:4px 8px;border-radius:5px;display:none}
+.loyalty-reward.half{display:block;background:#2a1f0e;color:#f59e0b}
+.loyalty-reward.credit{display:block;background:#052e16;color:#22c55e}
 .place-btn{width:100%;background:#ff6b35;color:#fff;border:none;border-radius:8px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;margin-top:10px;transition:all 0.15s}
 .place-btn:hover{background:#e55a2b}
 .place-btn:active{transform:scale(0.98)}
@@ -92,6 +105,16 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
   <div class="cart-panel">
     <div class="cart-hdr"><span>Your Order</span><button onclick="clearCart()" style="background:none;border:none;color:#666;font-size:12px;cursor:pointer">Clear</button></div>
     <div class="cart-items" id="cart-items"><div class="cart-empty">Tap items to add them</div></div>
+    <!-- LOYALTY BANNER -->
+    <div class="loyalty-banner" id="loyalty-banner">
+      <div class="loyalty-top">
+        <span class="loyalty-title">⭐ Loyalty Rewards</span>
+        <span class="loyalty-count" id="loyalty-count"></span>
+      </div>
+      <div class="loyalty-bar-bg"><div class="loyalty-bar-fill" id="loyalty-bar"></div></div>
+      <div class="loyalty-next" id="loyalty-next"></div>
+      <div class="loyalty-reward" id="loyalty-reward"></div>
+    </div>
     <div class="cust-form">
       <label>Your Name</label>
       <input type="text" id="cust-name" placeholder="e.g. Mike Smith">
@@ -109,6 +132,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
     <div class="cart-footer">
       <div class="tr"><span>Subtotal</span><span id="subtotal">$0.00</span></div>
       <div class="tr disc" id="disc-row" style="display:none"><span id="disc-label">Discount</span><span id="disc-amt">-$0.00</span></div>
+      <div class="tr loyalty" id="loyalty-row" style="display:none"><span id="loyalty-label">Loyalty</span><span id="loyalty-amt">-$0.00</span></div>
       <div class="tr total"><span>Total</span><span id="cart-total">$0.00</span></div>
       <button class="place-btn" onclick="placeOrder()">Place Order</button>
     </div>
@@ -131,7 +155,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getDatabase, ref, push, onValue, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+import { getDatabase, ref, push, onValue, serverTimestamp, get, update } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCG5nhzdAHBTGg2eXXmhqH8pF8S8qFqM7o",
@@ -150,6 +174,8 @@ let menu = [];
 let coupons = [];
 let cart = [];
 let appliedCoupon = null;
+let loyaltyData = null; // { orderCount, credits }
+let loyaltyDiscount = 0; // computed per checkout
 
 // Customization modal state
 let custItem = null;
@@ -167,6 +193,81 @@ onValue(ref(db, 'coupons'), snap => {
   const data = snap.val();
   coupons = data ? Object.entries(data).map(([k,v]) => ({fbKey:k,...v})) : [];
 });
+
+// Watch email field — load loyalty data when email entered
+document.getElementById('cust-email').addEventListener('blur', () => {
+  const email = document.getElementById('cust-email').value.trim().toLowerCase();
+  if (email) loadLoyalty(email);
+  else { loyaltyData = null; loyaltyDiscount = 0; hideLoyaltyBanner(); updateTotals(); }
+});
+
+async function loadLoyalty(email) {
+  const key = emailToKey(email);
+  const snap = await get(ref(db, `loyalty/${key}`));
+  loyaltyData = snap.exists() ? snap.val() : { orderCount: 0, credits: 0 };
+  loyaltyDiscount = 0;
+  renderLoyaltyBanner();
+  updateTotals();
+}
+
+function emailToKey(email) {
+  // Firebase keys can't have . so replace with comma
+  return email.replace(/\./g, ',').replace(/@/g, '_at_');
+}
+
+function renderLoyaltyBanner() {
+  if (!loyaltyData) { hideLoyaltyBanner(); return; }
+  const banner = document.getElementById('loyalty-banner');
+  banner.classList.add('show');
+  const count = loyaltyData.orderCount || 0;
+  const credits = loyaltyData.credits || 0;
+
+  // Progress toward next milestone
+  // Milestones: 5th order = 50% off, 10th = $5 credit (repeating every 10)
+  const cyclePos = count % 10; // position in current 10-order cycle
+  const nextMilestone = cyclePos < 5 ? 5 : 10;
+  const remaining = nextMilestone - cyclePos;
+  const pct = (cyclePos / nextMilestone) * 100;
+
+  document.getElementById('loyalty-count').textContent = `${count} order${count !== 1 ? 's' : ''}`;
+  document.getElementById('loyalty-bar').style.width = `${Math.min(100, pct)}%`;
+
+  const rewardEl = document.getElementById('loyalty-reward');
+  rewardEl.className = 'loyalty-reward';
+
+  // NEXT ORDER is a milestone
+  const nextOrderNum = count + 1;
+  if (nextOrderNum % 10 === 5 % 10 && nextOrderNum % 10 !== 0) {
+    // Next order is the 5th in cycle (pos 5)
+  }
+
+  // Show active rewards
+  if (credits > 0) {
+    document.getElementById('loyalty-next').textContent = `$${credits.toFixed(2)} credit will be applied to this order!`;
+    rewardEl.className = 'loyalty-reward credit';
+    rewardEl.textContent = `🎉 $${credits.toFixed(2)} credit applied automatically!`;
+    loyaltyDiscount = Math.min(credits, cart.reduce((s,c)=>s+c.price*c.qty,0));
+  } else if ((count + 1) % 10 === 5 || count + 1 === 5) {
+    // Upcoming 5th order
+    document.getElementById('loyalty-next').textContent = `🎉 Your next order is your 5th — you get 50% off!`;
+    rewardEl.className = 'loyalty-reward';
+    rewardEl.textContent = '';
+  } else if ((count + 1) % 10 === 0) {
+    document.getElementById('loyalty-next').textContent = `🎉 Your next order is your ${count+1}th — you get a free $5 credit!`;
+    rewardEl.className = 'loyalty-reward';
+    rewardEl.textContent = '';
+  } else {
+    document.getElementById('loyalty-next').textContent = `${remaining} more order${remaining !== 1 ? 's' : ''} until your next reward`;
+    rewardEl.className = 'loyalty-reward';
+    rewardEl.textContent = '';
+  }
+
+  updateTotals();
+}
+
+function hideLoyaltyBanner() {
+  document.getElementById('loyalty-banner').classList.remove('show');
+}
 
 function renderMenu() {
   const panel = document.getElementById('menu-panel');
@@ -334,6 +435,7 @@ function renderCart() {
     el.appendChild(row);
   });
   updateTotals();
+  if (loyaltyData) renderLoyaltyBanner();
 }
 
 function updateTotals() {
@@ -347,9 +449,35 @@ function updateTotals() {
     document.getElementById('disc-label').textContent = `${appliedCoupon.code} (${appliedCoupon.type==='percent'?appliedCoupon.value+'% off':'$'+appliedCoupon.value+' off'})`;
     document.getElementById('disc-amt').textContent = `-$${disc.toFixed(2)}`;
   } else { dr.style.display = 'none'; }
+
+  // Loyalty discount
+  let loyDisc = 0;
+  const lr = document.getElementById('loyalty-row');
+  if (loyaltyData) {
+    const count = loyaltyData.orderCount || 0;
+    const credits = loyaltyData.credits || 0;
+    const nextOrder = count + 1;
+    // 5th order (and every 5th within a cycle of 10 that isn't also 10th) = 50% off
+    const isFifthOrder = (nextOrder % 10 === 5) && (nextOrder % 10 !== 0);
+    // 10th, 20th, etc = $5 credit (awarded AFTER order, not deducted now)
+    if (credits > 0) {
+      loyDisc = Math.round(Math.min(credits, sub) * 100) / 100;
+      lr.style.display = 'flex';
+      document.getElementById('loyalty-label').textContent = `⭐ Loyalty Credit`;
+      document.getElementById('loyalty-amt').textContent = `-$${loyDisc.toFixed(2)}`;
+    } else if (isFifthOrder) {
+      loyDisc = Math.round(sub * 0.5 * 100) / 100;
+      lr.style.display = 'flex';
+      document.getElementById('loyalty-label').textContent = `⭐ 5th Order (50% off)`;
+      document.getElementById('loyalty-amt').textContent = `-$${loyDisc.toFixed(2)}`;
+    } else {
+      lr.style.display = 'none';
+    }
+  } else { lr.style.display = 'none'; }
+
   document.getElementById('subtotal').textContent = `$${sub.toFixed(2)}`;
-  document.getElementById('cart-total').textContent = `$${Math.max(0,sub-disc).toFixed(2)}`;
-  return {sub, disc, total: Math.max(0,sub-disc)};
+  document.getElementById('cart-total').textContent = `$${Math.max(0, sub - disc - loyDisc).toFixed(2)}`;
+  return {sub, disc, loyDisc, total: Math.max(0, sub - disc - loyDisc)};
 }
 
 window.applyDiscount = function() {
@@ -369,13 +497,48 @@ window.applyDiscount = function() {
 
 window.placeOrder = async function() {
   const name = document.getElementById('cust-name').value.trim();
-  const email = document.getElementById('cust-email').value.trim();
+  const email = document.getElementById('cust-email').value.trim().toLowerCase();
   const comments = document.getElementById('cust-comments').value.trim();
   if (!name) { alert('Please enter your name'); return; }
+  if (!email) { alert('Please enter your email'); return; }
   if (!cart.length) { alert('Your cart is empty'); return; }
   const t = updateTotals();
+
+  // Loyalty processing
+  const loyaltyKey = emailToKey(email);
+  const loySnap = await get(ref(db, `loyalty/${loyaltyKey}`));
+  const currentLoyalty = loySnap.exists() ? loySnap.val() : { orderCount: 0, credits: 0 };
+  const newOrderCount = (currentLoyalty.orderCount || 0) + 1;
+  let creditsUsed = 0;
+  let creditsEarned = 0;
+  let newCredits = currentLoyalty.credits || 0;
+  let loyaltyMsg = '';
+
+  // Spend credits if available
+  if (newCredits > 0) {
+    creditsUsed = Math.round(Math.min(newCredits, t.sub) * 100) / 100;
+    newCredits = Math.max(0, Math.round((newCredits - creditsUsed) * 100) / 100);
+    loyaltyMsg = `$${creditsUsed.toFixed(2)} loyalty credit used!`;
+  }
+
+  // Award $5 credit on every 10th order
+  if (newOrderCount % 10 === 0) {
+    creditsEarned = 5;
+    newCredits = Math.round((newCredits + 5) * 100) / 100;
+    loyaltyMsg = `🎉 You've reached order #${newOrderCount}! $5 credit added for your next visit!`;
+  }
+
+  // Update loyalty record
+  await update(ref(db, `loyalty/${loyaltyKey}`), {
+    email,
+    name,
+    orderCount: newOrderCount,
+    credits: newCredits,
+    lastOrder: new Date().toISOString()
+  });
+
   const order = {
-    name, email, comments, 
+    name, email, comments,
     items: cart.map(c => ({
       id: c.id,
       name: c.name,
@@ -383,30 +546,37 @@ window.placeOrder = async function() {
       qty: c.qty,
       customizations: c.customizations || []
     })),
-    subtotal: t.sub, discount: t.disc, total: t.total,
+    subtotal: t.sub,
+    discount: t.disc,
+    loyaltyDiscount: t.loyDisc,
+    loyaltyOrderNum: newOrderCount,
+    total: t.total,
     coupon: appliedCoupon ? appliedCoupon.code : null,
     time: new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),
     date: new Date().toLocaleDateString(),
     status: 'pending',
     createdAt: serverTimestamp()
   };
+
   try {
     await push(ref(db, 'orders'), order);
-    cart = []; appliedCoupon = null;
+    cart = []; appliedCoupon = null; loyaltyData = null; loyaltyDiscount = 0;
     document.getElementById('cust-name').value = '';
     document.getElementById('cust-email').value = '';
     document.getElementById('cust-comments').value = '';
     document.getElementById('disc-code').value = '';
     document.getElementById('disc-msg').className = 'disc-msg';
+    hideLoyaltyBanner();
     renderCart();
-    showToast(`Order placed! We'll email you at ${email || name} when it's ready.`);
+    const baseMsg = `Order placed! We'll email you at ${email} when it's ready.`;
+    showToast(loyaltyMsg ? `${baseMsg}\n${loyaltyMsg}` : baseMsg, loyaltyMsg ? 6000 : 4000);
   } catch(e) { alert('Error placing order. Please try again.'); console.error(e); }
 }
 
-function showToast(msg) {
+function showToast(msg, duration = 4000) {
   const t = document.getElementById('toast');
   t.textContent = msg; t.style.display = 'block';
-  setTimeout(() => t.style.display = 'none', 4000);
+  setTimeout(() => t.style.display = 'none', duration);
 }
 </script>
 </body>
