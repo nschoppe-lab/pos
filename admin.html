@@ -406,6 +406,30 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
           <tbody id="finance-items"></tbody>
         </table>
       </div>
+
+      <!-- EXPENSES SECTION -->
+      <div class="asec">
+        <div class="asec-title">Weekly Expenses</div>
+        <div style="font-size:12px;color:#888;margin-bottom:12px">Log what you spend each week. Used to calculate net profit.</div>
+        <div class="arow" style="margin-bottom:10px">
+          <input type="text" id="exp-week" placeholder="Week (e.g. May 1–7, 2026)" style="flex:2">
+          <input type="number" id="exp-amount" placeholder="Amount ($)" min="0" step="0.01" style="flex:1">
+          <input type="text" id="exp-note" placeholder="Note (e.g. Ingredients, Supplies)" style="flex:2">
+          <button class="aadd" onclick="addExpense()">Add</button>
+        </div>
+        <table class="mtable" id="expense-table">
+          <thead><tr><th>Week</th><th>Amount</th><th>Note</th><th>Added</th><th></th></tr></thead>
+          <tbody id="expense-body"></tbody>
+        </table>
+      </div>
+
+      <!-- P&L SUMMARY -->
+      <div class="asec" style="border-color:#22c55e44;background:#0a1a0a">
+        <div class="asec-title" style="color:#22c55e">Profit & Loss Summary</div>
+        <div style="font-size:12px;color:#888;margin-bottom:14px">Based on the date range selected above.</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px" id="pl-summary"></div>
+      </div>
+
     </div></div>
   </div>
 
@@ -567,7 +591,7 @@ emailjs.init("yoxsvEb1uuAA4Ytcd");
 const auth = getAuth(app);
 const db = getDatabase(app);
 
-let orders = {}, menu = [], coupons = [], staffList = [], loyaltyRecords = {}, waittimeData = {}, brandingData = {};
+let orders = {}, menu = [], coupons = [], staffList = [], loyaltyRecords = {}, waittimeData = {}, brandingData = {}, expensesData = {};
 let tapTimers = {}, currentTab = 'orders';
 
 onAuthStateChanged(auth, async user => {
@@ -608,6 +632,7 @@ function showAdmin() {
   onValue(ref(db,'waittime'), snap => { waittimeData = snap.val()||{};
     if(currentTab==='waittime') updateWaitTimeUI(); });
   onValue(ref(db,'branding'), snap => { brandingData = snap.val()||{}; applyBrandingToPage(brandingData); if(currentTab==='branding') initBranding(); });
+  onValue(ref(db,'expenses'), snap => { expensesData = snap.val()||{}; if(currentTab==='finance') renderFinance(); });
 }
 
 window.switchTab = function(t) {
@@ -1289,6 +1314,7 @@ window.renderFinance = function() {
   if (!itemsSorted.length) {
     tbody.innerHTML = '<tr><td colspan="4" style="color:#555;text-align:center;padding:16px;font-size:12px">No items in this range</td></tr>';
   } else {
+  renderPLSummary(totalRev, totalDisc);
     tbody.innerHTML = itemsSorted.map(([name, data]) => `
       <tr>
         <td style="font-weight:600">${name}</td>
@@ -1454,3 +1480,61 @@ window.closeModal = function(){document.getElementById('modal').style.display='n
 </script>
 </body>
 </html>
+
+window.addExpense = async function() {
+  const week   = (document.getElementById('exp-week')   || {}).value.trim();
+  const amount = parseFloat((document.getElementById('exp-amount') || {}).value);
+  const note   = (document.getElementById('exp-note')   || {}).value.trim();
+  if (!week || isNaN(amount) || amount <= 0) { alert('Enter a week and valid amount'); return; }
+  const entry = { week, amount, note, addedAt: new Date().toLocaleDateString() };
+  try {
+    await push(ref(db,'expenses'), entry);
+    document.getElementById('exp-week').value   = '';
+    document.getElementById('exp-amount').value = '';
+    document.getElementById('exp-note').value   = '';
+  } catch(e) { alert('Error saving expense: ' + e.message); }
+}
+
+window.deleteExpense = async function(key) {
+  if (!confirm('Delete this expense entry?')) return;
+  await remove(ref(db,'expenses/'+key));
+}
+
+function renderExpenses() {
+  const tbody = document.getElementById('expense-body');
+  if (!tbody) return;
+  const entries = Object.entries(expensesData).sort((a,b) => (b[1].addedAt||'') > (a[1].addedAt||'') ? 1 : -1);
+  if (!entries.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="color:#555;text-align:center;padding:14px;font-size:12px">No expenses logged yet</td></tr>';
+    return;
+  }
+  tbody.innerHTML = entries.map(([key, e]) =>
+    `<tr>
+      <td style="font-weight:600">${e.week||'—'}</td>
+      <td style="color:#ef4444;font-weight:700">$${parseFloat(e.amount||0).toFixed(2)}</td>
+      <td style="color:#888">${e.note||'—'}</td>
+      <td style="color:#555;font-size:11px">${e.addedAt||'—'}</td>
+      <td><button class="delbtn" onclick="deleteExpense('${key}')">Delete</button></td>
+    </tr>`
+  ).join('');
+}
+
+function renderPLSummary(totalRev, totalDisc) {
+  const el = document.getElementById('pl-summary');
+  if (!el) return;
+  const totalExp = Object.values(expensesData).reduce((s,e) => s + parseFloat(e.amount||0), 0);
+  const profit   = totalRev - totalExp;
+  const stats = [
+    { label:'Total Revenue',   val:'$'+totalRev.toFixed(2),  color:'#22c55e',  icon:'💰' },
+    { label:'Total Expenses',  val:'$'+totalExp.toFixed(2),  color:'#ef4444',  icon:'📦' },
+    { label:'Total Discounts', val:'-$'+totalDisc.toFixed(2),color:'#f59e0b',  icon:'🏷️' },
+    { label:'Net Profit',      val:(profit >= 0 ? '+' : '') + '$'+profit.toFixed(2), color: profit >= 0 ? '#22c55e' : '#ef4444', icon: profit >= 0 ? '📈' : '📉' },
+  ];
+  el.innerHTML = stats.map(s =>
+    `<div style="background:#111;border:1px solid #1a2a1a;border-radius:10px;padding:16px">
+      <div style="font-size:18px;margin-bottom:6px">${s.icon}</div>
+      <div style="font-size:10px;color:#666;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">${s.label}</div>
+      <div style="font-size:24px;font-weight:800;color:${s.color}">${s.val}</div>
+    </div>`
+  ).join('');
+}
