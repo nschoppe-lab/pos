@@ -1189,10 +1189,9 @@ function updateWaitTimeUI() {
 function renderHoursSchedule() {
   const el = document.getElementById('hours-schedule');
   if (!el) return;
-  const hours = (waittimeData && waittimeData.hours) || {};
   el.innerHTML = '';
   DAYS.forEach(day => {
-    const h = hours[day] || { enabled: false, open: '10:00', close: '22:00' };
+    const h = (waittimeData && waittimeData['hours_' + day]) || { enabled: false, open: '10:00', close: '22:00' };
     const isToday = DAYS[new Date().getDay()] === day;
     const statusText = !h.enabled ? 'Closed all day' : isToday ? getStatusText(h) : 'Scheduled';
     const statusColor = !h.enabled ? '#555' : isToday && statusText === 'Open Now' ? '#22c55e' : isToday ? '#ef4444' : '#888';
@@ -1231,19 +1230,24 @@ window.toggleDayEnabled = function(day) {
 }
 
 window.saveHours = async function() {
-  const hours = {};
+  // Save each day as a flat key (e.g. hours_Sunday) to avoid
+  // Firebase converting the nested object into a numeric array
+  const updates = {};
   DAYS.forEach(day => {
     const cb    = document.getElementById(`hours-open-${day}`);
     const start = document.getElementById(`hours-start-${day}`);
     const end   = document.getElementById(`hours-end-${day}`);
-    hours[day] = {
+    const key   = 'hours_' + day;
+    updates[key] = {
       enabled: cb ? cb.checked : false,
       open:    start ? (start.value || '10:00') : '10:00',
       close:   end   ? (end.value   || '22:00') : '22:00'
     };
   });
   try {
-    await update(ref(db, 'waittime'), { hours });
+    // Also null out old nested 'hours' key if it exists
+    updates['hours'] = null;
+    await update(ref(db, 'waittime'), updates);
     alert('✅ Hours saved!');
   } catch(e) { alert('Error saving: ' + e.message); }
 }
@@ -1288,9 +1292,8 @@ window.clearCustomMsg = async function() {
 }
 
 function checkAutoOpenClose() {
-  const hours   = (waittimeData && waittimeData.hours) || {};
   const dayName = DAYS[new Date().getDay()];
-  const h       = hours[dayName];
+  const h       = (waittimeData && waittimeData['hours_' + dayName]) || null;
   const nextEl  = document.getElementById('next-check');
   if (!h || !h.enabled) {
     if (nextEl) nextEl.textContent = 'Closed today';
