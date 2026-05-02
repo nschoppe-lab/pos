@@ -246,21 +246,13 @@ function renderWaitBlock(panel) {
   var d = waittimeSnap;
   if (d.closed === true) return;
 
-  // Use activeStaffMpo (set when staff clock in) or fall back to default minsPerOrder
   var minsPerOrder = parseFloat(d.activeStaffMpo || d.minsPerOrder || 2);
   var totalSecs = Math.round(openOrderCount * minsPerOrder * 60);
-
   var waitLabel = '';
   if (openOrderCount > 0) {
-    if (totalSecs < 60) {
-      waitLabel = totalSecs + ' sec';
-    } else {
-      var mins = Math.floor(totalSecs / 60);
-      var secs = totalSecs % 60;
-      waitLabel = mins + (secs > 0 ? ' min ' + secs + ' sec' : ' min');
-    }
+    if (totalSecs < 60) { waitLabel = totalSecs + ' sec'; }
+    else { var m = Math.floor(totalSecs/60), s = totalSecs%60; waitLabel = m + (s > 0 ? ' min '+s+' sec' : ' min'); }
   }
-
   var customMsg = d.message || '';
   if (!waitLabel && !customMsg) return;
 
@@ -636,6 +628,10 @@ window.placeOrder = async function() {
 
   try {
     await push(ref(db, 'orders'), order);
+    // Mark single-use coupon as used immediately
+    if (appliedCoupon && appliedCoupon.singleUse && appliedCoupon.fbKey) {
+      await update(ref(db, 'coupons/' + appliedCoupon.fbKey), { used: true, usedAt: new Date().toISOString() });
+    }
     // Send confirmation email with wait time
     if (email) {
       try {
