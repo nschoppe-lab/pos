@@ -322,6 +322,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
       <div class="asec">
         <div class="asec-title">Manually Add Credit</div>
         <div class="arow">
+          <input type="text" id="loyalty-name-input" placeholder="Customer name">
           <input type="email" id="loyalty-email-input" placeholder="Customer email">
           <input type="number" id="loyalty-credit-input" placeholder="$ amount" min="0" step="0.5" class="w80">
           <button class="aadd" onclick="addLoyaltyCredit()">Add Credit</button>
@@ -1118,18 +1119,24 @@ window.resetLoyalty = function(key, name, count) {
 }
 
 window.addLoyaltyCredit = async function() {
-  const email = document.getElementById('loyalty-email-input').value.trim().toLowerCase();
+  const name   = (document.getElementById('loyalty-name-input')   || {}).value.trim();
+  const email  = document.getElementById('loyalty-email-input').value.trim().toLowerCase();
   const amount = parseFloat(document.getElementById('loyalty-credit-input').value);
   if (!email) { alert('Enter customer email'); return; }
   if (isNaN(amount) || amount <= 0) { alert('Enter a valid amount'); return; }
   const key = email.replace(/\./g, ',').replace(/@/g, '_at_');
-  const snap = await get(ref(db, `loyalty/${key}`));
-  const current = snap.exists() ? snap.val() : { orderCount: 0, credits: 0 };
-  const newCredits = Math.round(((current.credits||0) + amount)*100)/100;
-  await update(ref(db, `loyalty/${key}`), { credits: newCredits, email });
-  document.getElementById('loyalty-email-input').value = '';
-  document.getElementById('loyalty-credit-input').value = '';
-  alert(`$${amount.toFixed(2)} credit added! ${email} now has $${newCredits.toFixed(2)} total.`);
+  try {
+    const snap = await get(ref(db, `loyalty/${key}`));
+    const current = snap.exists() ? snap.val() : { orderCount: 0, credits: 0 };
+    const newCredits = Math.round(((current.credits||0) + amount)*100)/100;
+    const update_data = { credits: newCredits, email };
+    if (name) update_data.name = name;
+    await update(ref(db, `loyalty/${key}`), update_data);
+    document.getElementById('loyalty-name-input').value  = '';
+    document.getElementById('loyalty-email-input').value = '';
+    document.getElementById('loyalty-credit-input').value = '';
+    alert('$' + amount.toFixed(2) + ' credit added! ' + (name || email) + ' now has $' + newCredits.toFixed(2) + ' total.');
+  } catch(e) { alert('Error adding credit: ' + e.message); }
 }
 
 
@@ -1673,7 +1680,11 @@ window.addExpense = async function() {
     document.getElementById('exp-week').value   = '';
     document.getElementById('exp-amount').value = '';
     document.getElementById('exp-note').value   = '';
-  } catch(e) { alert('Error saving expense: ' + e.message); }
+    alert('✅ Expense of $' + amount.toFixed(2) + ' added for ' + week + '!');
+  } catch(e) { 
+    console.error('Expense error:', e);
+    alert('Error saving expense: ' + e.message + '\n\nMake sure your Firebase rules include:\n"expenses": {".read":"auth != null",".write":"auth != null"}');
+  }
 }
 
 window.deleteExpense = async function(key) {
