@@ -141,6 +141,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
       <button class="tb" onclick="switchTab('waittime')">Wait Time</button>
       <button class="tb" onclick="switchTab('finance')">Finance</button>
       <button class="tb" onclick="switchTab('branding')">Branding</button>
+      <button class="tb" onclick="switchTab('specials')">Specials</button>
     </div>
     <button class="logout-btn" onclick="doLogout()">Sign out</button>
   </div>
@@ -574,6 +575,44 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 
     </div></div>
   </div>
+
+  <!-- SPECIALS TAB -->
+  <div class="tab-content" id="tab-specials">
+    <div class="admin-scroll"><div class="admin-wrap" style="max-width:800px">
+      <div class="admin-title">Daily Specials</div>
+      <div class="admin-sub">Add specials for specific days. They appear automatically on the customer ordering screen on the selected day alongside the regular menu.</div>
+
+      <div class="asec">
+        <div class="asec-title">Add a Special</div>
+        <div class="arow">
+          <input type="text" id="spec-name" placeholder="Special name (e.g. Burger of the Day)">
+          <input type="number" id="spec-price" placeholder="Price" min="0" step="0.25" class="w80">
+        </div>
+        <div class="arow">
+          <input type="text" id="spec-desc" placeholder="Description (optional)">
+          <select id="spec-day" style="min-width:130px">
+            <option value="Monday">Monday</option>
+            <option value="Tuesday">Tuesday</option>
+            <option value="Wednesday">Wednesday</option>
+            <option value="Thursday">Thursday</option>
+            <option value="Friday">Friday</option>
+            <option value="Saturday">Saturday</option>
+            <option value="Sunday">Sunday</option>
+            <option value="Daily">Every Day</option>
+          </select>
+        </div>
+        <div class="arow">
+          <input type="text" id="spec-tag" placeholder="Tag (optional, e.g. NEW, LIMITED, HOT)">
+          <button class="aadd" onclick="addSpecial()" style="margin-left:auto">Add Special</button>
+        </div>
+      </div>
+
+      <div class="asec">
+        <div class="asec-title">Active Specials</div>
+        <div id="specials-list"></div>
+      </div>
+    </div></div>
+  </div>
 </div>
 
 <div class="modal-bg" id="custom-admin-modal" style="display:none" onclick="if(event.target===this)closeCustomizeAdmin()">
@@ -622,7 +661,7 @@ emailjs.init("yoxsvEb1uuAA4Ytcd");
 const auth = getAuth(app);
 const db = getDatabase(app);
 
-let orders = {}, menu = [], coupons = [], staffList = [], loyaltyRecords = {}, waittimeData = {}, brandingData = {}, expensesData = {}, rewardStaffData = {};
+let orders = {}, menu = [], coupons = [], staffList = [], loyaltyRecords = {}, waittimeData = {}, brandingData = {}, expensesData = {}, rewardStaffData = {}, specialsData = {};
 let tapTimers = {}, currentTab = 'orders';
 
 onAuthStateChanged(auth, async user => {
@@ -665,13 +704,15 @@ function showAdmin() {
   onValue(ref(db,'branding'), snap => { brandingData = snap.val()||{}; applyBrandingToPage(brandingData); if(currentTab==='branding') initBranding(); });
   onValue(ref(db,'expenses'), snap => { expensesData = snap.val()||{}; if(currentTab==='finance') renderFinance(); });
   onValue(ref(db,'rewardStaff'), snap => { rewardStaffData = snap.val()||{}; if(currentTab==='staff') renderRewardStaff(); });
+  onValue(ref(db,'specials'), snap => { specialsData = snap.val()||{}; if(currentTab==='specials') renderSpecialsAdmin(); });
 }
 
 window.switchTab = function(t) {
   currentTab = t;
   document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
   document.getElementById('tab-'+t).classList.add('active');
-  document.querySelectorAll('.tb').forEach((b,i) => b.classList.toggle('active', ['orders','history','menu','coupons','staff','inventory','loyalty','waittime','finance','branding'][i]===t));
+  document.querySelectorAll('.tb').forEach((b,i) => b.classList.toggle('active', ['orders','history','menu','coupons','staff','inventory','loyalty','waittime','finance','branding','specials'][i]===t));
+  if (t==='specials') renderSpecialsAdmin();
   if (t==='staff') renderRewardStaff();
   if (t==='inventory') renderInventory();
   if (t==='loyalty') renderLoyaltyAdmin();
@@ -1663,6 +1704,88 @@ function renderRewardStaff() {
       </div>
     </div>`;
   }).join('');
+}
+
+
+// ── SPECIALS FUNCTIONS ────────────────────────────────────────
+const WEEKDAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday','Daily'];
+
+window.addSpecial = async function() {
+  const name  = (document.getElementById('spec-name')  || {}).value.trim();
+  const price = parseFloat((document.getElementById('spec-price') || {}).value);
+  const desc  = (document.getElementById('spec-desc')  || {}).value.trim();
+  const day   = (document.getElementById('spec-day')   || {}).value;
+  const tag   = (document.getElementById('spec-tag')   || {}).value.trim().toUpperCase();
+  if (!name)              { alert('Enter a name for the special'); return; }
+  if (isNaN(price) || price < 0) { alert('Enter a valid price'); return; }
+  const special = { name, price, desc, day, tag, id: Date.now(), active: true };
+  try {
+    await push(ref(db, 'specials'), special);
+    document.getElementById('spec-name').value  = '';
+    document.getElementById('spec-price').value = '';
+    document.getElementById('spec-desc').value  = '';
+    document.getElementById('spec-tag').value   = '';
+    alert('✅ Special added for ' + day + '!');
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+window.deleteSpecial = async function(key) {
+  if (!confirm('Delete this special?')) return;
+  await remove(ref(db, 'specials/' + key));
+}
+
+window.toggleSpecialActive = async function(key, current) {
+  await update(ref(db, 'specials/' + key), { active: !current });
+}
+
+function renderSpecialsAdmin() {
+  const el = document.getElementById('specials-list');
+  if (!el) return;
+  const entries = Object.entries(specialsData);
+  if (!entries.length) {
+    el.innerHTML = '<div style="color:#555;font-size:12px;text-align:center;padding:20px">No specials yet — add one above</div>';
+    return;
+  }
+
+  // Group by day
+  const byDay = {};
+  entries.forEach(([key, s]) => {
+    const d = s.day || 'Daily';
+    if (!byDay[d]) byDay[d] = [];
+    byDay[d].push([key, s]);
+  });
+
+  el.innerHTML = '';
+  ['Daily',...WEEKDAYS.filter(d=>d!=='Daily')].forEach(day => {
+    if (!byDay[day]) return;
+    const section = document.createElement('div');
+    section.style.cssText = 'margin-bottom:16px';
+    section.innerHTML = '<div style="font-size:10px;font-weight:700;color:#ff6b35;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid #333">' + day + '</div>';
+
+    byDay[day].forEach(([key, s]) => {
+      const isActive = s.active !== false;
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:#1e1e1e;border-radius:8px;margin-bottom:6px;gap:10px;flex-wrap:wrap;border:1px solid ' + (isActive ? '#333' : '#2a2a2a');
+      row.innerHTML =
+        '<div style="flex:1">' +
+          '<div style="display:flex;align-items:center;gap:8px">' +
+            '<span style="font-size:13px;font-weight:600;color:' + (isActive ? '#fff' : '#555') + '">' + s.name + '</span>' +
+            (s.tag ? '<span style="font-size:10px;font-weight:700;background:#2a1f0e;color:#f59e0b;padding:2px 7px;border-radius:10px">' + s.tag + '</span>' : '') +
+            '<span style="font-size:13px;font-weight:700;color:#ff6b35">$' + parseFloat(s.price||0).toFixed(2) + '</span>' +
+          '</div>' +
+          (s.desc ? '<div style="font-size:11px;color:#888;margin-top:3px">' + s.desc + '</div>' : '') +
+        '</div>' +
+        '<div style="display:flex;gap:6px;align-items:center">' +
+          '<label style="display:flex;align-items:center;gap:5px;font-size:11px;color:#888;cursor:pointer">' +
+            '<input type="checkbox" ' + (isActive ? 'checked' : '') + ' onchange="toggleSpecialActive('' + key + '',' + isActive + ')">' +
+            (isActive ? 'Active' : 'Hidden') +
+          '</label>' +
+          '<button onclick="deleteSpecial('' + key + '')" style="background:#2a1010;border:1px solid #7f1d1d;color:#ef4444;border-radius:4px;padding:3px 10px;font-size:11px;cursor:pointer">Delete</button>' +
+        '</div>';
+      section.appendChild(row);
+    });
+    el.appendChild(section);
+  });
 }
 
 function fmtPhone(p){return p&&p.length===10?`(${p.slice(0,3)}) ${p.slice(3,6)}-${p.slice(6)}`:p;}

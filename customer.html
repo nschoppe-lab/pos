@@ -98,6 +98,13 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 <style id="brand-styles"></style>
 </head>
 <body>
+<!-- CLOSED OVERLAY -->
+<div id="closed-overlay" style="display:none;position:fixed;inset:0;background:#111;z-index:9999;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:30px">
+  <div style="font-size:60px;margin-bottom:16px">🔒</div>
+  <div style="font-size:28px;font-weight:800;color:#ff6b35;margin-bottom:10px">We're Closed</div>
+  <div id="closed-msg-display" style="font-size:16px;color:#888">Check back soon!</div>
+</div>
+
 <div class="topnav"><div class="brand">&#9654; Order Here</div></div>
 <div class="content">
   <div class="menu-panel" id="menu-panel"><div class="loading">Loading menu...</div></div>
@@ -228,6 +235,29 @@ onValue(ref(db, 'coupons'), snap => {
   coupons = snap.val() ? Object.entries(snap.val()).map(([k,v]) => ({fbKey:k,...v})) : [];
 });
 
+// Listen to open/closed status
+onValue(ref(db, 'waittime'), snap => {
+  const d = snap.val() || {};
+  const overlay = document.getElementById('closed-overlay');
+  const msgEl   = document.getElementById('closed-msg-display');
+  if (overlay) {
+    const isClosed = d.closed === true;
+    overlay.style.display = isClosed ? 'flex' : 'none';
+    if (msgEl && d.closedMsg) msgEl.textContent = d.closedMsg;
+  }
+});
+
+// Listen to specials
+onValue(ref(db, 'specials'), snap => {
+  const data = snap.val() || {};
+  const today = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][new Date().getDay()];
+  // Get active specials for today or daily
+  window._todaySpecials = Object.entries(data)
+    .filter(([k,s]) => s.active !== false && (s.day === today || s.day === 'Daily'))
+    .map(([k,s]) => ({...s, fbKey:k}));
+  renderMenu(); // re-render to include specials
+});
+
 document.getElementById('cust-email').addEventListener('blur', () => {
   const email = document.getElementById('cust-email').value.trim().toLowerCase();
   if (email) loadLoyalty(email);
@@ -284,6 +314,34 @@ function renderMenu() {
   const panel = document.getElementById('menu-panel');
   if (!menu.length) { panel.innerHTML = '<div class="loading">Menu coming soon...</div>'; return; }
   panel.innerHTML = '';
+
+  // Show today's specials at the top
+  const specials = window._todaySpecials || [];
+  if (specials.length) {
+    const sh = document.createElement('div');
+    sh.className = 'cat-hdr';
+    sh.style.cssText = 'color:#f59e0b;border-color:#f59e0b44';
+    sh.innerHTML = '⭐ Today's Specials';
+    panel.appendChild(sh);
+    const sg = document.createElement('div'); sg.className = 'menu-grid';
+    specials.forEach(item => {
+      const el = document.createElement('div');
+      el.className = 'mi';
+      el.style.cssText = 'border-color:#f59e0b44;background:#1f1a0e';
+      const hasOptions = item.customizations && item.customizations.length > 0;
+      el.innerHTML =
+        (item.tag ? '<div style="font-size:10px;font-weight:700;color:#f59e0b;margin-bottom:4px">' + item.tag + '</div>' : '') +
+        '<div class="mi-name">' + item.name + '</div>' +
+        '<div class="mi-price">$' + parseFloat(item.price||0).toFixed(2) + '</div>' +
+        (item.desc ? '<div style="font-size:10px;color:#888;margin-top:3px">' + item.desc + '</div>' : '') +
+        (hasOptions ? '<div class="mi-arrow">Tap to customize ›</div>' : '');
+      el.onclick = () => openCustModal(item);
+      sg.appendChild(el);
+    });
+    panel.appendChild(sg);
+  }
+
+  // Regular menu
   menu.forEach(cat => {
     if (!cat.items || !cat.items.length) return;
     const h = document.createElement('div'); h.className = 'cat-hdr'; h.textContent = cat.label; panel.appendChild(h);
@@ -291,7 +349,7 @@ function renderMenu() {
     cat.items.filter(item => !item.unavailable).forEach(item => {
       const el = document.createElement('div'); el.className = 'mi';
       const hasOptions = item.customizations && item.customizations.length > 0;
-      el.innerHTML = `<div class="mi-name">${item.name}</div><div class="mi-price">$${parseFloat(item.price).toFixed(2)}</div>${hasOptions ? '<div class="mi-arrow">Tap to customize ›</div>' : ''}`;
+      el.innerHTML = '<div class="mi-name">' + item.name + '</div><div class="mi-price">$' + parseFloat(item.price).toFixed(2) + '</div>' + (hasOptions ? '<div class="mi-arrow">Tap to customize ›</div>' : '');
       el.onclick = () => openCustModal(item);
       g.appendChild(el);
     });
