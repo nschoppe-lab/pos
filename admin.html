@@ -139,6 +139,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
       <button class="tb" onclick="switchTab('inventory')">Inventory</button>
       <button class="tb" onclick="switchTab('loyalty')">Loyalty</button>
       <button class="tb" onclick="switchTab('waittime')">Wait Time</button>
+      <button class="tb" onclick="switchTab('finance')">Finance</button>
     </div>
     <button class="logout-btn" onclick="doLogout()">Sign out</button>
   </div>
@@ -366,6 +367,46 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 
     </div></div>
   </div>
+
+  <!-- FINANCE TAB -->
+  <div class="tab-content" id="tab-finance">
+    <div class="admin-scroll"><div class="admin-wrap" style="max-width:1000px">
+      <div class="admin-title">Finance & Sales Report</div>
+      <div class="admin-sub">Revenue and item breakdown by day. Based on completed and pending orders.</div>
+
+      <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+        <select id="finance-range" onchange="renderFinance()" style="background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:7px 12px;font-size:13px;color:#fff;cursor:pointer">
+          <option value="7">Last 7 days</option>
+          <option value="14">Last 14 days</option>
+          <option value="30">Last 30 days</option>
+          <option value="all">All time</option>
+        </select>
+        <select id="finance-status" onchange="renderFinance()" style="background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:7px 12px;font-size:13px;color:#fff;cursor:pointer">
+          <option value="all">All orders</option>
+          <option value="done">Completed only</option>
+          <option value="pending">Pending only</option>
+        </select>
+      </div>
+
+      <!-- Summary cards -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:20px" id="finance-summary"></div>
+
+      <!-- Revenue by day chart/table -->
+      <div class="asec" style="margin-bottom:14px">
+        <div class="asec-title">Revenue by Day</div>
+        <div id="finance-by-day"></div>
+      </div>
+
+      <!-- Item breakdown -->
+      <div class="asec">
+        <div class="asec-title">Item Sales Breakdown</div>
+        <table class="mtable">
+          <thead><tr><th>Item</th><th>Qty Sold</th><th>Revenue</th><th>% of Sales</th></tr></thead>
+          <tbody id="finance-items"></tbody>
+        </table>
+      </div>
+    </div></div>
+  </div>
 </div>
 
 <div class="modal-bg" id="custom-admin-modal" style="display:none" onclick="if(event.target===this)closeCustomizeAdmin()">
@@ -447,7 +488,7 @@ function showLoginErr(msg) { const e = document.getElementById('login-err'); e.s
 function showAdmin() {
   document.getElementById('login-wrap').style.display = 'none';
   document.getElementById('admin-app').style.display = 'flex';
-  onValue(ref(db,'orders'), snap => { orders = snap.val()||{}; renderOrders(); renderHistory(); updateBadge(); if(currentTab==='waittime') updateWaitTimeUI(); });
+  onValue(ref(db,'orders'), snap => { orders = snap.val()||{}; renderOrders(); renderHistory(); updateBadge(); if(currentTab==='waittime') updateWaitTimeUI(); if(currentTab==='finance') renderFinance(); });
   onValue(ref(db,'menu'), snap => { const d = snap.val(); menu = d ? Object.values(d) : []; renderMenuAdmin(); });
   onValue(ref(db,'coupons'), snap => { const d = snap.val(); coupons = d ? Object.entries(d).map(([k,v])=>({fbKey:k,...v})) : []; renderCoupons(); });
   onValue(ref(db,'users'), snap => { const d = snap.val(); staffList = d ? Object.entries(d).map(([k,v])=>({uid:k,...v})) : []; renderStaff(); });
@@ -459,10 +500,11 @@ window.switchTab = function(t) {
   currentTab = t;
   document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
   document.getElementById('tab-'+t).classList.add('active');
-  document.querySelectorAll('.tb').forEach((b,i) => b.classList.toggle('active', ['orders','history','menu','coupons','staff','inventory','loyalty','waittime'][i]===t));
+  document.querySelectorAll('.tb').forEach((b,i) => b.classList.toggle('active', ['orders','history','menu','coupons','staff','inventory','loyalty','waittime','finance'][i]===t));
   if (t==='inventory') renderInventory();
   if (t==='loyalty') renderLoyaltyAdmin();
   if (t==='waittime') initWaitTime();
+  if (t==='finance') renderFinance();
   if (t==='history') renderHistory();
 }
 
@@ -539,7 +581,7 @@ window.renderHistory = function() {
   arr.forEach(order=>{
     const card=document.createElement('div');card.className='hcard';
     const hdr=document.createElement('div');hdr.className='hcard-hdr';
-    hdr.innerHTML=`<div style="display:flex;align-items:center;gap:8px"><span style="font-size:12px;font-weight:700;color:#ff6b35">#${order.fbKey.slice(-4).toUpperCase()}</span><span style="font-size:12px;font-weight:600">${order.name}</span><span class="hbadge ${order.status==='done'?'done':'pending'}">${order.status==='done'?'Done':'Pending'}</span></div><div style="display:flex;align-items:center;gap:8px"><span style="font-size:12px;font-weight:700;color:#ff6b35">$${parseFloat(order.total||0).toFixed(2)}</span><span style="font-size:11px;color:#666">${order.date||''} ${order.time||''}</span><span style="color:#555">&#9660;</span></div>`;
+    hdr.innerHTML=`<div style="display:flex;align-items:center;gap:8px"><span style="font-size:12px;font-weight:700;color:#ff6b35">#${order.fbKey.slice(-4).toUpperCase()}</span><span style="font-size:12px;font-weight:600">${order.name}</span><span class="hbadge ${order.status==='done'?'done':'pending'}">${order.status==='done'?'Done':'Pending'}</span></div><div style="display:flex;align-items:center;gap:8px"><span style="font-size:12px;font-weight:700;color:#ff6b35">$${parseFloat(order.total||0).toFixed(2)}</span><span style="font-size:11px;color:#666">${order.date||''} ${order.time||''}</span><button onclick="event.stopPropagation();deleteOrder('${order.fbKey}','${order.name}')" style="background:#2a1010;border:1px solid #7f1d1d;color:#ef4444;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">Delete</button><span style="color:#555">&#9660;</span></div>`;
     const body=document.createElement('div');body.className='hcard-body';
     body.innerHTML=(order.items||[]).map(i=>`<div style="font-size:12px;color:#ccc;padding:2px 0"><span style="color:#777">${i.qty}x</span> ${i.name} — $${(i.price*i.qty).toFixed(2)}</div>`).join('')+(order.discount>0?`<div style="font-size:11px;color:#22c55e;margin-top:5px">Discount (${order.coupon}): -$${parseFloat(order.discount).toFixed(2)}</div>`:'')+`<div style="font-size:11px;color:#888;margin-top:6px">${order.email?'Email: '+order.email:'No email'}${order.coupon?' | Code: '+order.coupon:''}</div>`;
     hdr.onclick=()=>body.classList.toggle('open');
@@ -1042,6 +1084,118 @@ window.saveCustomMsg = async function() {
 
 window.clearCustomMsg = async function() {
   await set(ref(db,'waittime'), {...waittimeData, message: ''});
+}
+
+
+window.deleteOrder = async function(key, name) {
+  if (!confirm(`Delete order from ${name}? This cannot be undone.`)) return;
+  await remove(ref(db, `orders/${key}`));
+}
+
+window.renderFinance = function() {
+  const range = document.getElementById('finance-range').value;
+  const statusFilter = document.getElementById('finance-status').value;
+
+  let arr = Object.entries(orders).map(([k,v]) => ({fbKey:k,...v}));
+
+  // Filter by status
+  if (statusFilter === 'done') arr = arr.filter(o => o.status === 'done');
+  if (statusFilter === 'pending') arr = arr.filter(o => o.status === 'pending');
+
+  // Filter by date range
+  if (range !== 'all') {
+    const days = parseInt(range);
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    arr = arr.filter(o => {
+      if (!o.date) return false;
+      const parts = o.date.split('/');
+      if (parts.length < 3) return true;
+      const d = new Date(parseInt(parts[2]), parseInt(parts[0])-1, parseInt(parts[1]));
+      return d >= cutoff;
+    });
+  }
+
+  const totalRev = arr.reduce((s,o) => s + parseFloat(o.total||0), 0);
+  const totalOrders = arr.length;
+  const totalDisc = arr.reduce((s,o) => s + parseFloat(o.discount||0) + parseFloat(o.loyaltyDiscount||0), 0);
+  const avgOrder = totalOrders > 0 ? totalRev / totalOrders : 0;
+
+  // Summary cards
+  const summaryEl = document.getElementById('finance-summary');
+  summaryEl.innerHTML = [
+    {label:'Total Revenue', val:'$'+totalRev.toFixed(2), color:'#22c55e'},
+    {label:'Total Orders', val:totalOrders, color:'#ff6b35'},
+    {label:'Avg Order', val:'$'+avgOrder.toFixed(2), color:'#f59e0b'},
+    {label:'Discounts Given', val:'-$'+totalDisc.toFixed(2), color:'#ef4444'},
+  ].map(s => `<div style="background:#1e1e1e;border:1px solid #2a2a2a;border-radius:10px;padding:14px 16px">
+    <div style="font-size:10px;color:#666;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">${s.label}</div>
+    <div style="font-size:22px;font-weight:800;color:${s.color}">${s.val}</div>
+  </div>`).join('');
+
+  // Revenue by day
+  const byDay = {};
+  arr.forEach(o => {
+    const d = o.date || 'Unknown';
+    if (!byDay[d]) byDay[d] = {revenue:0, orders:0, date:d};
+    byDay[d].revenue += parseFloat(o.total||0);
+    byDay[d].orders++;
+  });
+
+  const daysSorted = Object.values(byDay).sort((a,b) => {
+    const pa = a.date.split('/'), pb = b.date.split('/');
+    if (pa.length < 3 || pb.length < 3) return 0;
+    return new Date(pb[2],pb[0]-1,pb[1]) - new Date(pa[2],pa[0]-1,pa[1]);
+  });
+
+  const maxRev = Math.max(...daysSorted.map(d=>d.revenue), 1);
+  const dayEl = document.getElementById('finance-by-day');
+
+  if (!daysSorted.length) {
+    dayEl.innerHTML = '<div style="color:#555;text-align:center;padding:20px;font-size:13px">No orders in this range</div>';
+  } else {
+    dayEl.innerHTML = daysSorted.map(d => `
+      <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #2a2a2a">
+        <div style="width:90px;font-size:12px;color:#888;flex-shrink:0">${d.date}</div>
+        <div style="flex:1;height:20px;background:#1a1a1a;border-radius:4px;overflow:hidden">
+          <div style="height:100%;width:${(d.revenue/maxRev*100).toFixed(1)}%;background:linear-gradient(90deg,#ff6b35,#f59e0b);border-radius:4px;transition:width 0.3s"></div>
+        </div>
+        <div style="font-size:12px;font-weight:700;color:#22c55e;width:70px;text-align:right">$${d.revenue.toFixed(2)}</div>
+        <div style="font-size:11px;color:#555;width:60px;text-align:right">${d.orders} order${d.orders!==1?'s':''}</div>
+      </div>`).join('');
+  }
+
+  // Item breakdown
+  const itemMap = {};
+  arr.forEach(o => {
+    (o.items||[]).forEach(item => {
+      const name = item.name || 'Unknown';
+      if (!itemMap[name]) itemMap[name] = {qty:0, revenue:0};
+      itemMap[name].qty += item.qty || 1;
+      itemMap[name].revenue += parseFloat(item.price||0) * (item.qty||1);
+    });
+  });
+
+  const itemsSorted = Object.entries(itemMap).sort((a,b) => b[1].revenue - a[1].revenue);
+  const tbody = document.getElementById('finance-items');
+  if (!itemsSorted.length) {
+    tbody.innerHTML = '<tr><td colspan="4" style="color:#555;text-align:center;padding:16px;font-size:12px">No items in this range</td></tr>';
+  } else {
+    tbody.innerHTML = itemsSorted.map(([name, data]) => `
+      <tr>
+        <td style="font-weight:600">${name}</td>
+        <td style="color:#f59e0b;font-weight:700">${data.qty}</td>
+        <td style="color:#22c55e;font-weight:700">$${data.revenue.toFixed(2)}</td>
+        <td>
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="flex:1;height:8px;background:#1a1a1a;border-radius:4px;overflow:hidden;min-width:60px">
+              <div style="height:100%;width:${totalRev>0?(data.revenue/totalRev*100).toFixed(1):0}%;background:#ff6b35;border-radius:4px"></div>
+            </div>
+            <span style="font-size:11px;color:#888;width:36px;text-align:right">${totalRev>0?(data.revenue/totalRev*100).toFixed(1):0}%</span>
+          </div>
+        </td>
+      </tr>`).join('');
+  }
 }
 
 function fmtPhone(p){return p&&p.length===10?`(${p.slice(0,3)}) ${p.slice(3,6)}-${p.slice(6)}`:p;}
