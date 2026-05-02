@@ -183,14 +183,7 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min
     </div>
 
     <!-- RATE THIS WORKER -->
-    <div class="rate-box" id="rate-box-wrap">
-      <div id="rate-locked" style="text-align:center;padding:24px 0;display:none">
-        <div style="font-size:32px;margin-bottom:10px">🔒</div>
-        <div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:700;margin-bottom:6px">Order First to Rate</div>
-        <div style="font-size:13px;color:var(--muted);margin-bottom:16px">You can only leave a rating after placing an order at The Buff.</div>
-        <a href="customer.html" style="display:inline-block;background:var(--orange);color:#fff;text-decoration:none;border-radius:10px;padding:10px 24px;font-size:14px;font-weight:700">Order Now →</a>
-      </div>
-      <div id="rate-form-inner">
+    <div class="rate-box">
       <div class="rate-box-title">✏️ Leave a Rating</div>
       <div class="star-picker" id="star-picker">
         <span class="sp-star" data-val="1" onclick="setRating(1)">⭐</span>
@@ -213,8 +206,7 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min
       <div class="rate-msg" id="rate-msg"></div>
     </div>
 
-      </div><!-- /rate-form-inner -->
-    </div><!-- /rate-box -->
+    </div>
 
     <!-- REVIEWS -->
     <div class="reviews-title" id="reviews-title">Reviews</div>
@@ -275,11 +267,10 @@ function mergeAndRender() {
   renderWorkers(getFilteredWorkers());
 }
 
-// Kitchen/admin staff (have login accounts)
-onValue(ref(db, 'users'), snap => {
-  const users = snap.val() || {};
-  staffWorkers = Object.entries(users)
-    .filter(([uid, u]) => u.role === 'kitchen' || u.role === 'admin')
+// Kitchen/admin staff — read from public mirror node written by admin
+onValue(ref(db, 'rmbStaffPublic'), snap => {
+  const data = snap.val() || {};
+  staffWorkers = Object.entries(data)
     .map(([uid, u]) => ({ uid, name: u.name || 'Unknown', role: u.role || 'kitchen' }));
   mergeAndRender();
 });
@@ -439,26 +430,6 @@ window.openWorker = function(w) {
   document.getElementById('rate-label').textContent = 'Tap a star to rate (1–10)';
   document.querySelectorAll('.sp-star').forEach(s => s.classList.remove('active'));
 
-  // Token gate — only show rating form if they've ordered
-  const locked = document.getElementById('rate-locked');
-  const inner  = document.getElementById('rate-form-inner');
-  try {
-    const token = JSON.parse(localStorage.getItem('rmbOrderToken') || 'null');
-    const valid = token && (Date.now() - token.ts < 1000 * 60 * 60 * 24 * 30); // 30 days
-    if (valid) {
-      locked.style.display = 'none';
-      inner.style.display  = 'block';
-      // Pre-fill name if we have it
-      const nameEl = document.getElementById('rate-name');
-      if (nameEl && token.name && !nameEl.value) nameEl.value = token.name;
-    } else {
-      locked.style.display = 'block';
-      inner.style.display  = 'none';
-    }
-  } catch(e) {
-    locked.style.display = 'block';
-    inner.style.display  = 'none';
-  }
 
   renderDetailHeader(w);
   renderReviews(w.uid);

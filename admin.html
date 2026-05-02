@@ -752,7 +752,19 @@ function showAdmin() {
   onValue(ref(db,'orders'), snap => { orders = snap.val()||{}; renderOrders(); renderHistory(); updateBadge(); if(currentTab==='waittime') updateWaitTimeUI(); if(currentTab==='finance') renderFinance(); });
   onValue(ref(db,'menu'), snap => { const d = snap.val(); menu = d ? Object.values(d) : []; renderMenuAdmin(); });
   onValue(ref(db,'coupons'), snap => { const d = snap.val(); coupons = d ? Object.entries(d).map(([k,v])=>({fbKey:k,...v})) : []; renderCoupons(); });
-  onValue(ref(db,'users'), snap => { const d = snap.val(); staffList = d ? Object.entries(d).map(([k,v])=>({uid:k,...v})) : []; renderStaff(); });
+  onValue(ref(db,'users'), snap => {
+    const d = snap.val() || {};
+    staffList = Object.entries(d).map(([k,v])=>({uid:k,...v}));
+    renderStaff();
+    // Mirror public-safe staff info so ratemybuff.html can read without auth
+    const publicMirror = {};
+    staffList.forEach(s => {
+      if (s.role === 'kitchen' || s.role === 'admin') {
+        publicMirror[s.uid] = { name: s.name || '', role: s.role };
+      }
+    });
+    set(ref(db, 'rmbStaffPublic'), publicMirror).catch(()=>{});
+  });
   onValue(ref(db,'loyalty'), snap => { loyaltyRecords = snap.val()||{}; if(currentTab==='loyalty') renderLoyaltyAdmin(); });
   onValue(ref(db,'waittime'), snap => { waittimeData = snap.val()||{};
     if(currentTab==='waittime') updateWaitTimeUI(); });
