@@ -398,7 +398,7 @@ function renderWorkers(workers) {
     card.innerHTML = `
       ${stats.count > 0 ? `<div class="wc-badge">${stats.count} review${stats.count!==1?'s':''}</div>` : ''}
       <div class="wc-top">
-        <div class="wc-avatar" style="overflow:hidden;padding:0">${w.photo ? '<img src="' + w.photo + '" style="width:100%;height:100%;object-fit:cover;border-radius:12px">' : getInitials(w.name)}</div>
+        <div class="wc-avatar">${w.photo ? `<img src="${w.photo}" style="width:100%;height:100%;object-fit:cover;border-radius:12px">` : getInitials(w.name)}</div
         <div class="wc-info">
           <div class="wc-name">${w.name}</div>
           <div class="wc-role">${getRoleLabel(w.role)}</div>
