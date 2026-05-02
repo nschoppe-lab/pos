@@ -605,7 +605,9 @@ function showAdmin() {
   onValue(ref(db,'coupons'), snap => { const d = snap.val(); coupons = d ? Object.entries(d).map(([k,v])=>({fbKey:k,...v})) : []; renderCoupons(); });
   onValue(ref(db,'users'), snap => { const d = snap.val(); staffList = d ? Object.entries(d).map(([k,v])=>({uid:k,...v})) : []; renderStaff(); });
   onValue(ref(db,'loyalty'), snap => { loyaltyRecords = snap.val()||{}; if(currentTab==='loyalty') renderLoyaltyAdmin(); });
-  onValue(ref(db,'waittime'), snap => { waittimeData = snap.val()||{}; if(currentTab==='waittime'){ updateWaitTimeUI(); renderHoursSchedule(); } });
+  onValue(ref(db,'waittime'), snap => { const wasEmpty = Object.keys(waittimeData).length === 0;
+    waittimeData = snap.val()||{};
+    if(currentTab==='waittime'){ updateWaitTimeUI(); if(wasEmpty) renderHoursSchedule(); } });
   onValue(ref(db,'branding'), snap => { brandingData = snap.val()||{}; applyBrandingToPage(brandingData); if(currentTab==='branding') initBranding(); });
 }
 
@@ -1018,10 +1020,10 @@ const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Satur
 
 function initWaitTime() {
   const url = window.location.href.replace('admin.html', 'waittime.html');
-  document.getElementById('waittime-url').textContent = url;
-  renderHoursSchedule();
+  const urlEl = document.getElementById('waittime-url');
+  if (urlEl) urlEl.textContent = url;
+  renderHoursSchedule(); // always fresh render when tab opens
   updateWaitTimeUI();
-  // Check every minute if we need to auto open/close
   setInterval(checkAutoOpenClose, 60000);
   checkAutoOpenClose();
 }
@@ -1182,11 +1184,18 @@ window.saveMinsPerOrder = async function() {
 }
 
 window.toggleClosed = async function() {
-  isClosed = !isClosed;
-  await update(ref(db,'waittime'), { closed: isClosed, manualOverride: true });
-  setTimeout(async () => {
-    await update(ref(db,'waittime'), { manualOverride: false });
-  }, 2 * 60 * 60 * 1000);
+  const nowClosed = waittimeData.closed === true;
+  const newClosed = !nowClosed;
+  waittimeData.closed = newClosed; // update local copy immediately
+  await update(ref(db,'waittime'), { closed: newClosed, manualOverride: true });
+  // Visual update immediately without waiting for Firebase round-trip
+  const toggle = document.getElementById('open-closed-toggle');
+  const knob   = document.getElementById('open-closed-knob');
+  const label  = document.getElementById('open-closed-label');
+  if (toggle) toggle.style.background = newClosed ? '#ef4444' : '#22c55e';
+  if (knob)   knob.style.left         = newClosed ? '2px' : '26px';
+  if (label)  { label.textContent = newClosed ? 'The Buff is Closed' : 'The Buff is Open'; label.style.color = newClosed ? '#ef4444' : '#22c55e'; }
+  setTimeout(async () => { await update(ref(db,'waittime'), { manualOverride: false }); }, 2 * 60 * 60 * 1000);
 }
 
 window.saveClosedMsg = async function() {

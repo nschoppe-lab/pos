@@ -128,30 +128,39 @@ function updateDisplay() {
 // Apply branding
 onValue(ref(db, 'branding'), snap => {
   const b = snap.val() || {};
-  if (b.bg)      document.body.style.background = b.bg;
-  if (b.primary) {
-    document.querySelector('.wait-time').style.color = b.primary;
-    document.querySelector('.logo').style.color = b.primary;
-    document.querySelector('.status-dot').style.background = b.primary;
-  }
-  if (b.text)    document.body.style.color = b.text;
-  if (b.nav) {
-    document.querySelectorAll('.stat, .message-box').forEach(el => {
-      el.style.background = b.nav;
-      el.style.borderColor = b.nav;
-    });
-  }
-  if (b.name) document.querySelector('.logo').textContent = '▶ ' + b.name;
-  if (b.tagline) document.querySelector('.subtitle').textContent = b.tagline || 'Live Order Status';
-  // Logo
+  const p = b.primary || '#ff6b35';
+  const bg = b.bg || '#111';
+  const n = b.nav || '#1e1e1e';
+  const t = b.text || '#fff';
+
+  // Inject a style tag to cover everything at once
+  let styleTag = document.getElementById('brand-styles');
+  if (!styleTag) { styleTag = document.createElement('style'); styleTag.id = 'brand-styles'; document.head.appendChild(styleTag); }
+  styleTag.textContent = `
+    body { background: ${bg} !important; color: ${t} !important; }
+    .wait-time { color: ${p} !important; }
+    .logo { color: ${p} !important; }
+    .status-dot { background: ${p} !important; }
+    .stat, .message-box { background: ${n} !important; border-color: ${n} !important; }
+    .open-pill { background: ${n} !important; }
+  `;
+
+  // Name and tagline
+  const logoEl = document.querySelector('.logo');
+  if (logoEl && b.name) logoEl.textContent = '▶ ' + b.name;
+  const subEl = document.querySelector('.subtitle');
+  if (subEl) subEl.textContent = b.tagline || 'Live Order Status';
+
+  // Logo image
   const existing = document.getElementById('brand-logo');
   if (b.logo) {
     if (!existing) {
       const img = document.createElement('img');
       img.id = 'brand-logo';
-      img.style.cssText = 'height:70px;border-radius:8px;margin-bottom:12px';
+      img.style.cssText = 'height:70px;border-radius:8px;margin-bottom:12px;object-fit:contain';
       img.src = b.logo;
-      document.querySelector('.logo').insertAdjacentElement('beforebegin', img);
+      const logoEl2 = document.querySelector('.logo');
+      if (logoEl2) logoEl2.insertAdjacentElement('beforebegin', img);
     } else { existing.src = b.logo; existing.style.display = 'block'; }
   } else if (existing) { existing.style.display = 'none'; }
 });
