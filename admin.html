@@ -260,6 +260,21 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
           <tbody id="staff-body"></tbody>
         </table>
       </div>
+      <div class="asec" style="border-color:#f59e0b44;background:#1f1a0e">
+        <div class="asec-title" style="color:#f59e0b">Staff Rewards</div>
+        <div style="font-size:12px;color:#888;margin-bottom:12px">
+          Add non-kitchen staff who earn a $5 credit every time they work for you.
+          Tap "Give $5" after each shift — the credit goes straight to their loyalty account
+          and applies automatically next time they order.
+        </div>
+        <div class="arow" style="margin-bottom:12px">
+          <input type="text" id="reward-staff-name" placeholder="Staff member name">
+          <input type="email" id="reward-staff-email" placeholder="Their email (used at ordering screen)">
+          <button class="aadd" onclick="addRewardStaff()" style="background:#f59e0b;color:#111">Add</button>
+        </div>
+        <div id="reward-staff-list"></div>
+      </div>
+
       <div class="asec" style="border-color:#7f1d1d">
         <div class="asec-title" style="color:#ef4444">Danger Zone</div>
         <button onclick="clearOrders()" style="background:#2a1010;border:1px solid #7f1d1d;color:#ef4444;border-radius:6px;padding:8px 16px;font-size:12px;font-weight:600;cursor:pointer">Clear All Order History</button>
@@ -606,7 +621,7 @@ emailjs.init("yoxsvEb1uuAA4Ytcd");
 const auth = getAuth(app);
 const db = getDatabase(app);
 
-let orders = {}, menu = [], coupons = [], staffList = [], loyaltyRecords = {}, waittimeData = {}, brandingData = {}, expensesData = {};
+let orders = {}, menu = [], coupons = [], staffList = [], loyaltyRecords = {}, waittimeData = {}, brandingData = {}, expensesData = {}, rewardStaffData = {};
 let tapTimers = {}, currentTab = 'orders';
 
 onAuthStateChanged(auth, async user => {
@@ -648,6 +663,7 @@ function showAdmin() {
     if(currentTab==='waittime') updateWaitTimeUI(); });
   onValue(ref(db,'branding'), snap => { brandingData = snap.val()||{}; applyBrandingToPage(brandingData); if(currentTab==='branding') initBranding(); });
   onValue(ref(db,'expenses'), snap => { expensesData = snap.val()||{}; if(currentTab==='finance') renderFinance(); });
+  onValue(ref(db,'rewardStaff'), snap => { rewardStaffData = snap.val()||{}; if(currentTab==='staff') renderRewardStaff(); });
 }
 
 window.switchTab = function(t) {
@@ -655,6 +671,7 @@ window.switchTab = function(t) {
   document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
   document.getElementById('tab-'+t).classList.add('active');
   document.querySelectorAll('.tb').forEach((b,i) => b.classList.toggle('active', ['orders','history','menu','coupons','staff','inventory','loyalty','waittime','finance','branding'][i]===t));
+  if (t==='staff') renderRewardStaff();
   if (t==='inventory') renderInventory();
   if (t==='loyalty') renderLoyaltyAdmin();
   if (t==='waittime') initWaitTime();
@@ -1552,6 +1569,90 @@ window.removeLogo = async function() {
   if (prevLogo) prevLogo.style.display = 'none';
   await update(ref(db,'branding'), { logo: '' });
   alert('Logo removed.');
+}
+
+
+// ── REWARD STAFF FUNCTIONS ───────────────────────────────────
+function emailToRewardKey(email) {
+  return email.toLowerCase().replace(/\./g, ',').replace(/@/g, '_at_');
+}
+
+window.addRewardStaff = async function() {
+  const name  = (document.getElementById('reward-staff-name')  || {}).value.trim();
+  const email = (document.getElementById('reward-staff-email') || {}).value.trim().toLowerCase();
+  if (!name || !email) { alert('Enter name and email'); return; }
+  if (!/^[^@]+@[^@]+\.[^@]+$/.test(email)) { alert('Enter a valid email address'); return; }
+  const key = emailToRewardKey(email);
+  // Check not already added
+  if (rewardStaffData[key]) { alert(`${name} is already in the list!`); return; }
+  await set(ref(db, `rewardStaff/${key}`), { name, email, addedAt: new Date().toLocaleDateString(), totalCreditsGiven: 0 });
+  document.getElementById('reward-staff-name').value  = '';
+  document.getElementById('reward-staff-email').value = '';
+}
+
+window.giveCredit = async function(key, name, email, currentTotal) {
+  const amount = 5; // $5 per shift
+  try {
+    // Add to loyalty account
+    const loyaltyKey = emailToRewardKey(email);
+    const snap = await get(ref(db, `loyalty/${loyaltyKey}`));
+    const current = snap.exists() ? snap.val() : { orderCount: 0, credits: 0 };
+    const newCredits = Math.round(((current.credits || 0) + amount) * 100) / 100;
+    await update(ref(db, `loyalty/${loyaltyKey}`), {
+      email, name,
+      credits: newCredits,
+      lastCreditAt: new Date().toISOString()
+    });
+    // Update total given counter
+    await update(ref(db, `rewardStaff/${key}`), {
+      totalCreditsGiven: (currentTotal || 0) + amount,
+      lastCreditAt: new Date().toLocaleDateString()
+    });
+    showModal(`<h3 style="color:#22c55e">✅ $5 Credit Given!</h3>
+      <p style="font-size:13px;color:#aaa;margin-top:4px"><strong style="color:#fff">${name}</strong> now has <strong style="color:#22c55e">$${newCredits.toFixed(2)}</strong> in loyalty credit.<br><br>
+      It will apply automatically next time they order at the customer screen.</p>
+      <div class="mbtns"><button class="mbtn ok" onclick="closeModal()">Done</button></div>`);
+  } catch(e) { alert('Error giving credit: ' + e.message); }
+}
+
+window.removeRewardStaff = async function(key, name) {
+  if (!confirm(`Remove ${name} from staff rewards?`)) return;
+  await remove(ref(db, `rewardStaff/${key}`));
+}
+
+function renderRewardStaff() {
+  const el = document.getElementById('reward-staff-list');
+  if (!el) return;
+  const entries = Object.entries(rewardStaffData);
+  if (!entries.length) {
+    el.innerHTML = '<div style="color:#555;font-size:12px;text-align:center;padding:14px">No reward staff added yet</div>';
+    return;
+  }
+  el.innerHTML = entries.map(([key, s]) => {
+    const loyaltyKey = emailToRewardKey(s.email);
+    const currentCredit = loyaltyRecords[loyaltyKey] ? (loyaltyRecords[loyaltyKey].credits || 0) : 0;
+    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #2a2a2a;flex-wrap:wrap;gap:8px">
+      <div>
+        <div style="font-size:13px;font-weight:600;color:#fff">${s.name}</div>
+        <div style="font-size:11px;color:#888;margin-top:2px">${s.email}</div>
+        <div style="font-size:11px;color:#555;margin-top:2px">
+          Total given: <span style="color:#f59e0b;font-weight:600">$${(s.totalCreditsGiven||0).toFixed(2)}</span>
+          &nbsp;|&nbsp; Current balance: <span style="color:#22c55e;font-weight:600">$${parseFloat(currentCredit).toFixed(2)}</span>
+          ${s.lastCreditAt ? `&nbsp;|&nbsp; Last credit: ${s.lastCreditAt}` : ''}
+        </div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button onclick="giveCredit('${key}','${s.name}','${s.email}',${s.totalCreditsGiven||0})"
+          style="background:#f59e0b;color:#111;border:none;border-radius:6px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap">
+          💰 Give $5 Credit
+        </button>
+        <button onclick="removeRewardStaff('${key}','${s.name}')"
+          style="background:#2a1010;border:1px solid #7f1d1d;color:#ef4444;border-radius:6px;padding:7px 12px;font-size:12px;cursor:pointer">
+          Remove
+        </button>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 function fmtPhone(p){return p&&p.length===10?`(${p.slice(0,3)}) ${p.slice(3,6)}-${p.slice(6)}`:p;}
