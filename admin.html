@@ -325,6 +325,14 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
       </div>
 
       <div class="asec">
+        <div class="asec-title">Weekly Hours Schedule</div>
+        <div style="font-size:12px;color:#888;margin-bottom:12px">Set your open hours for each day. The Buff will automatically open and close at these times. Leave a day blank to keep it closed all day.</div>
+        <div id="hours-schedule"></div>
+        <button class="aadd" onclick="saveHours()" style="margin-top:12px;width:100%">Save Hours Schedule</button>
+        <div style="font-size:11px;color:#555;margin-top:6px">Next auto-update: <span id="next-check" style="color:#888">checking...</span></div>
+      </div>
+
+      <div class="asec">
         <div class="asec-title">Auto Wait Time</div>
         <div style="background:#1a1a1a;border-radius:8px;padding:14px;margin-bottom:12px;border:1px solid #2a2a2a">
           <div style="font-size:12px;color:#888;margin-bottom:6px">Wait time is calculated automatically:</div>
@@ -444,7 +452,7 @@ function showAdmin() {
   onValue(ref(db,'coupons'), snap => { const d = snap.val(); coupons = d ? Object.entries(d).map(([k,v])=>({fbKey:k,...v})) : []; renderCoupons(); });
   onValue(ref(db,'users'), snap => { const d = snap.val(); staffList = d ? Object.entries(d).map(([k,v])=>({uid:k,...v})) : []; renderStaff(); });
   onValue(ref(db,'loyalty'), snap => { loyaltyRecords = snap.val()||{}; if(currentTab==='loyalty') renderLoyaltyAdmin(); });
-  onValue(ref(db,'waittime'), snap => { waittimeData = snap.val()||{}; if(currentTab==='waittime') updateWaitTimeUI(); });
+  onValue(ref(db,'waittime'), snap => { waittimeData = snap.val()||{}; if(currentTab==='waittime'){ updateWaitTimeUI(); renderHoursSchedule(); } });
 }
 
 window.switchTab = function(t) {
@@ -843,10 +851,121 @@ window.addLoyaltyCredit = async function() {
 
 var isClosed = false;
 
+const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+
 function initWaitTime() {
   const url = window.location.href.replace('admin.html', 'waittime.html');
   document.getElementById('waittime-url').textContent = url;
+  renderHoursSchedule();
   updateWaitTimeUI();
+  // Check every minute if we need to auto open/close
+  setInterval(checkAutoOpenClose, 60000);
+  checkAutoOpenClose();
+}
+
+function renderHoursSchedule() {
+  const el = document.getElementById('hours-schedule');
+  const hours = waittimeData.hours || {};
+  el.innerHTML = '';
+  DAYS.forEach(day => {
+    const h = hours[day] || {};
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #2a2a2a;flex-wrap:wrap';
+    row.innerHTML = `
+      <div style="font-size:12px;font-weight:700;color:#fff;width:90px;flex-shrink:0">${day}</div>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#888;cursor:pointer">
+        <input type="checkbox" id="hours-open-${day}" ${h.enabled ? 'checked' : ''} onchange="toggleDayEnabled('${day}')">
+        Open
+      </label>
+      <div id="hours-times-${day}" style="display:flex;align-items:center;gap:8px;${h.enabled ? '' : 'opacity:0.3;pointer-events:none'}">
+        <input type="time" id="hours-start-${day}" value="${h.open||'10:00'}" style="background:#1a1a1a;border:1px solid #444;border-radius:5px;padding:4px 8px;font-size:12px;color:#fff">
+        <span style="color:#555;font-size:12px">to</span>
+        <input type="time" id="hours-end-${day}" value="${h.close||'22:00'}" style="background:#1a1a1a;border:1px solid #444;border-radius:5px;padding:4px 8px;font-size:12px;color:#fff">
+      </div>
+      <div id="hours-status-${day}" style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;${getHoursBadgeStyle(day, h)}"></div>`;
+    el.appendChild(row);
+  });
+}
+
+function getHoursBadgeStyle(day, h) {
+  if (!h.enabled) return 'background:#2a2a2a;color:#555">Closed all day';
+  const now = new Date();
+  const todayName = DAYS[now.getDay()];
+  if (todayName !== day) return 'background:#1a1a1a;color:#555">Scheduled';
+  // Check if currently in window
+  const [sh, sm] = (h.open||'10:00').split(':').map(Number);
+  const [eh, em] = (h.close||'22:00').split(':').map(Number);
+  const nowMins = now.getHours()*60 + now.getMinutes();
+  const startMins = sh*60+sm, endMins = eh*60+em;
+  if (nowMins >= startMins && nowMins < endMins) {
+    return 'background:#052e16;color:#22c55e">Open Now';
+  }
+  return 'background:#2a1010;color:#ef4444">Closed Now';
+}
+
+window.toggleDayEnabled = function(day) {
+  const checked = document.getElementById(`hours-open-${day}`).checked;
+  const timesEl = document.getElementById(`hours-times-${day}`);
+  timesEl.style.opacity = checked ? '1' : '0.3';
+  timesEl.style.pointerEvents = checked ? 'auto' : 'none';
+}
+
+window.saveHours = async function() {
+  const hours = {};
+  DAYS.forEach(day => {
+    hours[day] = {
+      enabled: document.getElementById(`hours-open-${day}`).checked,
+      open: document.getElementById(`hours-start-${day}`).value,
+      close: document.getElementById(`hours-end-${day}`).value
+    };
+  });
+  await set(ref(db,'waittime'), {...waittimeData, hours});
+  alert('Hours saved! The Buff will auto open/close based on this schedule.');
+}
+
+function checkAutoOpenClose() {
+  const hours = waittimeData.hours || {};
+  const now = new Date();
+  const dayName = DAYS[now.getDay()];
+  const h = hours[dayName];
+  const nextEl = document.getElementById('next-check');
+
+  if (!h || !h.enabled) {
+    // Today is closed — make sure we show closed
+    if (!waittimeData.manualOverride) {
+      if (!waittimeData.closed) {
+        set(ref(db,'waittime'), {...waittimeData, closed: true}).catch(()=>{});
+      }
+    }
+    if (nextEl) nextEl.textContent = 'Closed today';
+    return;
+  }
+
+  const [sh, sm] = (h.open||'10:00').split(':').map(Number);
+  const [eh, em] = (h.close||'22:00').split(':').map(Number);
+  const nowMins = now.getHours()*60 + now.getMinutes();
+  const startMins = sh*60+sm, endMins = eh*60+em;
+  const shouldBeOpen = nowMins >= startMins && nowMins < endMins;
+
+  if (!waittimeData.manualOverride) {
+    if (shouldBeOpen && waittimeData.closed) {
+      set(ref(db,'waittime'), {...waittimeData, closed: false}).catch(()=>{});
+    } else if (!shouldBeOpen && !waittimeData.closed) {
+      set(ref(db,'waittime'), {...waittimeData, closed: true}).catch(()=>{});
+    }
+  }
+
+  if (nextEl) {
+    if (shouldBeOpen) {
+      const closeAt = `${String(eh).padStart(2,'0')}:${String(em).padStart(2,'0')}`;
+      nextEl.textContent = `Auto-closes at ${closeAt}`;
+    } else if (nowMins < startMins) {
+      const openAt = `${String(sh).padStart(2,'0')}:${String(sm).padStart(2,'0')}`;
+      nextEl.textContent = `Auto-opens at ${openAt}`;
+    } else {
+      nextEl.textContent = 'Closed for today';
+    }
+  }
 }
 
 function calcWaitTime() {
@@ -900,7 +1019,13 @@ window.saveMinsPerOrder = async function() {
 
 window.toggleClosed = async function() {
   isClosed = !isClosed;
-  await set(ref(db,'waittime'), {...waittimeData, closed: isClosed});
+  // manualOverride = true means the schedule won't fight this manual toggle
+  // It resets automatically at the next scheduled open/close transition
+  await set(ref(db,'waittime'), {...waittimeData, closed: isClosed, manualOverride: true});
+  // Clear override after 2 hours so schedule resumes
+  setTimeout(async () => {
+    await set(ref(db,'waittime'), {...waittimeData, manualOverride: false});
+  }, 2 * 60 * 60 * 1000);
 }
 
 window.saveClosedMsg = async function() {
