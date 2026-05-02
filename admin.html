@@ -1193,6 +1193,13 @@ function checkAutoOpenClose() {
 }
 
 
+window.deleteOrder = async function(key, name) {
+  if (!confirm('Delete order from ' + name + '? This cannot be undone.')) return;
+  try {
+    await remove(ref(db, 'orders/' + key));
+  } catch(e) { alert('Error deleting order: ' + e.message); }
+}
+
 window.renderFinance = function() {
   const range = document.getElementById('finance-range').value;
   const statusFilter = document.getElementById('finance-status').value;
