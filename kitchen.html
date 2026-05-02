@@ -35,6 +35,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 .oc:hover{border-color:#ff6b35}
 .oc.flash{border-color:#f59e0b}
 .oc.done{border-color:#22c55e;opacity:0.5}
+.oc.paid:not(.done){border-color:#22c55e;box-shadow:0 0 0 1px #22c55e44}
 .oc-hdr{padding:10px 14px;background:#252525;display:flex;justify-content:space-between;align-items:center}
 .oc-num{font-size:13px;font-weight:700;color:#ff6b35}
 .oc-name{font-size:13px;font-weight:600}
@@ -220,7 +221,7 @@ function renderOrders() {
   grid.innerHTML = '';
   all.forEach(order => {
     const card = document.createElement('div');
-    card.className = 'oc' + (order.status==='done' ? ' done' : '');
+    card.className = 'oc' + (order.status==='done' ? ' done' : '') + (order.paid ? ' paid' : '');
     card.dataset.key = order.fbKey;
     card.innerHTML = `
       <div class="oc-hdr">
@@ -236,6 +237,10 @@ function renderOrders() {
       </div>
       <div class="oc-foot">
         <span class="sbadge ${order.status==='done'?'done':'pending'}">${order.status==='done'?'Done':'In Progress'}</span>
+        <label onclick="event.stopPropagation()" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;${order.paid ? 'background:#052e16;color:#22c55e' : 'background:#1a1a1a;color:#555;border:1px solid #333'}">
+          <input type="checkbox" ${order.paid ? 'checked' : ''} onclick="event.stopPropagation()" onchange="togglePaid('${order.fbKey}', this.checked)" style="accent-color:#22c55e;width:14px;height:14px">
+          ${order.paid ? '✓ PAID' : 'Mark Paid'}
+        </label>
         <span class="tap-hint">${order.status==='done'?'Completed':'Double-tap to complete'}</span>
       </div>`;
     if (order.status !== 'done') {
@@ -281,6 +286,10 @@ async function sendOrderReadyEmail(order) {
     showModal(`<h3 style="color:#22c55e">&#10003; Order marked done!</h3><p style="font-size:12px;color:#aaa">Could not send email automatically. You can notify ${order.name} manually.</p><div class="mbtns"><button class="mbtn cancel" onclick="closeModal()">Close</button></div>`);
     console.error('EmailJS error:', e);
   }
+}
+
+window.togglePaid = async function(key, paid) {
+  await update(ref(db, `orders/${key}`), { paid });
 }
 
 window.showModal = function(html) { document.getElementById('modal-content').innerHTML=html; document.getElementById('modal').style.display='flex'; }

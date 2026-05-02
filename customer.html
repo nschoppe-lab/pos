@@ -106,6 +106,11 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 </div>
 
 <div class="topnav"><div class="brand">&#9654; Order Here</div></div>
+<!-- WAIT TIME BANNER -->
+<div id="wait-banner" style="display:none;background:#1f1a0e;border-bottom:1px solid #f59e0b44;padding:7px 16px;display:flex;align-items:center;gap:8px">
+  <span style="font-size:14px">⏱️</span>
+  <span id="wait-text" style="font-size:12px;color:#f59e0b;font-weight:600"></span>
+</div>
 <div class="content">
   <div class="menu-panel" id="menu-panel"><div class="loading">Loading menu...</div></div>
   <div class="cart-panel">
@@ -235,7 +240,8 @@ onValue(ref(db, 'coupons'), snap => {
   coupons = snap.val() ? Object.entries(snap.val()).map(([k,v]) => ({fbKey:k,...v})) : [];
 });
 
-// Listen to open/closed status
+// Listen to open/closed status + wait time
+let currentWaitTime = '';
 onValue(ref(db, 'waittime'), snap => {
   const d = snap.val() || {};
   const overlay = document.getElementById('closed-overlay');
@@ -244,6 +250,19 @@ onValue(ref(db, 'waittime'), snap => {
     const isClosed = d.closed === true;
     overlay.style.display = isClosed ? 'flex' : 'none';
     if (msgEl && d.closedMsg) msgEl.textContent = d.closedMsg;
+  }
+  // Wait time banner
+  const banner = document.getElementById('wait-banner');
+  const waitText = document.getElementById('wait-text');
+  if (banner && waitText) {
+    const msg = d.message || '';
+    currentWaitTime = msg;
+    if (msg && d.closed !== true) {
+      banner.style.display = 'flex';
+      waitText.textContent = 'Estimated wait: ' + msg;
+    } else {
+      banner.style.display = 'none';
+    }
   }
 });
 
@@ -567,18 +586,36 @@ window.placeOrder = async function() {
     subtotal: t.sub, discount: t.disc, loyaltyDiscount: t.loyDisc,
     loyaltyOrderNum: newOrderCount, total: t.total,
     coupon: appliedCoupon ? appliedCoupon.code : null,
+    waitTime: currentWaitTime || '',
     time: new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),
     date: new Date().toLocaleDateString(),
-    status: 'pending', createdAt: serverTimestamp()
+    status: 'pending', paid: false, createdAt: serverTimestamp()
   };
 
   try {
     await push(ref(db, 'orders'), order);
+    // Send confirmation email with wait time
+    if (email) {
+      try {
+        const itemsList = order.items.map(i => `${i.qty}x ${i.name}`).join(', ');
+        await emailjs.send('service_imhcg7n', 'template_l8uulwk', {
+          to_name: name,
+          to_email: email,
+          from_name: 'The Buff - Duncan Hall',
+          order_details: itemsList
+            + (comments ? '\nNote: ' + comments : '')
+            + (currentWaitTime ? '\n\nEstimated wait time: ' + currentWaitTime : '')
+            + '\nTotal: $' + t.total.toFixed(2),
+          reply_to: 'duncan@nd.edu'
+        });
+      } catch(emailErr) { console.warn('Confirmation email failed:', emailErr); }
+    }
     cart = []; appliedCoupon = null; loyaltyData = null; loyaltyDiscount = 0;
     ['cust-name','cust-email','cust-comments','disc-code'].forEach(id => document.getElementById(id).value = '');
     document.getElementById('disc-msg').className = 'disc-msg';
     hideLoyaltyBanner(); renderCart();
-    showToast(loyaltyMsg ? `Order placed!\n${loyaltyMsg}` : `Order placed! We'll email you at ${email} when it's ready.`, loyaltyMsg ? 6000 : 4000);
+    const waitMsg = currentWaitTime ? ` Estimated wait: ${currentWaitTime}.` : '';
+    showToast(loyaltyMsg ? `Order placed!${waitMsg}\n${loyaltyMsg}` : `Order placed!${waitMsg} We\'ll email you when it\'s ready.`, loyaltyMsg ? 6000 : 4000);
   } catch(e) { alert('Error placing order. Please try again.'); console.error(e); }
 }
 
