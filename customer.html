@@ -626,8 +626,10 @@ window.placeOrder = async function() {
 
   try {
     await push(ref(db, 'orders'), order);
+    // Mark single-use coupon as used in Firebase NOW
     if (appliedCoupon && appliedCoupon.singleUse && appliedCoupon.fbKey) {
-      await update(ref(db, 'coupons/' + appliedCoupon.fbKey), { used: true, usedAt: new Date().toISOString() });
+      try { await update(ref(db, 'coupons/' + appliedCoupon.fbKey), { used: true }); }
+      catch(e) { console.error('Failed to mark coupon used:', e); }
     }
 
     // Write order token so Rate My Buff knows this device placed an order
