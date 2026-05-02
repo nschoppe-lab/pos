@@ -638,11 +638,14 @@ window.placeOrder = async function() {
       localStorage.setItem('rmbOrderToken', JSON.stringify(token));
     } catch(e) {}
     cart = []; appliedCoupon = null; loyaltyData = null; loyaltyDiscount = 0;
-    ['cust-name','cust-email','cust-comments','disc-code'].forEach(id => document.getElementById(id).value = '');
-    document.getElementById('disc-msg').className = 'disc-msg';
+    ['cust-name','cust-email','cust-comments','disc-code'].forEach(function(id) {
+      var el = document.getElementById(id); if (el) el.value = '';
+    });
+    var discMsg = document.getElementById('disc-msg');
+    if (discMsg) discMsg.className = 'disc-msg';
     hideLoyaltyBanner(); renderCart();
-    const waitMsg = currentWaitTime ? ` Estimated wait: ${currentWaitTime}.` : '';
-    showToast(loyaltyMsg ? `Order placed!${waitMsg}\n${loyaltyMsg}` : `Order placed!${waitMsg} We\'ll email you when it\'s ready.`, loyaltyMsg ? 6000 : 4000);
+    var toastMsg = loyaltyMsg ? 'Order placed! ' + loyaltyMsg : "Order placed! We'll email you when it's ready.";
+    showToast(toastMsg, loyaltyMsg ? 6000 : 4000);
   } catch(e) { alert('Error placing order. Please try again.'); console.error(e); }
 }
 
