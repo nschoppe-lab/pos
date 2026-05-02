@@ -179,6 +179,7 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
 let menu = [], coupons = [], cart = [], appliedCoupon = null, activeBranding = {};
+let waittimeSnap = {}, openOrderCount = 0;
 let loyaltyData = null, loyaltyDiscount = 0;
 let custItem = null, custSelections = {};
 
@@ -237,32 +238,33 @@ onValue(ref(db, 'coupons'), snap => {
 
 // Listen to open/closed status + wait time
 let currentWaitTime = '';
-let waittimeSnap = {};
-
 function renderWaitBlock(panel) {
   // Remove existing wait block if any
-  const old = panel.querySelector('.wait-block');
-  if (old) old.remove();
+  const existing = panel.querySelector('.wait-block');
+  if (existing) existing.remove();
 
   const d = waittimeSnap;
   if (d.closed === true) return;
 
-  const wait = d.calculatedWait || '';
+  // Calculate wait time the same way waittime.html does
+  const minsPerOrder = d.minsPerOrder || 2;
+  const estimatedMins = openOrderCount * minsPerOrder;
+  const wait = openOrderCount === 0 ? '0 min — no wait!' : estimatedMins + ' min';
   const customMsg = d.message || '';
-  if (!wait && !customMsg) return;
+  if (openOrderCount === 0 && !customMsg) return; // hide block when no wait and no message
 
   const block = document.createElement('div');
   block.className = 'wait-block';
   block.style.cssText = 'margin-top:24px;padding:20px;background:#1f1a0e;border:1.5px solid #f59e0b55;border-radius:12px;text-align:center';
 
-  let html = '<div style="font-size:28px;margin-bottom:8px">⏱️</div>';
-  if (wait) {
-    html += '<div style="font-size:26px;font-weight:800;color:#f59e0b;margin-bottom:4px">' + wait + '</div>';
-    html += '<div style="font-size:13px;color:#888;margin-bottom:' + (customMsg ? '10px' : '0') + '">estimated wait time</div>';
+  let html = '<div style="font-size:13px;font-weight:700;color:#f59e0b;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">⏱️ Estimated Wait Time</div>';
+  if (openOrderCount === 0) {
+    html += '<div style="font-size:22px;font-weight:800;color:#22c55e;margin-bottom:4px">No wait — order now!</div>';
+  } else {
+    html += '<div style="font-size:32px;font-weight:800;color:#f59e0b;margin-bottom:4px">' + estimatedMins + ' min</div>';
+    html += '<div style="font-size:12px;color:#888;margin-bottom:4px">' + openOrderCount + ' order' + (openOrderCount!==1?'s':'') + ' ahead • ' + minsPerOrder + ' min each</div>';
   }
-  if (customMsg) {
-    html += '<div style="font-size:13px;color:#ccc;font-style:italic">' + customMsg + '</div>';
-  }
+  if (customMsg) html += '<div style="font-size:13px;color:#ccc;margin-top:6px;font-style:italic">' + customMsg + '</div>';
   block.innerHTML = html;
   panel.appendChild(block);
 }
@@ -280,6 +282,14 @@ onValue(ref(db, 'waittime'), snap => {
   // Update wait time used in email
   currentWaitTime = d.calculatedWait || '';
   // Re-render wait block on menu panel
+  const panel = document.getElementById('menu-panel');
+  if (panel) renderWaitBlock(panel);
+});
+
+// Listen to orders for live wait time on customer screen
+onValue(ref(db, 'orders'), snap => {
+  const data = snap.val() || {};
+  openOrderCount = Object.values(data).filter(o => o.status === 'pending').length;
   const panel = document.getElementById('menu-panel');
   if (panel) renderWaitBlock(panel);
 });
