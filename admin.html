@@ -721,13 +721,20 @@ let tapTimers = {}, currentTab = 'orders';
 
 onAuthStateChanged(auth, async user => {
   if (user) {
-    const snap = await get(ref(db, `users/${user.uid}/role`));
-    const role = snap.val();
-    if (role === 'admin') {
-      showAdmin();
-    } else {
-      await signOut(auth);
-      showLoginErr('Admin access only.');
+    try {
+      const snap = await get(ref(db, `users/${user.uid}`));
+      const userData = snap.val() || {};
+      const role = userData.role;
+      console.log('Auth UID:', user.uid, '| Role:', role, '| Data:', userData);
+      if (role === 'admin') {
+        showAdmin();
+      } else {
+        await signOut(auth);
+        showLoginErr('Access denied. UID: ' + user.uid + ' | Role found: ' + (role || 'NONE') + '. Make sure role=admin exists in Firebase under users/' + user.uid);
+      }
+    } catch(e) {
+      console.error('Auth error:', e);
+      showLoginErr('Firebase error: ' + e.message);
     }
   } else {
     document.getElementById('login-wrap').style.display = 'flex';
