@@ -371,17 +371,41 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
         <div class="asec-title">Auto Wait Time</div>
         <div style="background:#1a1a1a;border-radius:8px;padding:14px;margin-bottom:12px;border:1px solid #2a2a2a">
           <div style="font-size:12px;color:#888;margin-bottom:6px">Wait time is calculated automatically:</div>
-          <div style="font-size:14px;color:#fff;font-weight:600">Open Orders × Minutes Per Order = Wait Time</div>
+          <div style="font-size:13px;color:#fff;font-weight:600">Open Orders × Time Per Order = Wait Time</div>
+          <div style="font-size:11px;color:#666;margin-top:4px">If a staff member with a speed rating is clocked in, their rating overrides the default.</div>
           <div style="font-size:22px;font-weight:800;color:#ff6b35;margin-top:8px" id="current-wait-display">Calculating...</div>
         </div>
-        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
-          <label style="font-size:12px;color:#888;white-space:nowrap">Minutes per order:</label>
-          <input type="number" id="mins-per-order-input" placeholder="2" min="1" max="30" value="2" style="width:80px;background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:7px 9px;font-size:13px;color:#fff;font-weight:700">
-          <button class="aadd" onclick="saveMinsPerOrder()">Save</button>
-        </div>
-        <div style="font-size:11px;color:#555">Currently using <span id="mins-per-order-display" style="color:#ff6b35;font-weight:700">2</span> min per order</div>
-      </div>
 
+        <div style="margin-bottom:14px">
+          <label style="font-size:11px;color:#888;font-weight:600;display:block;margin-bottom:6px">Default time per order (when no staff rating applies):</label>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <select id="mins-per-order-input" style="background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:7px 9px;font-size:13px;color:#fff;font-weight:700;min-width:160px">
+              <option value="0.25">15 seconds</option>
+              <option value="0.5">30 seconds</option>
+              <option value="0.75">45 seconds</option>
+              <option value="1">1 minute</option>
+              <option value="1.25">1 min 15 sec</option>
+              <option value="1.5">1 min 30 sec</option>
+              <option value="1.75">1 min 45 sec</option>
+              <option value="2" selected>2 minutes</option>
+              <option value="2.5">2 min 30 sec</option>
+              <option value="3">3 minutes</option>
+              <option value="3.5">3 min 30 sec</option>
+              <option value="4">4 minutes</option>
+              <option value="5">5 minutes</option>
+              <option value="7">7 minutes</option>
+              <option value="10">10 minutes</option>
+            </select>
+            <button class="aadd" onclick="saveMinsPerOrder()">Set Default</button>
+          </div>
+          <div style="margin-top:6px;font-size:11px;color:#555">Current default: <span id="mins-per-order-display" style="color:#ff6b35;font-weight:700">2 min</span></div>
+        </div>
+
+        <div>
+          <label style="font-size:11px;color:#888;font-weight:600;display:block;margin-bottom:8px">Staff Speed Ratings (overrides default when clocked in):</label>
+          <div id="staff-speed-list"></div>
+        </div>
+      </div>
       <div class="asec">
         <div class="asec-title">Custom Message</div>
         <div style="display:flex;gap:8px;margin-bottom:8px">
@@ -823,11 +847,7 @@ function handleTap(key,order) {
 
 async function markDone(key,order) {
   await update(ref(db,`orders/${key}`),{status:'done'});
-  // Only send email if it hasn't been sent already
-  if(order.email && !order.emailSent) {
-    await update(ref(db,`orders/${key}`),{emailSent:true});
-    sendOrderReadyEmail(order);
-  }
+  if(order.email) sendOrderReadyEmail(order);
 }
 
 async function sendOrderReadyEmail(order) {
@@ -1284,21 +1304,48 @@ function updateWaitTimeUI() {
   if (knob) knob.style.left       = closed ? '2px' : '26px';
   if (lbl)  { lbl.textContent = closed ? 'The Buff is Closed' : 'The Buff is Open'; lbl.style.color = closed ? '#ef4444' : '#22c55e'; }
 
-  // Wait time
-  const openOrders  = Object.values(orders).filter(o => o.status === 'pending').length;
-  const minsPerOrder = parseInt(d.minsPerOrder) || 2;
-  const totalMins   = openOrders * minsPerOrder;
+  // Wait time - check for clocked-in staff with speed ratings
+  const openOrders = Object.values(orders).filter(o => o.status === 'pending').length;
+  const defaultMpo = parseFloat(d.minsPerOrder) || 2;
+
+  // Find clocked-in staff with speed rating
+  const clockedIn = staffList.filter(s => s.online === true && (s.role==='kitchen'||s.role==='admin'));
+  let effectiveMpo = defaultMpo;
+  let speedNote = '';
+  if (clockedIn.length > 0) {
+    const rated = clockedIn.filter(s => s.speedRating && s.speedRating > 0);
+    if (rated.length > 0) {
+      // Average speed rating of all clocked-in rated staff
+      effectiveMpo = rated.reduce((sum,s) => sum + parseFloat(s.speedRating), 0) / rated.length;
+      speedNote = ' (based on ' + rated.map(s=>s.name).join(', ') + ')';
+    }
+  }
+
+  const totalSecs = Math.round(openOrders * effectiveMpo * 60);
   const waitEl = document.getElementById('current-wait-display');
-  if (waitEl) waitEl.textContent = totalMins === 0 ? 'No wait — order now!' : totalMins + ' min estimated';
+  if (waitEl) {
+    if (openOrders === 0) {
+      waitEl.textContent = 'No wait — order now!';
+    } else {
+      waitEl.textContent = formatWaitTime(totalSecs) + ' estimated' + speedNote;
+    }
+  }
+
+  // Update dropdown to reflect saved default
+  const mpoInput = document.getElementById('mins-per-order-input');
+  if (mpoInput) mpoInput.value = defaultMpo;
+  const mpoDisp = document.getElementById('mins-per-order-display');
+  if (mpoDisp) mpoDisp.textContent = formatMinsLabel(defaultMpo);
+
+  // Push effective mpo to Firebase so other screens use the right speed
+  update(ref(db,'waittime'), { activeStaffMpo: effectiveMpo }).catch(()=>{});
+
+  // Render staff speed list
+  renderStaffSpeedList();
   // Write calculated wait time back to Firebase so customer screen can read it
   const waitStr = totalMins === 0 ? '' : totalMins + ' min';
   update(ref(db, 'waittime'), { calculatedWait: waitStr }).catch(() => {});
 
-  // Mins per order input
-  const mpoEl = document.getElementById('mins-per-order-input');
-  const mpoDisp = document.getElementById('mins-per-order-display');
-  if (mpoEl && document.activeElement !== mpoEl) mpoEl.value = minsPerOrder;
-  if (mpoDisp) mpoDisp.textContent = minsPerOrder;
 
   // Custom message
   const msgDisp = document.getElementById('current-msg-display');
@@ -1400,9 +1447,62 @@ window.saveClosedMsg = async function() {
 }
 
 window.saveMinsPerOrder = async function() {
-  const val = parseInt((document.getElementById('mins-per-order-input') || {}).value) || 2;
+  const val = parseFloat((document.getElementById('mins-per-order-input') || {}).value) || 2;
   await update(ref(db, 'waittime'), { minsPerOrder: val });
-  alert('✅ Updated to ' + val + ' min/order. Customer screen updates automatically.');
+  alert('✅ Default set to ' + formatMinsLabel(val) + '/order.');
+}
+
+function formatMinsLabel(val) {
+  if (val < 1) return Math.round(val * 60) + ' sec';
+  const mins = Math.floor(val);
+  const secs = Math.round((val - mins) * 60);
+  return secs === 0 ? mins + ' min' : mins + ' min ' + secs + ' sec';
+}
+
+function formatWaitTime(totalSecs) {
+  if (totalSecs < 60) return totalSecs + ' sec';
+  const mins = Math.floor(totalSecs / 60);
+  const secs = totalSecs % 60;
+  return secs === 0 ? mins + ' min' : mins + ' min ' + secs + ' sec';
+}
+
+function renderStaffSpeedList() {
+  const el = document.getElementById('staff-speed-list');
+  if (!el) return;
+  const kitchen = staffList.filter(s => s.role === 'kitchen' || s.role === 'admin');
+  if (!kitchen.length) {
+    el.innerHTML = '<div style="font-size:12px;color:#555;padding:8px 0">No staff yet — add them in the Staff tab.</div>';
+    return;
+  }
+  const opts = [0.25,0.5,0.75,1,1.25,1.5,1.75,2,2.5,3,3.5,4,5,7,10];
+  el.innerHTML = kitchen.map(s => {
+    const isOnline = s.online === true;
+    const speed = s.speedRating != null ? parseFloat(s.speedRating) : '';
+    const optHTML = '<option value="">Use default</option>'
+      + opts.map(v => '<option value="'+v+'"'+(speed===v?' selected':'')+'>'
+        + (v<1 ? Math.round(v*60)+' sec' : (Math.floor(v)+(v%1 ? ' min '+Math.round((v%1)*60)+' sec' : ' min')))
+        + '</option>').join('');
+    return '<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #2a2a2a;flex-wrap:wrap">'
+      + '<div style="flex:1;min-width:120px">'
+        + '<div style="font-size:13px;font-weight:600;color:'+(isOnline?'#fff':'#777')+'">'+(s.name||s.email||'—')+'</div>'
+        + (isOnline ? '<div style="font-size:10px;color:#22c55e;margin-top:2px">🟢 Clocked in — speed rating active</div>'
+                    : '<div style="font-size:10px;color:#555;margin-top:2px">Offline</div>')
+      + '</div>'
+      + '<div style="display:flex;align-items:center;gap:6px">'
+        + '<label style="font-size:11px;color:#888;white-space:nowrap">Time/order:</label>'
+        + '<select onchange="saveStaffSpeed(''+s.uid+'', this.value)" style="background:#1a1a1a;border:1px solid #444;border-radius:5px;padding:5px 8px;font-size:12px;color:#fff">'
+        + optHTML + '</select>'
+      + '</div>'
+      + '</div>';
+  }).join('');
+}
+
+window.saveStaffSpeed = async function(uid, val) {
+  const speed = val === '' ? null : parseFloat(val);
+  try {
+    await update(ref(db, 'users/' + uid), { speedRating: speed });
+    if (currentTab === 'waittime') updateWaitTimeUI();
+  } catch(e) { alert('Error: ' + e.message); }
 }
 
 window.saveCustomMsg = async function() {

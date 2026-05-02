@@ -240,14 +240,23 @@ let currentWaitTime = '';
 let waittimeSnap = {};
 
 function renderWaitBlock(panel) {
-  // Remove existing wait block if any
-  const old = panel.querySelector('.wait-block');
-  if (old) old.remove();
+  const existing = panel.querySelector('.wait-block');
+  if (existing) existing.remove();
 
   const d = waittimeSnap;
   if (d.closed === true) return;
 
-  const wait = d.calculatedWait || '';
+  // Calculate using effective mpo (staff speed or default)
+  const minsPerOrder = parseFloat(d.activeStaffMpo || d.minsPerOrder || 2);
+  const totalSecs = Math.round(openOrderCount * minsPerOrder * 60);
+  let wait = '';
+  if (openOrderCount > 0) {
+    if (totalSecs < 60) wait = totalSecs + ' sec';
+    else {
+      const mins = Math.floor(totalSecs/60), secs = totalSecs%60;
+      wait = mins + (secs>0 ? ' min '+secs+' sec' : ' min');
+    }
+  }
   const customMsg = d.message || '';
   if (!wait && !customMsg) return;
 
@@ -615,12 +624,21 @@ window.placeOrder = async function() {
 
   try {
     await push(ref(db, 'orders'), order);
-    // Mark single-use coupon as used
-    if (appliedCoupon && appliedCoupon.singleUse && appliedCoupon.fbKey) {
-      await update(ref(db, 'coupons/' + appliedCoupon.fbKey), { used: true });
-    }
     // Send confirmation email with wait time
     if (email) {
+      try {
+        const itemsList = order.items.map(i => `${i.qty}x ${i.name}`).join(', ');
+        await emailjs.send('service_imhcg7n', 'template_l8uulwk', {
+          to_name: name,
+          to_email: email,
+          from_name: 'The Buff - Duncan Hall',
+          order_details: itemsList
+            + (comments ? '\nNote: ' + comments : '')
+            + (currentWaitTime ? '\n\nEstimated wait time: ' + currentWaitTime : '')
+            + '\nTotal: $' + t.total.toFixed(2),
+          reply_to: 'duncan@nd.edu'
+        });
+      } catch(emailErr) { console.warn('Confirmation email failed:', emailErr); }
     }
     // Write order token so Rate My Buff knows this device placed an order
     try {

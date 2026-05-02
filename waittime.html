@@ -97,19 +97,29 @@ function updateDisplay() {
   document.getElementById('closed-overlay').className = 'closed-overlay' + (closed ? ' show' : '');
   if (data.closedMsg) document.getElementById('closed-msg').textContent = data.closedMsg;
 
-  // Calculate wait time directly from open orders × minsPerOrder
-  const minsPerOrder = data.minsPerOrder || 2;
-  const estimatedMins = openOrderCount * minsPerOrder;
+  // Calculate wait using staff speed ratings if any are clocked in
+  const defaultMpo = parseFloat(data.minsPerOrder) || 2;
+  const staffPublic = data.staffSpeeds || {};
+  // Use average speed of clocked-in rated staff, or default
+  let effectiveMpo = defaultMpo;
+  if (data.activeStaffMpo) effectiveMpo = parseFloat(data.activeStaffMpo);
 
+  const totalSecs = Math.round(openOrderCount * effectiveMpo * 60);
   const wtEl = document.getElementById('wait-time');
   const wuEl = document.getElementById('wait-unit');
   if (openOrderCount === 0) {
     wtEl.textContent = '0';
     wuEl.textContent = 'No wait — order now!';
     wtEl.style.color = '#22c55e';
+  } else if (totalSecs < 60) {
+    wtEl.textContent = totalSecs;
+    wuEl.textContent = 'seconds';
+    wtEl.style.color = '#ff6b35';
   } else {
-    wtEl.textContent = estimatedMins;
-    wuEl.textContent = estimatedMins === 1 ? 'minute' : 'minutes';
+    const mins = Math.floor(totalSecs / 60);
+    const secs = totalSecs % 60;
+    wtEl.textContent = mins;
+    wuEl.textContent = secs > 0 ? 'min ' + secs + ' sec' : (mins === 1 ? 'minute' : 'minutes');
     wtEl.style.color = '#ff6b35';
   }
 
