@@ -242,16 +242,14 @@ let waittimeSnap = {};
 function renderWaitBlock(panel) {
   var existing = panel.querySelector('.wait-block');
   if (existing) existing.remove();
-
   var d = waittimeSnap;
   if (d.closed === true) return;
-
   var minsPerOrder = parseFloat(d.activeStaffMpo || d.minsPerOrder || 2);
   var totalSecs = Math.round(openOrderCount * minsPerOrder * 60);
   var waitLabel = '';
   if (openOrderCount > 0) {
     if (totalSecs < 60) { waitLabel = totalSecs + ' sec'; }
-    else { var m = Math.floor(totalSecs/60), s = totalSecs%60; waitLabel = m + (s > 0 ? ' min '+s+' sec' : ' min'); }
+    else { var m = Math.floor(totalSecs/60), s = totalSecs%60; waitLabel = m + (s>0?' min '+s+' sec':' min'); }
   }
   var customMsg = d.message || '';
   if (!waitLabel && !customMsg) return;
@@ -265,7 +263,7 @@ function renderWaitBlock(panel) {
     html += '<div style="font-size:22px;font-weight:800;color:#22c55e">No wait — order now!</div>';
   } else {
     html += '<div style="font-size:32px;font-weight:800;color:#f59e0b">' + waitLabel + '</div>';
-    html += '<div style="font-size:12px;color:#888;margin-top:4px">' + openOrderCount + ' order' + (openOrderCount !== 1 ? 's' : '') + ' ahead</div>';
+    html += '<div style="font-size:12px;color:#888;margin-top:4px">' + openOrderCount + ' order' + (openOrderCount!==1?'s':'') + ' ahead</div>';
   }
   if (customMsg) html += '<div style="font-size:13px;color:#ccc;margin-top:8px;font-style:italic">' + customMsg + '</div>';
   block.innerHTML = html;
@@ -289,7 +287,7 @@ onValue(ref(db, 'waittime'), snap => {
   if (panel) renderWaitBlock(panel);
 });
 
-// Track open orders for wait time calculation
+// Track open orders for wait time
 onValue(ref(db, 'orders'), snap => {
   const data = snap.val() || {};
   openOrderCount = Object.values(data).filter(function(o){ return o.status === 'pending'; }).length;
@@ -628,26 +626,10 @@ window.placeOrder = async function() {
 
   try {
     await push(ref(db, 'orders'), order);
-    // Mark single-use coupon as used immediately
     if (appliedCoupon && appliedCoupon.singleUse && appliedCoupon.fbKey) {
       await update(ref(db, 'coupons/' + appliedCoupon.fbKey), { used: true, usedAt: new Date().toISOString() });
     }
-    // Send confirmation email with wait time
-    if (email) {
-      try {
-        const itemsList = order.items.map(i => `${i.qty}x ${i.name}`).join(', ');
-        await emailjs.send('service_imhcg7n', 'template_l8uulwk', {
-          to_name: name,
-          to_email: email,
-          from_name: 'The Buff - Duncan Hall',
-          order_details: itemsList
-            + (comments ? '\nNote: ' + comments : '')
-            + (currentWaitTime ? '\n\nEstimated wait time: ' + currentWaitTime : '')
-            + '\nTotal: $' + t.total.toFixed(2),
-          reply_to: 'duncan@nd.edu'
-        });
-      } catch(emailErr) { console.warn('Confirmation email failed:', emailErr); }
-    }
+
     // Write order token so Rate My Buff knows this device placed an order
     try {
       const token = { name, email, ts: Date.now() };
