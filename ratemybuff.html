@@ -240,21 +240,42 @@ let selectedRating = 0;
 
 const STAR_LABELS = ['','Terrible 😬','Bad 😕','Poor 😐','Okay 🙁','Average 😑','Not Bad 🙂','Good 👍','Great 😄','Excellent 🔥','PERFECT!! 🤩'];
 
-// ── Load workers from Firebase users ──
+// ── Merge workers from both sources ──
+let staffWorkers = [];
+let rmbExtraWorkers = [];
+
+function mergeAndRender() {
+  const seen = new Set();
+  allWorkers = [];
+  [...staffWorkers, ...rmbExtraWorkers].forEach(w => {
+    if (!seen.has(w.uid)) { seen.add(w.uid); allWorkers.push(w); }
+  });
+  allWorkers.sort((a,b) => a.name.localeCompare(b.name));
+  renderWorkers(getFilteredWorkers());
+}
+
+// Kitchen/admin staff (have login accounts)
 onValue(ref(db, 'users'), snap => {
   const users = snap.val() || {};
-  allWorkers = Object.entries(users)
+  staffWorkers = Object.entries(users)
     .filter(([uid, u]) => u.role === 'kitchen' || u.role === 'admin')
-    .map(([uid, u]) => ({ uid, name: u.name || 'Unknown', role: u.role || 'kitchen' }))
-    .sort((a,b) => a.name.localeCompare(b.name));
-  renderWorkers(allWorkers);
+    .map(([uid, u]) => ({ uid, name: u.name || 'Unknown', role: u.role || 'kitchen' }));
+  mergeAndRender();
+});
+
+// Manually added workers (no login account)
+onValue(ref(db, 'rmbWorkers'), snap => {
+  const data = snap.val() || {};
+  rmbExtraWorkers = Object.entries(data)
+    .map(([key, w]) => ({ uid: key, name: w.name || 'Unknown', role: w.role || 'kitchen' }));
+  mergeAndRender();
 });
 
 // ── Load all reviews ──
 onValue(ref(db, 'ratings'), snap => {
   allReviews = snap.val() || {};
   if (currentWorker) renderReviews(currentWorker.uid);
-  if (allWorkers.length) renderWorkers(getFilteredWorkers());
+  mergeAndRender();
 });
 
 function getFilteredWorkers() {
