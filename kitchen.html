@@ -283,7 +283,12 @@ async function sendOrderReadyEmail(order) {
     });
     showModal(`<h3 style="color:#22c55e">&#10003; Order done!</h3><p style="font-size:13px;color:#aaa">Email sent to <strong style="color:#fff">${order.name}</strong> at ${order.email}</p><div class="mbtns"><button class="mbtn cancel" onclick="closeModal()">Close</button></div>`);
   } catch(e) {
-    showModal(`<h3 style="color:#22c55e">&#10003; Order marked done!</h3><p style="font-size:12px;color:#aaa">Could not send email automatically. You can notify ${order.name} manually.</p><div class="mbtns"><button class="mbtn cancel" onclick="closeModal()">Close</button></div>`);
+    const errMsg = e && e.text ? e.text : (e && e.message ? e.message : JSON.stringify(e));
+    showModal('<h3 style="color:#f59e0b">&#10003; Order done — email failed</h3>'
+      + '<p style="font-size:12px;color:#aaa;margin-bottom:8px">Could not send email to ' + order.email + '</p>'
+      + '<div style="background:#1a1a1a;border-radius:6px;padding:8px;font-size:11px;color:#ef4444;word-break:break-all;margin-bottom:10px">' + errMsg + '</div>'
+      + '<p style="font-size:11px;color:#666">Check: EmailJS service ID, template ID, and that your EmailJS account is active.</p>'
+      + '<div class="mbtns"><button class="mbtn cancel" onclick="closeModal()">Close</button></div>');
     console.error('EmailJS error:', e);
   }
 }
