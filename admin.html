@@ -2028,8 +2028,8 @@ window.renderRmbAdmin = function() {
           <div style="font-size:10px;color:#555">review${count!==1?'s':''}</div>
         </div>
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-          ${count > 0 ? `<button onclick="viewRmbReviews('${w.uid}','${w.name.replace(/'/g,"\\'")}',${count})" style="background:#1a2a3a;border:1px solid #2e75b644;color:#60a5fa;border-radius:6px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer">View Reviews</button>` : '<span style="font-size:11px;color:#555">No reviews yet</span>'}
-          ${w.source==='manual' ? `<button onclick="removeRmbWorker('${w.fbKey}','${w.name.replace(/'/g,"\\'")}','${w.uid}')" style="background:#2a1010;border:1px solid #7f1d1d;color:#ef4444;border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer">Remove</button>` : ''}
+          ${count > 0 ? '<button onclick="viewRmbReviews(\'' + w.uid + '\',\'' + w.name.replace(/\'/g,"\\'") + '\',' + count + ')" style="background:#1a2a3a;border:1px solid #2e75b644;color:#60a5fa;border-radius:6px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer">View Reviews</button>' : '<span style="font-size:11px;color:#555">No reviews yet</span>'}
+          ${w.source==='manual' ? '<button onclick="removeRmbWorker(\'' + w.fbKey + '\',\'' + w.name.replace(/\'/g,"\\'") + '\',\'' + w.uid + '\')" style="background:#2a1010;border:1px solid #7f1d1d;color:#ef4444;border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer">Remove</button>' : ''}
         </div>
       </div>`;
     el.appendChild(row);
@@ -2179,7 +2179,7 @@ window.editExpense = function(key) {
     + '</div>'
     + '<div class="mbtns">'
       + '<button class="mbtn cancel" onclick="closeModal()">Cancel</button>'
-      + `<button class="mbtn ok" onclick="saveEditedExpense('${key}')">Save</button>`
+      + '<button class="mbtn ok" onclick="saveEditedExpense(\'' + key + '\')">Save</button>'
     + '</div>'
   );
 }
