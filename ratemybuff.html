@@ -57,7 +57,7 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min
 .worker-card{background:var(--surface);border:1.5px solid var(--border);border-radius:16px;overflow:hidden;cursor:pointer;transition:all 0.18s;position:relative}
 .worker-card:hover{border-color:var(--orange);transform:translateY(-2px);box-shadow:0 8px 32px #ff6b3520}
 .wc-top{padding:20px 20px 14px;display:flex;align-items:flex-start;gap:14px}
-.wc-avatar{width:52px;height:52px;border-radius:12px;background:linear-gradient(135deg,var(--orange),#e55a2b);display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-size:20px;font-weight:800;color:#fff;flex-shrink:0}
+.wc-avatar{width:52px;height:52px;border-radius:12px;overflow:hidden;background:linear-gradient(135deg,var(--orange),#e55a2b);display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-size:20px;font-weight:800;color:#fff;flex-shrink:0}
 .wc-info{flex:1;min-width:0}
 .wc-name{font-family:'Syne',sans-serif;font-size:16px;font-weight:700;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .wc-role{font-size:11px;color:var(--muted);font-weight:500;text-transform:uppercase;letter-spacing:0.5px}
@@ -183,11 +183,6 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min
     </div>
 
     <!-- RATE THIS WORKER -->
-    <div class="reviews-title" id="reviews-title">Reviews</div>
-    <div id="reviews-list">
-      <div class="no-reviews">No reviews yet — be the first!</div>
-    </div>
-
     <div class="rate-box">
       <div class="rate-box-title">✏️ Leave a Rating</div>
       <div class="star-picker" id="star-picker">
@@ -214,7 +209,10 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min
     </div>
 
     <!-- REVIEWS -->
-
+    <div class="reviews-title" id="reviews-title">Reviews</div>
+    <div id="reviews-list">
+      <div class="no-reviews">No reviews yet — be the first!</div>
+    </div>
   </div>
 </div>
 
@@ -398,7 +396,7 @@ function renderWorkers(workers) {
     card.innerHTML = `
       ${stats.count > 0 ? `<div class="wc-badge">${stats.count} review${stats.count!==1?'s':''}</div>` : ''}
       <div class="wc-top">
-        <div class="wc-avatar">${w.photo ? `<img src="${w.photo}" style="width:100%;height:100%;object-fit:cover;border-radius:12px">` : getInitials(w.name)}</div
+        <div class="wc-avatar">${w.photo ? `<img src="${w.photo}" style="width:100%;height:100%;object-fit:cover;display:block">` : getInitials(w.name)}</div>
         <div class="wc-info">
           <div class="wc-name">${w.name}</div>
           <div class="wc-role">${getRoleLabel(w.role)}</div>
@@ -471,7 +469,7 @@ function renderDetailHeader(w) {
   distHTML += '</div>';
 
   hdr.innerHTML = `
-    <div class="detail-avatar" style="overflow:hidden;padding:0">${w.photo ? '<img src="' + w.photo + '" style="width:100%;height:100%;object-fit:cover;border-radius:16px">' : getInitials(w.name)}</div>
+    <div class="detail-avatar" style="overflow:hidden">${w.photo ? `<img src="${w.photo}" style="width:100%;height:100%;object-fit:cover;border-radius:16px;display:block">` : getInitials(w.name)}</div>
     <div class="detail-info">
       <div class="detail-name">${w.name}</div>
       <div class="detail-role">${getRoleLabel(w.role)} · The Buff at Duncan Hall</div>
