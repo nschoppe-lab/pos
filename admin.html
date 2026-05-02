@@ -716,7 +716,7 @@ emailjs.init("yoxsvEb1uuAA4Ytcd");
 const auth = getAuth(app);
 const db = getDatabase(app);
 
-let orders = {}, menu = [], coupons = [], staffList = [], loyaltyRecords = {}, waittimeData = {}, brandingData = {}, expensesData = {}, rewardStaffData = {}, specialsData = {}, ratingsData = {}, rmbWorkersData = {};
+let orders = {}, menu = [], coupons = [], staffList = [], loyaltyRecords = {}, waittimeData = {}, brandingData = {}, expensesData = {}, rewardStaffData = {}, specialsData = {}, ratingsData = {}, rmbWorkersData = {}, rmbStaffPublicData = {};
 let tapTimers = {}, currentTab = 'orders';
 
 onAuthStateChanged(auth, async user => {
@@ -757,13 +757,17 @@ function showAdmin() {
     staffList = Object.entries(d).map(([k,v])=>({uid:k,...v}));
     renderStaff();
     // Mirror public-safe staff info so ratemybuff.html can read without auth
-    const publicMirror = {};
+    // Mirror staff to rmbStaffPublic — use update per-user to preserve uploaded photos
     staffList.forEach(s => {
       if (s.role === 'kitchen' || s.role === 'admin') {
-        publicMirror[s.uid] = { name: s.name || '', role: s.role };
+        const existing = rmbStaffPublicData[s.uid] || {};
+        update(ref(db, 'rmbStaffPublic/' + s.uid), {
+          name: s.name || '',
+          role: s.role,
+          photo: existing.photo || ''
+        }).catch(()=>{});
       }
     });
-    set(ref(db, 'rmbStaffPublic'), publicMirror).catch(()=>{});
   });
   onValue(ref(db,'loyalty'), snap => { loyaltyRecords = snap.val()||{}; if(currentTab==='loyalty') renderLoyaltyAdmin(); });
   onValue(ref(db,'waittime'), snap => { waittimeData = snap.val()||{};
@@ -774,6 +778,7 @@ function showAdmin() {
   onValue(ref(db,'specials'), snap => { specialsData = snap.val()||{}; if(currentTab==='specials') renderSpecialsAdmin(); });
   onValue(ref(db,'ratings'), snap => { ratingsData = snap.val()||{}; if(currentTab==='ratings') renderRmbAdmin(); });
   onValue(ref(db,'rmbWorkers'), snap => { rmbWorkersData = snap.val()||{}; if(currentTab==='ratings') renderRmbAdmin(); });
+  onValue(ref(db,'rmbStaffPublic'), snap => { rmbStaffPublicData = snap.val()||{}; if(currentTab==='ratings') renderRmbAdmin(); });
 }
 
 window.switchTab = function(t) {
@@ -1879,12 +1884,13 @@ function getAllRmbWorkers() {
   // From users (kitchen/admin role)
   staffList.forEach(s => {
     if (s.role === 'kitchen' || s.role === 'admin') {
-      workers.push({ uid: s.uid, name: s.name || s.email || '—', role: s.role, source: 'staff' });
+      const pub = rmbStaffPublicData[s.uid] || {};
+      workers.push({ uid: s.uid, name: s.name || s.email || '—', role: s.role, source: 'staff', photo: pub.photo || '' });
     }
   });
   // From manually added rmbWorkers
   Object.entries(rmbWorkersData).forEach(([key, w]) => {
-    workers.push({ uid: key, name: w.name, role: w.role || 'kitchen', source: 'manual', fbKey: key });
+    workers.push({ uid: key, name: w.name, role: w.role || 'kitchen', source: 'manual', fbKey: key, photo: w.photo || '' });
   });
   return workers;
 }
@@ -1929,7 +1935,10 @@ window.renderRmbAdmin = function() {
     row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid #2a2a2a;gap:12px;flex-wrap:wrap';
     row.innerHTML = `
       <div style="display:flex;align-items:center;gap:12px;flex:1;min-width:200px">
-        <div style="width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,#ff6b35,#e55a2b);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;flex-shrink:0">${(w.name||'?').slice(0,2).toUpperCase()}</div>
+        <div onclick="uploadWorkerPhoto('${w.uid}','${w.source}','${w.fbKey||''}')" title="Click to add/change photo" style="width:48px;height:48px;border-radius:10px;background:linear-gradient(135deg,#ff6b35,#e55a2b);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;flex-shrink:0;overflow:hidden;cursor:pointer;position:relative;border:2px solid transparent" onmouseover="this.style.borderColor='#ff6b35'" onmouseout="this.style.borderColor='transparent'">
+          ${w.photo ? `<img src="${w.photo}" style="width:100%;height:100%;object-fit:cover">` : `<span>${(w.name||'?').slice(0,2).toUpperCase()}</span>`}
+          <div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.6);font-size:9px;color:#fff;text-align:center;padding:1px">📷</div>
+        </div>
         <div>
           <div style="font-size:13px;font-weight:700">${w.name}</div>
           <div style="font-size:11px;color:#888;margin-top:2px">${roleLabel} ${w.source==='manual'?'<span style="background:#1a2a3a;color:#60a5fa;padding:1px 6px;border-radius:4px;font-size:10px;margin-left:4px">Manual</span>':''}</div>
@@ -1946,7 +1955,9 @@ window.renderRmbAdmin = function() {
         </div>
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
           ${count > 0 ? `<button onclick="viewRmbReviews('${w.uid}','${w.name.replace(/'/g,"\\'")}',${count})" style="background:#1a2a3a;border:1px solid #2e75b644;color:#60a5fa;border-radius:6px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer">View Reviews</button>` : '<span style="font-size:11px;color:#555">No reviews yet</span>'}
-          ${w.source==='manual' ? `<button onclick="removeRmbWorker('${w.fbKey}','${w.name.replace(/'/g,"\\'")}','${w.uid}')" style="background:#2a1010;border:1px solid #7f1d1d;color:#ef4444;border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer">Remove</button>` : ''}
+          ${w.w.source==='manual'
+            ? `<button onclick="removeRmbWorker('${w.fbKey}','${w.name.replace(/'/g,"\\'")}','${w.uid}')" style="background:#2a1010;border:1px solid #7f1d1d;color:#ef4444;border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer">Remove</button>`
+            : `<button onclick="removeStaffFromRmb('${w.uid}','${w.name.replace(/'/g,"\\'")}' )" style="background:#2a1010;border:1px solid #7f1d1d;color:#ef4444;border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer">Remove</button>`}
         </div>
       </div>`;
     el.appendChild(row);
@@ -1970,10 +1981,44 @@ window.addRmbWorker = async function() {
 }
 
 window.removeRmbWorker = async function(fbKey, name, uid) {
-  if (!confirm(`Remove "${name}" from Rate My Buff?\n\nThis removes the worker listing. Their reviews in Firebase stay unless you also delete reviews.`)) return;
+  if (!confirm(`Remove "${name}" from Rate My Buff?\n\nThis removes the worker listing. Their reviews stay unless you also delete them.`)) return;
   try {
     await remove(ref(db, 'rmbWorkers/'+fbKey));
   } catch(e) { alert('Error: '+e.message); }
+}
+
+window.removeStaffFromRmb = async function(uid, name) {
+  if (!confirm(`Remove "${name}" from Rate My Buff?\n\nThis removes them from the public ratings page. Their kitchen login stays active. Their reviews stay unless you also delete them.`)) return;
+  try {
+    await remove(ref(db, 'rmbStaffPublic/'+uid));
+    alert('"' + name + '" removed from Rate My Buff!');
+  } catch(e) { alert('Error: '+e.message); }
+}
+
+window.uploadWorkerPhoto = function(uid, source, fbKey) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.onchange = async function() {
+    const file = input.files[0];
+    if (!file) return;
+    if (file.size > 600000) { alert('Image too large — please use an image under 600KB.'); return; }
+    const reader = new FileReader();
+    reader.onload = async function(e) {
+      const dataUrl = e.target.result;
+      try {
+        if (source === 'manual' && fbKey) {
+          await update(ref(db, 'rmbWorkers/' + fbKey), { photo: dataUrl });
+        } else {
+          // Staff worker — save to rmbStaffPublic so ratemybuff.html can read it
+          await update(ref(db, 'rmbStaffPublic/' + uid), { photo: dataUrl });
+        }
+        alert('✅ Photo saved! It now shows on the Rate My Buff page.');
+      } catch(err) { alert('Error saving photo: ' + err.message); }
+    };
+    reader.readAsDataURL(file);
+  };
+  input.click();
 }
 
 window.viewRmbReviews = function(uid, name, count) {

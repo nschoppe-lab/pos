@@ -183,6 +183,11 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min
     </div>
 
     <!-- RATE THIS WORKER -->
+    <div class="reviews-title" id="reviews-title">Reviews</div>
+    <div id="reviews-list">
+      <div class="no-reviews">No reviews yet — be the first!</div>
+    </div>
+
     <div class="rate-box">
       <div class="rate-box-title">✏️ Leave a Rating</div>
       <div class="star-picker" id="star-picker">
@@ -209,10 +214,7 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min
     </div>
 
     <!-- REVIEWS -->
-    <div class="reviews-title" id="reviews-title">Reviews</div>
-    <div id="reviews-list">
-      <div class="no-reviews">No reviews yet — be the first!</div>
-    </div>
+
   </div>
 </div>
 
@@ -271,7 +273,7 @@ function mergeAndRender() {
 onValue(ref(db, 'rmbStaffPublic'), snap => {
   const data = snap.val() || {};
   staffWorkers = Object.entries(data)
-    .map(([uid, u]) => ({ uid, name: u.name || 'Unknown', role: u.role || 'kitchen' }));
+    .map(([uid, u]) => ({ uid, name: u.name || 'Unknown', role: u.role || 'kitchen', photo: u.photo || '' }));
   mergeAndRender();
 });
 
@@ -279,7 +281,7 @@ onValue(ref(db, 'rmbStaffPublic'), snap => {
 onValue(ref(db, 'rmbWorkers'), snap => {
   const data = snap.val() || {};
   rmbExtraWorkers = Object.entries(data)
-    .map(([key, w]) => ({ uid: key, name: w.name || 'Unknown', role: w.role || 'kitchen' }));
+    .map(([key, w]) => ({ uid: key, name: w.name || 'Unknown', role: w.role || 'kitchen', photo: w.photo || '' }));
   mergeAndRender();
 });
 
@@ -395,7 +397,7 @@ function renderWorkers(workers) {
     card.innerHTML = `
       ${stats.count > 0 ? `<div class="wc-badge">${stats.count} review${stats.count!==1?'s':''}</div>` : ''}
       <div class="wc-top">
-        <div class="wc-avatar">${getInitials(w.name)}</div>
+        <div class="wc-avatar" style="overflow:hidden;padding:0">${w.photo ? '<img src="' + w.photo + '" style="width:100%;height:100%;object-fit:cover;border-radius:12px">' : getInitials(w.name)}</div>
         <div class="wc-info">
           <div class="wc-name">${w.name}</div>
           <div class="wc-role">${getRoleLabel(w.role)}</div>
@@ -468,7 +470,7 @@ function renderDetailHeader(w) {
   distHTML += '</div>';
 
   hdr.innerHTML = `
-    <div class="detail-avatar">${getInitials(w.name)}</div>
+    <div class="detail-avatar" style="overflow:hidden;padding:0">${w.photo ? '<img src="' + w.photo + '" style="width:100%;height:100%;object-fit:cover;border-radius:16px">' : getInitials(w.name)}</div>
     <div class="detail-info">
       <div class="detail-name">${w.name}</div>
       <div class="detail-role">${getRoleLabel(w.role)} · The Buff at Duncan Hall</div>
