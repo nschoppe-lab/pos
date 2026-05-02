@@ -743,13 +743,18 @@ let tapTimers = {}, currentTab = 'orders';
 
 onAuthStateChanged(auth, async user => {
   if (user) {
-    const snap = await get(ref(db, `users/${user.uid}/role`));
-    const role = snap.val();
-    if (role === 'admin') {
-      showAdmin();
-    } else {
+    try {
+      const snap = await get(ref(db, 'users/' + user.uid + '/role'));
+      const role = snap.val();
+      if (role === 'admin') {
+        showAdmin();
+      } else {
+        await signOut(auth);
+        showLoginErr('Role found: "' + (role||'none') + '" — needs to be "admin". UID: ' + user.uid);
+      }
+    } catch(err) {
       await signOut(auth);
-      showLoginErr('Admin access only.');
+      showLoginErr('Firebase error: ' + err.message);
     }
   } else {
     document.getElementById('login-wrap').style.display = 'flex';
