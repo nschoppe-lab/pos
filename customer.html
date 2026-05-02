@@ -251,15 +251,19 @@ onValue(ref(db, 'waittime'), snap => {
     overlay.style.display = isClosed ? 'flex' : 'none';
     if (msgEl && d.closedMsg) msgEl.textContent = d.closedMsg;
   }
-  // Wait time banner
+  // Wait time banner — use calculatedWait (set by admin screen automatically)
   const banner = document.getElementById('wait-banner');
   const waitText = document.getElementById('wait-text');
   if (banner && waitText) {
-    const msg = d.message || '';
-    currentWaitTime = msg;
-    if (msg && d.closed !== true) {
+    const wait = d.calculatedWait || '';
+    const customMsg = d.message || '';
+    currentWaitTime = wait;
+    if ((wait || customMsg) && d.closed !== true) {
       banner.style.display = 'flex';
-      waitText.textContent = 'Estimated wait: ' + msg;
+      let parts = [];
+      if (wait) parts.push('Estimated wait: ' + wait);
+      if (customMsg) parts.push(customMsg);
+      waitText.textContent = parts.join(' · ');
     } else {
       banner.style.display = 'none';
     }

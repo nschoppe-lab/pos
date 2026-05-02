@@ -237,10 +237,12 @@ function renderOrders() {
       </div>
       <div class="oc-foot">
         <span class="sbadge ${order.status==='done'?'done':'pending'}">${order.status==='done'?'Done':'In Progress'}</span>
-        <label onclick="event.stopPropagation()" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;${order.paid ? 'background:#052e16;color:#22c55e' : 'background:#1a1a1a;color:#555;border:1px solid #333'}">
+        ${order.status==='done'
+          ? `<button onclick="event.stopPropagation();undoDone('${order.fbKey}')" style="background:#2a1f0e;border:1px solid #f59e0b44;color:#f59e0b;border-radius:6px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer">↩ Undo</button>`
+          : `<label onclick="event.stopPropagation()" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;${order.paid ? 'background:#052e16;color:#22c55e' : 'background:#1a1a1a;color:#555;border:1px solid #333'}">
           <input type="checkbox" ${order.paid ? 'checked' : ''} onclick="event.stopPropagation()" onchange="togglePaid('${order.fbKey}', this.checked)" style="accent-color:#22c55e;width:14px;height:14px">
           ${order.paid ? '✓ PAID' : 'Mark Paid'}
-        </label>
+        </label>`}
         <span class="tap-hint">${order.status==='done'?'Completed':'Double-tap to complete'}</span>
       </div>`;
     if (order.status !== 'done') {
@@ -286,6 +288,10 @@ async function sendOrderReadyEmail(order) {
     showModal(`<h3 style="color:#22c55e">&#10003; Order marked done!</h3><p style="font-size:12px;color:#aaa">Could not send email automatically. You can notify ${order.name} manually.</p><div class="mbtns"><button class="mbtn cancel" onclick="closeModal()">Close</button></div>`);
     console.error('EmailJS error:', e);
   }
+}
+
+window.undoDone = async function(key) {
+  await update(ref(db, `orders/${key}`), { status: 'pending' });
 }
 
 window.togglePaid = async function(key, paid) {
