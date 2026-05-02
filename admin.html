@@ -138,6 +138,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
       <button class="tb" onclick="switchTab('staff')">Staff</button>
       <button class="tb" onclick="switchTab('inventory')">Inventory</button>
       <button class="tb" onclick="switchTab('loyalty')">Loyalty</button>
+      <button class="tb" onclick="switchTab('waittime')">Wait Time</button>
     </div>
     <button class="logout-btn" onclick="doLogout()">Sign out</button>
   </div>
@@ -296,6 +297,69 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
       </div>
     </div></div>
   </div>
+
+  <!-- WAIT TIME TAB -->
+  <div class="tab-content" id="tab-waittime">
+    <div class="admin-scroll"><div class="admin-wrap">
+      <div class="admin-title">Wait Time Display</div>
+      <div class="admin-sub">Control what customers see on the wait time screen. Open <strong style="color:#ff6b35">waittime.html</strong> on a screen facing customers.</div>
+
+      <div class="asec">
+        <div class="asec-title">Open / Closed</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0">
+          <div>
+            <div style="font-size:13px;font-weight:600;color:#fff" id="open-closed-label">The Buff is Open</div>
+            <div style="font-size:11px;color:#888;margin-top:2px">Toggle to show a "Closed" screen to customers</div>
+          </div>
+          <div onclick="toggleClosed()" id="open-closed-toggle" style="width:52px;height:28px;border-radius:14px;background:#22c55e;position:relative;cursor:pointer;transition:background 0.2s;flex-shrink:0">
+            <div id="open-closed-knob" style="width:24px;height:24px;border-radius:50%;background:#fff;position:absolute;top:2px;left:26px;transition:left 0.2s"></div>
+          </div>
+        </div>
+        <div style="margin-top:10px">
+          <label style="font-size:11px;color:#888;font-weight:600;display:block;margin-bottom:4px">Closed message (optional)</label>
+          <div style="display:flex;gap:8px">
+            <input type="text" id="closed-msg-input" placeholder="e.g. Back at 6:00 PM!" style="flex:1;background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:7px 9px;font-size:12px;color:#fff">
+            <button class="aadd" onclick="saveClosedMsg()">Save</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="asec">
+        <div class="asec-title">Wait Time</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+          <button onclick="setWait(5)"  style="flex:1;min-width:70px;padding:12px;background:#1e1e1e;border:1.5px solid #333;border-radius:8px;color:#fff;font-size:14px;font-weight:700;cursor:pointer" class="wait-preset">5 min</button>
+          <button onclick="setWait(10)" style="flex:1;min-width:70px;padding:12px;background:#1e1e1e;border:1.5px solid #333;border-radius:8px;color:#fff;font-size:14px;font-weight:700;cursor:pointer" class="wait-preset">10 min</button>
+          <button onclick="setWait(15)" style="flex:1;min-width:70px;padding:12px;background:#1e1e1e;border:1.5px solid #333;border-radius:8px;color:#fff;font-size:14px;font-weight:700;cursor:pointer" class="wait-preset">15 min</button>
+          <button onclick="setWait(20)" style="flex:1;min-width:70px;padding:12px;background:#1e1e1e;border:1.5px solid #333;border-radius:8px;color:#fff;font-size:14px;font-weight:700;cursor:pointer" class="wait-preset">20 min</button>
+          <button onclick="setWait(30)" style="flex:1;min-width:70px;padding:12px;background:#1e1e1e;border:1.5px solid #333;border-radius:8px;color:#fff;font-size:14px;font-weight:700;cursor:pointer" class="wait-preset">30 min</button>
+          <button onclick="setWait(0)"  style="flex:1;min-width:70px;padding:12px;background:#2a1010;border:1.5px solid #7f1d1d;border-radius:8px;color:#ef4444;font-size:14px;font-weight:700;cursor:pointer">Clear</button>
+        </div>
+        <div style="display:flex;gap:8px">
+          <input type="number" id="custom-wait-input" placeholder="Custom minutes" min="1" max="120" style="flex:1;background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:7px 9px;font-size:12px;color:#fff">
+          <button class="aadd" onclick="setWait(parseInt(document.getElementById('custom-wait-input').value)||0)">Set</button>
+        </div>
+        <div style="margin-top:10px;font-size:12px;color:#888">Current: <span id="current-wait-display" style="color:#ff6b35;font-weight:700">Not set</span></div>
+      </div>
+
+      <div class="asec">
+        <div class="asec-title">Custom Message</div>
+        <div style="display:flex;gap:8px;margin-bottom:8px">
+          <input type="text" id="custom-msg-input" placeholder="e.g. Chicken sandwiches selling fast!" style="flex:1;background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:7px 9px;font-size:12px;color:#fff">
+          <button class="aadd" onclick="saveCustomMsg()">Show</button>
+        </div>
+        <button onclick="clearCustomMsg()" style="background:#2a2a2a;border:1px solid #444;color:#aaa;border-radius:6px;padding:6px 14px;font-size:12px;cursor:pointer">Clear Message</button>
+        <div style="margin-top:8px;font-size:12px;color:#888">Showing: <span id="current-msg-display" style="color:#f59e0b;font-weight:600">None</span></div>
+      </div>
+
+      <div class="asec" style="background:#0a1a0a;border-color:#22c55e44">
+        <div class="asec-title" style="color:#22c55e">Customer Screen Link</div>
+        <div style="font-size:12px;color:#888;margin-bottom:8px">Open this URL on a screen facing customers:</div>
+        <div style="background:#1a1a1a;border:1px solid #333;border-radius:6px;padding:10px 12px;font-size:12px;color:#22c55e;word-break:break-all;font-family:monospace" id="waittime-url"></div>
+        <button onclick="navigator.clipboard.writeText(document.getElementById('waittime-url').textContent).then(()=>alert('Copied!'))" style="margin-top:8px;background:#1a2a1a;border:1px solid #22c55e44;color:#22c55e;border-radius:6px;padding:6px 14px;font-size:12px;cursor:pointer">Copy Link</button>
+      </div>
+
+    </div></div>
+  </div>
 </div>
 
 <div class="modal-bg" id="custom-admin-modal" style="display:none" onclick="if(event.target===this)closeCustomizeAdmin()">
@@ -344,7 +408,7 @@ emailjs.init("yoxsvEb1uuAA4Ytcd");
 const auth = getAuth(app);
 const db = getDatabase(app);
 
-let orders = {}, menu = [], coupons = [], staffList = [], loyaltyRecords = {};
+let orders = {}, menu = [], coupons = [], staffList = [], loyaltyRecords = {}, waittimeData = {};
 let tapTimers = {}, currentTab = 'orders';
 
 onAuthStateChanged(auth, async user => {
@@ -382,15 +446,17 @@ function showAdmin() {
   onValue(ref(db,'coupons'), snap => { const d = snap.val(); coupons = d ? Object.entries(d).map(([k,v])=>({fbKey:k,...v})) : []; renderCoupons(); });
   onValue(ref(db,'users'), snap => { const d = snap.val(); staffList = d ? Object.entries(d).map(([k,v])=>({uid:k,...v})) : []; renderStaff(); });
   onValue(ref(db,'loyalty'), snap => { loyaltyRecords = snap.val()||{}; if(currentTab==='loyalty') renderLoyaltyAdmin(); });
+  onValue(ref(db,'waittime'), snap => { waittimeData = snap.val()||{}; if(currentTab==='waittime') updateWaitTimeUI(); });
 }
 
 window.switchTab = function(t) {
   currentTab = t;
   document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
   document.getElementById('tab-'+t).classList.add('active');
-  document.querySelectorAll('.tb').forEach((b,i) => b.classList.toggle('active', ['orders','history','menu','coupons','staff','inventory','loyalty'][i]===t));
+  document.querySelectorAll('.tb').forEach((b,i) => b.classList.toggle('active', ['orders','history','menu','coupons','staff','inventory','loyalty','waittime'][i]===t));
   if (t==='inventory') renderInventory();
   if (t==='loyalty') renderLoyaltyAdmin();
+  if (t==='waittime') initWaitTime();
   if (t==='history') renderHistory();
 }
 
@@ -774,6 +840,69 @@ window.addLoyaltyCredit = async function() {
   document.getElementById('loyalty-email-input').value = '';
   document.getElementById('loyalty-credit-input').value = '';
   alert(`$${amount.toFixed(2)} credit added! ${email} now has $${newCredits.toFixed(2)} total.`);
+}
+
+
+var isClosed = false;
+
+function initWaitTime() {
+  // Set the URL display
+  const url = window.location.href.replace('admin.html', 'waittime.html');
+  document.getElementById('waittime-url').textContent = url;
+  updateWaitTimeUI();
+}
+
+function updateWaitTimeUI() {
+  isClosed = waittimeData.closed === true;
+  const toggle = document.getElementById('open-closed-toggle');
+  const knob = document.getElementById('open-closed-knob');
+  const label = document.getElementById('open-closed-label');
+  if (toggle) {
+    toggle.style.background = isClosed ? '#ef4444' : '#22c55e';
+    knob.style.left = isClosed ? '2px' : '26px';
+    label.textContent = isClosed ? 'The Buff is Closed' : 'The Buff is Open';
+    label.style.color = isClosed ? '#ef4444' : '#22c55e';
+  }
+  const mins = waittimeData.minutes || 0;
+  const waitDisplay = document.getElementById('current-wait-display');
+  if (waitDisplay) waitDisplay.textContent = mins ? mins + ' min' : 'Not set';
+  const msgDisplay = document.getElementById('current-msg-display');
+  if (msgDisplay) msgDisplay.textContent = waittimeData.message || 'None';
+  if (waittimeData.closedMsg) {
+    const inp = document.getElementById('closed-msg-input');
+    if (inp && !inp.value) inp.value = waittimeData.closedMsg;
+  }
+  // Highlight active preset
+  document.querySelectorAll('.wait-preset').forEach(btn => {
+    btn.style.borderColor = btn.textContent.trim() === mins + ' min' ? '#ff6b35' : '#333';
+    btn.style.color = btn.textContent.trim() === mins + ' min' ? '#ff6b35' : '#fff';
+  });
+}
+
+window.toggleClosed = async function() {
+  isClosed = !isClosed;
+  await set(ref(db,'waittime'), {...waittimeData, closed: isClosed});
+}
+
+window.saveClosedMsg = async function() {
+  const msg = document.getElementById('closed-msg-input').value.trim();
+  await set(ref(db,'waittime'), {...waittimeData, closedMsg: msg});
+}
+
+window.setWait = async function(mins) {
+  await set(ref(db,'waittime'), {...waittimeData, minutes: mins});
+  document.getElementById('custom-wait-input').value = '';
+}
+
+window.saveCustomMsg = async function() {
+  const msg = document.getElementById('custom-msg-input').value.trim();
+  if (!msg) return;
+  await set(ref(db,'waittime'), {...waittimeData, message: msg});
+  document.getElementById('custom-msg-input').value = '';
+}
+
+window.clearCustomMsg = async function() {
+  await set(ref(db,'waittime'), {...waittimeData, message: ''});
 }
 
 function fmtPhone(p){return p&&p.length===10?`(${p.slice(0,3)}) ${p.slice(3,6)}-${p.slice(6)}`:p;}

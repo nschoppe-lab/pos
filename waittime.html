@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Buff — Wait Time</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+body{background:#111;color:#fff;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:20px}
+.logo{font-size:18px;font-weight:700;color:#ff6b35;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px}
+.subtitle{font-size:13px;color:#555;margin-bottom:60px;letter-spacing:1px}
+.wait-label{font-size:18px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:3px;margin-bottom:16px}
+.wait-time{font-size:120px;font-weight:800;color:#ff6b35;line-height:1;margin-bottom:8px;transition:all 0.5s ease}
+.wait-unit{font-size:28px;font-weight:600;color:#666;margin-bottom:50px}
+.status-bar{display:flex;gap:24px;justify-content:center;margin-bottom:60px;flex-wrap:wrap}
+.stat{background:#1e1e1e;border:1px solid #2a2a2a;border-radius:12px;padding:18px 28px;min-width:140px}
+.stat-num{font-size:36px;font-weight:800;color:#fff}
+.stat-label{font-size:11px;color:#666;text-transform:uppercase;letter-spacing:1px;margin-top:4px}
+.stat-num.open{color:#f59e0b}
+.stat-num.done{color:#22c55e}
+.message-box{background:#1e1e1e;border:1px solid #2a2a2a;border-radius:12px;padding:20px 40px;max-width:600px;margin-bottom:40px;min-height:60px;display:flex;align-items:center;justify-content:center}
+.message{font-size:18px;color:#ccc;font-style:italic;display:none}
+.message.show{display:block}
+.message-default{font-size:15px;color:#444}
+.ticker{font-size:13px;color:#333;margin-top:auto;padding-top:20px}
+.status-dot{width:8px;height:8px;border-radius:50%;background:#22c55e;display:inline-block;margin-right:6px;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
+.closed-overlay{display:none;position:fixed;inset:0;background:#111;flex-direction:column;align-items:center;justify-content:center;z-index:99}
+.closed-overlay.show{display:flex}
+.closed-icon{font-size:80px;margin-bottom:20px}
+.closed-title{font-size:36px;font-weight:800;color:#ff6b35;margin-bottom:10px}
+.closed-sub{font-size:16px;color:#666}
+</style>
+</head>
+<body>
+
+<div class="closed-overlay" id="closed-overlay">
+  <div class="closed-icon">🔒</div>
+  <div class="closed-title">The Buff is Closed</div>
+  <div class="closed-sub" id="closed-msg">We'll be back soon!</div>
+</div>
+
+<div class="logo">&#9654; The Buff at Duncan Hall</div>
+<div class="subtitle">Live Order Status</div>
+
+<div class="wait-label">Estimated Wait Time</div>
+<div class="wait-time" id="wait-time">—</div>
+<div class="wait-unit" id="wait-unit">minutes</div>
+
+<div class="status-bar">
+  <div class="stat">
+    <div class="stat-num open" id="open-count">—</div>
+    <div class="stat-label">Orders Ahead</div>
+  </div>
+  <div class="stat">
+    <div class="stat-num done" id="done-count">—</div>
+    <div class="stat-label">Completed Today</div>
+  </div>
+</div>
+
+<div class="message-box">
+  <div class="message" id="custom-message"></div>
+  <div class="message-default" id="default-msg">Place your order at the counter and we'll text you when it's ready!</div>
+</div>
+
+<div class="ticker">
+  <span class="status-dot"></span>
+  Live — updates automatically
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCG5nhzdAHBTGg2eXXmhqH8pF8S8qFqM7o",
+  authDomain: "duncan--the-buff.firebaseapp.com",
+  databaseURL: "https://duncan--the-buff-default-rtdb.firebaseio.com",
+  projectId: "duncan--the-buff",
+  storageBucket: "duncan--the-buff.firebasestorage.app",
+  messagingSenderId: "561324530375",
+  appId: "1:561324530375:web:e6927aefd39ac790737ce2"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
+// Listen to wait time settings from admin
+onValue(ref(db, 'waittime'), snap => {
+  const data = snap.val() || {};
+  
+  // Closed status
+  const closed = data.closed === true;
+  document.getElementById('closed-overlay').className = 'closed-overlay' + (closed ? ' show' : '');
+  if (data.closedMsg) document.getElementById('closed-msg').textContent = data.closedMsg;
+
+  // Wait time
+  const mins = data.minutes;
+  const wtEl = document.getElementById('wait-time');
+  const wuEl = document.getElementById('wait-unit');
+  if (mins === null || mins === undefined || mins === 0) {
+    wtEl.textContent = '—';
+    wuEl.textContent = 'minutes';
+  } else {
+    wtEl.textContent = mins;
+    wuEl.textContent = mins === 1 ? 'minute' : 'minutes';
+  }
+
+  // Custom message
+  const msgEl = document.getElementById('custom-message');
+  const defEl = document.getElementById('default-msg');
+  if (data.message) {
+    msgEl.textContent = data.message;
+    msgEl.className = 'message show';
+    defEl.style.display = 'none';
+  } else {
+    msgEl.className = 'message';
+    defEl.style.display = 'block';
+  }
+});
+
+// Listen to live order counts
+onValue(ref(db, 'orders'), snap => {
+  const data = snap.val() || {};
+  const all = Object.values(data);
+  const open = all.filter(o => o.status === 'pending').length;
+  const done = all.filter(o => o.status === 'done').length;
+  document.getElementById('open-count').textContent = open;
+  document.getElementById('done-count').textContent = done;
+});
+</script>
+</body>
+</html>

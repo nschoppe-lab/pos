@@ -373,7 +373,7 @@ function updateTotals() {
     const count = loyaltyData.orderCount || 0;
     const credits = loyaltyData.credits || 0;
     const nextOrder = count + 1;
-    const isFifthOrder = (nextOrder % 10 === 5) && (nextOrder % 10 !== 0);
+    const isFifthOrder = (nextOrder % 5 === 0) && (nextOrder % 10 !== 0);
     if (credits > 0) {
       loyDisc = Math.round(Math.min(credits, sub)*100)/100;
       lr.style.display = 'flex';
@@ -425,9 +425,14 @@ window.placeOrder = async function() {
     newCredits = Math.max(0, Math.round((newCredits-used)*100)/100);
     loyaltyMsg = `$${used.toFixed(2)} loyalty credit used!`;
   }
+  // 5th order (every 5th that isn't also 10th) = 50% off - already deducted in t.loyDisc
+  if (newOrderCount % 5 === 0 && newOrderCount % 10 !== 0) {
+    loyaltyMsg = `🎉 ${newOrderCount}th order — 50% off applied!`;
+  }
+  // 10th, 20th, 30th etc = $5 credit for NEXT visit
   if (newOrderCount % 10 === 0) {
     newCredits = Math.round((newCredits+5)*100)/100;
-    loyaltyMsg = `🎉 You've reached order #${newOrderCount}! $5 credit added for next visit!`;
+    loyaltyMsg = `🎉 You've reached order #${newOrderCount}! $5 credit added for your next visit!`;
   }
   try {
     await update(ref(db, `loyalty/${loyaltyKey}`), { email, name, orderCount: newOrderCount, credits: newCredits, lastOrder: new Date().toISOString() });
