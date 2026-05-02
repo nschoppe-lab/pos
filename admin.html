@@ -1320,118 +1320,116 @@ window.renderFinance = function() {
 
 function applyBrandingToPage(b) {
   if (!b) return;
-  const root = document.documentElement.style;
-  if (b.primary) { root.setProperty('--brand-primary', b.primary); }
-  if (b.bg)      { root.setProperty('--brand-bg', b.bg); }
-  if (b.nav)     { root.setProperty('--brand-nav', b.nav); }
-  if (b.text)    { root.setProperty('--brand-text', b.text); }
+  // Apply to admin page itself
+  if (b.primary) {
+    document.querySelectorAll('.tb.active').forEach(el => el.style.background = b.primary);
+    document.querySelectorAll('.aadd').forEach(el => el.style.background = b.primary);
+  }
 }
 
 function initBranding() {
   const b = brandingData;
-  // Set color inputs
-  const fields = {primary:'#ff6b35', bg:'#1a1a1a', nav:'#111111', text:'#ffffff'};
-  Object.entries(fields).forEach(([k, def]) => {
-    const val = b[k] || def;
+  const defaults = {primary:'#ff6b35', bg:'#1a1a1a', nav:'#111111', text:'#ffffff'};
+  ['primary','bg','nav','text'].forEach(k => {
+    const val = b[k] || defaults[k];
     const picker = document.getElementById('color-'+k);
-    const hex = document.getElementById('color-'+k+'-hex');
+    const hex    = document.getElementById('color-'+k+'-hex');
     if (picker) picker.value = val;
-    if (hex) hex.value = val;
+    if (hex)    hex.value    = val;
+    // Attach live listener (safe to attach multiple times — remove old first)
+    if (picker) {
+      picker.oninput = function() {
+        if (hex) hex.value = picker.value;
+        updateBrandPreview();
+      };
+    }
   });
-  if (b.name) document.getElementById('brand-name').value = b.name;
-  if (b.tagline) document.getElementById('brand-tagline').value = b.tagline;
+  if (b.name)    { const el = document.getElementById('brand-name');    if(el) el.value = b.name; }
+  if (b.tagline) { const el = document.getElementById('brand-tagline'); if(el) el.value = b.tagline; }
   if (b.logo) {
-    const img = document.getElementById('logo-preview');
-    img.innerHTML = `<img src="${b.logo}" style="width:100%;height:100%;object-fit:contain;border-radius:8px">`;
+    const preview = document.getElementById('logo-preview');
+    if (preview) preview.innerHTML = `<img src="${b.logo}" style="width:100%;height:100%;object-fit:contain;border-radius:8px">`;
   }
   updateBrandPreview();
 }
 
 function updateBrandPreview() {
-  const primary = document.getElementById('color-primary').value || '#ff6b35';
-  const bg      = document.getElementById('color-bg').value || '#1a1a1a';
-  const nav     = document.getElementById('color-nav').value || '#111111';
-  const text    = document.getElementById('color-text').value || '#ffffff';
-  const name    = document.getElementById('brand-name').value || 'The Buff';
+  const get = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+  const primary = get('color-primary') || '#ff6b35';
+  const bg      = get('color-bg')      || '#1a1a1a';
+  const nav     = get('color-nav')     || '#111111';
+  const text    = get('color-text')    || '#ffffff';
+  const name    = get('brand-name')    || 'The Buff';
 
-  document.getElementById('prev-nav').style.background = nav;
-  document.getElementById('prev-name').style.color = primary;
-  document.getElementById('prev-name').textContent = name;
-  document.getElementById('prev-body').style.background = bg;
+  const setStyle = (id, styles) => { const el = document.getElementById(id); if(el) Object.assign(el.style, styles); };
+  setStyle('prev-nav',  {background: nav});
+  setStyle('prev-name', {color: primary});
+  setStyle('prev-body', {background: bg});
+  setStyle('prev-btn',  {background: primary});
+  const nameEl = document.getElementById('prev-name');
+  if (nameEl) nameEl.textContent = name;
   ['prev-card','prev-card2','prev-card3'].forEach(id => {
     const el = document.getElementById(id);
-    if (el) { el.style.background = nav; el.querySelector('div').style.color = text; }
+    if (el) { el.style.background = nav; const d = el.querySelector('div'); if(d) d.style.color = text; }
   });
-  ['prev-price','prev-price2','prev-price3'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.style.color = primary;
-  });
-  document.getElementById('prev-btn').style.background = primary;
+  ['prev-price','prev-price2','prev-price3'].forEach(id => setStyle(id, {color: primary}));
 
-  // Show logo in preview
   const logo = brandingData.logo;
   const prevLogo = document.getElementById('prev-logo');
-  if (logo) { prevLogo.src = logo; prevLogo.style.display = 'block'; }
-  else { prevLogo.style.display = 'none'; }
+  if (prevLogo) { prevLogo.src = logo||''; prevLogo.style.display = logo ? 'block' : 'none'; }
 }
 
 window.syncColorFromHex = function(key) {
-  const hex = document.getElementById('color-'+key+'-hex').value;
-  if (/^#[0-9a-fA-F]{6}$/.test(hex)) {
-    document.getElementById('color-'+key).value = hex;
+  const hexEl  = document.getElementById('color-'+key+'-hex');
+  const picker = document.getElementById('color-'+key);
+  if (!hexEl || !picker) return;
+  if (/^#[0-9a-fA-F]{6}$/.test(hexEl.value)) {
+    picker.value = hexEl.value;
     updateBrandPreview();
   }
 }
 
-// Sync picker → hex input
-['primary','bg','nav','text'].forEach(key => {
-  setTimeout(() => {
-    const picker = document.getElementById('color-'+key);
-    if (picker) picker.addEventListener('input', () => {
-      document.getElementById('color-'+key+'-hex').value = picker.value;
-      updateBrandPreview();
-    });
-  }, 1000);
-});
-
 window.applyPreset = function(primary, bg, nav, text) {
-  document.getElementById('color-primary').value = primary;
-  document.getElementById('color-primary-hex').value = primary;
-  document.getElementById('color-bg').value = bg;
-  document.getElementById('color-bg-hex').value = bg;
-  document.getElementById('color-nav').value = nav;
-  document.getElementById('color-nav-hex').value = nav;
-  document.getElementById('color-text').value = text;
-  document.getElementById('color-text-hex').value = text;
+  const vals = {primary, bg, nav, text};
+  ['primary','bg','nav','text'].forEach(k => {
+    const p = document.getElementById('color-'+k);
+    const h = document.getElementById('color-'+k+'-hex');
+    if (p) p.value = vals[k];
+    if (h) h.value = vals[k];
+  });
   updateBrandPreview();
 }
 
 window.saveBranding = async function() {
+  const get = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
   const b = {
-    primary: document.getElementById('color-primary').value,
-    bg:      document.getElementById('color-bg').value,
-    nav:     document.getElementById('color-nav').value,
-    text:    document.getElementById('color-text').value,
-    name:    document.getElementById('brand-name').value.trim(),
-    tagline: document.getElementById('brand-tagline').value.trim(),
+    primary: get('color-primary') || '#ff6b35',
+    bg:      get('color-bg')      || '#1a1a1a',
+    nav:     get('color-nav')     || '#111111',
+    text:    get('color-text')    || '#ffffff',
+    name:    get('brand-name'),
+    tagline: get('brand-tagline'),
     logo:    brandingData.logo || ''
   };
   await set(ref(db,'branding'), b);
-  alert('Branding saved! Customer and wait time screens will update shortly.');
+  alert('✅ Branding saved! Customer and wait time screens will update instantly.');
 }
 
 window.saveBrandName = async function() {
-  await set(ref(db,'branding'), {
-    ...brandingData,
-    name: document.getElementById('brand-name').value.trim(),
-    tagline: document.getElementById('brand-tagline').value.trim()
-  });
-  alert('Name saved!');
+  const name    = document.getElementById('brand-name')    ? document.getElementById('brand-name').value.trim()    : '';
+  const tagline = document.getElementById('brand-tagline') ? document.getElementById('brand-tagline').value.trim() : '';
+  await update(ref(db,'branding'), { name, tagline });
+  alert('✅ Name saved!');
 }
 
 window.resetBranding = async function() {
   if (!confirm('Reset all colors to defaults?')) return;
   applyPreset('#ff6b35','#1a1a1a','#111111','#ffffff');
+  await set(ref(db,'branding'), {
+    ...brandingData,
+    primary:'#ff6b35', bg:'#1a1a1a', nav:'#111111', text:'#ffffff'
+  });
+  alert('✅ Colors reset to defaults!');
 }
 
 window.handleLogoUpload = function(event) {
@@ -1442,19 +1440,23 @@ window.handleLogoUpload = function(event) {
   reader.onload = async function(e) {
     const dataUrl = e.target.result;
     const preview = document.getElementById('logo-preview');
-    preview.innerHTML = `<img src="${dataUrl}" style="width:100%;height:100%;object-fit:contain;border-radius:8px">`;
+    if (preview) preview.innerHTML = `<img src="${dataUrl}" style="width:100%;height:100%;object-fit:contain;border-radius:8px">`;
     brandingData.logo = dataUrl;
-    await set(ref(db,'branding'), {...brandingData, logo: dataUrl});
+    await update(ref(db,'branding'), { logo: dataUrl });
     updateBrandPreview();
+    alert('✅ Logo saved!');
   };
   reader.readAsDataURL(file);
 }
 
 window.removeLogo = async function() {
   brandingData.logo = '';
-  document.getElementById('logo-preview').innerHTML = 'No logo';
-  document.getElementById('prev-logo').style.display = 'none';
-  await set(ref(db,'branding'), {...brandingData, logo: ''});
+  const preview = document.getElementById('logo-preview');
+  if (preview) preview.innerHTML = 'No logo';
+  const prevLogo = document.getElementById('prev-logo');
+  if (prevLogo) prevLogo.style.display = 'none';
+  await update(ref(db,'branding'), { logo: '' });
+  alert('Logo removed.');
 }
 
 function fmtPhone(p){return p&&p.length===10?`(${p.slice(0,3)}) ${p.slice(3,6)}-${p.slice(6)}`:p;}
