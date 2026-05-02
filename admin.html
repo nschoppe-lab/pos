@@ -140,6 +140,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
       <button class="tb" onclick="switchTab('loyalty')">Loyalty</button>
       <button class="tb" onclick="switchTab('waittime')">Wait Time</button>
       <button class="tb" onclick="switchTab('finance')">Finance</button>
+      <button class="tb" onclick="switchTab('branding')">Branding</button>
     </div>
     <button class="logout-btn" onclick="doLogout()">Sign out</button>
   </div>
@@ -407,6 +408,117 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
       </div>
     </div></div>
   </div>
+
+  <!-- BRANDING TAB -->
+  <div class="tab-content" id="tab-branding">
+    <div class="admin-scroll"><div class="admin-wrap" style="max-width:700px">
+      <div class="admin-title">Branding & Appearance</div>
+      <div class="admin-sub">Customize colors and logo across all customer-facing screens. Changes apply instantly.</div>
+
+      <div class="asec">
+        <div class="asec-title">Logo</div>
+        <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;flex-wrap:wrap">
+          <div id="logo-preview" style="width:80px;height:80px;background:#222;border:2px dashed #444;border-radius:10px;display:flex;align-items:center;justify-content:center;color:#555;font-size:11px;text-align:center;overflow:hidden;flex-shrink:0">No logo</div>
+          <div style="flex:1">
+            <div style="font-size:12px;color:#888;margin-bottom:8px">Upload a PNG or JPG logo. It will appear on the customer ordering screen and wait time display.</div>
+            <input type="file" id="logo-upload" accept="image/*" onchange="handleLogoUpload(event)" style="font-size:12px;color:#ccc">
+            <button onclick="removeLogo()" style="display:block;margin-top:8px;background:#2a1010;border:1px solid #7f1d1d;color:#ef4444;border-radius:5px;padding:4px 12px;font-size:11px;cursor:pointer">Remove Logo</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="asec">
+        <div class="asec-title">Business Name</div>
+        <div class="arow">
+          <input type="text" id="brand-name" placeholder="e.g. The Buff at Duncan Hall" style="flex:1">
+          <input type="text" id="brand-tagline" placeholder="Tagline (optional)" style="flex:1">
+          <button class="aadd" onclick="saveBrandName()">Save</button>
+        </div>
+      </div>
+
+      <div class="asec">
+        <div class="asec-title">Colors</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+          <div>
+            <div style="font-size:11px;color:#888;margin-bottom:6px;font-weight:600">Primary Color</div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="color" id="color-primary" value="#ff6b35" style="width:44px;height:36px;border:none;border-radius:6px;cursor:pointer;background:none;padding:0">
+              <input type="text" id="color-primary-hex" value="#ff6b35" placeholder="#ff6b35" style="flex:1;background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:7px 9px;font-size:12px;color:#fff" oninput="syncColorFromHex('primary')">
+            </div>
+            <div style="font-size:10px;color:#555;margin-top:4px">Buttons, prices, accents</div>
+          </div>
+          <div>
+            <div style="font-size:11px;color:#888;margin-bottom:6px;font-weight:600">Background Color</div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="color" id="color-bg" value="#1a1a1a" style="width:44px;height:36px;border:none;border-radius:6px;cursor:pointer;background:none;padding:0">
+              <input type="text" id="color-bg-hex" value="#1a1a1a" placeholder="#1a1a1a" style="flex:1;background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:7px 9px;font-size:12px;color:#fff" oninput="syncColorFromHex('bg')">
+            </div>
+            <div style="font-size:10px;color:#555;margin-top:4px">Main background</div>
+          </div>
+          <div>
+            <div style="font-size:11px;color:#888;margin-bottom:6px;font-weight:600">Nav / Panel Color</div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="color" id="color-nav" value="#111111" style="width:44px;height:36px;border:none;border-radius:6px;cursor:pointer;background:none;padding:0">
+              <input type="text" id="color-nav-hex" value="#111111" placeholder="#111111" style="flex:1;background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:7px 9px;font-size:12px;color:#fff" oninput="syncColorFromHex('nav')">
+            </div>
+            <div style="font-size:10px;color:#555;margin-top:4px">Header, sidebar, panels</div>
+          </div>
+          <div>
+            <div style="font-size:11px;color:#888;margin-bottom:6px;font-weight:600">Text Color</div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="color" id="color-text" value="#ffffff" style="width:44px;height:36px;border:none;border-radius:6px;cursor:pointer;background:none;padding:0">
+              <input type="text" id="color-text-hex" value="#ffffff" placeholder="#ffffff" style="flex:1;background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:7px 9px;font-size:12px;color:#fff" oninput="syncColorFromHex('text')">
+            </div>
+            <div style="font-size:10px;color:#555;margin-top:4px">Main text color</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="aadd" onclick="saveBranding()">Apply Colors</button>
+          <button onclick="resetBranding()" style="background:#222;border:1px solid #444;color:#aaa;border-radius:6px;padding:7px 14px;font-size:12px;cursor:pointer">Reset to Defaults</button>
+        </div>
+      </div>
+
+      <div class="asec">
+        <div class="asec-title">Quick Presets</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button onclick="applyPreset('#ff6b35','#1a1a1a','#111111','#ffffff')" style="background:linear-gradient(135deg,#ff6b35,#e55a2b);color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:12px;font-weight:700;cursor:pointer">🔥 Default</button>
+          <button onclick="applyPreset('#2563eb','#0f172a','#1e293b','#f1f5f9')" style="background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:12px;font-weight:700;cursor:pointer">🔵 Ocean</button>
+          <button onclick="applyPreset('#16a34a','#0f1f0f','#152515','#ffffff')" style="background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:12px;font-weight:700;cursor:pointer">🌿 Forest</button>
+          <button onclick="applyPreset('#9333ea','#1a0a2e','#110820','#ffffff')" style="background:linear-gradient(135deg,#9333ea,#7e22ce);color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:12px;font-weight:700;cursor:pointer">💜 Purple</button>
+          <button onclick="applyPreset('#dc2626','#1c0a0a','#150505','#ffffff')" style="background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:12px;font-weight:700;cursor:pointer">❤️ Red</button>
+          <button onclick="applyPreset('#0ea5e9','#f8fafc','#e2e8f0','#0f172a')" style="background:linear-gradient(135deg,#0ea5e9,#0284c7);color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:12px;font-weight:700;cursor:pointer">☀️ Light</button>
+        </div>
+      </div>
+
+      <div class="asec" style="background:#0a1a0a;border-color:#22c55e44">
+        <div class="asec-title" style="color:#22c55e">Live Preview</div>
+        <div id="brand-preview" style="border-radius:10px;overflow:hidden;border:1px solid #333">
+          <div id="prev-nav" style="padding:12px 16px;display:flex;align-items:center;gap:10px">
+            <img id="prev-logo" style="height:32px;display:none;border-radius:4px">
+            <div id="prev-name" style="font-size:15px;font-weight:700">The Buff</div>
+          </div>
+          <div id="prev-body" style="padding:16px">
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px">
+              <div id="prev-card" style="border-radius:8px;padding:12px;border:1.5px solid #333">
+                <div style="font-size:12px;font-weight:600;margin-bottom:4px">Sample Item</div>
+                <div id="prev-price" style="font-size:11px;font-weight:700">$4.99</div>
+              </div>
+              <div id="prev-card2" style="border-radius:8px;padding:12px;border:1.5px solid #333">
+                <div style="font-size:12px;font-weight:600;margin-bottom:4px">Another Item</div>
+                <div id="prev-price2" style="font-size:11px;font-weight:700">$2.99</div>
+              </div>
+              <div id="prev-card3" style="border-radius:8px;padding:12px;border:1.5px solid #333">
+                <div style="font-size:12px;font-weight:600;margin-bottom:4px">Drink</div>
+                <div id="prev-price3" style="font-size:11px;font-weight:700">$1.99</div>
+              </div>
+            </div>
+            <div id="prev-btn" style="text-align:center;padding:10px;border-radius:8px;font-size:13px;font-weight:700;color:#fff">Place Order</div>
+          </div>
+        </div>
+      </div>
+
+    </div></div>
+  </div>
 </div>
 
 <div class="modal-bg" id="custom-admin-modal" style="display:none" onclick="if(event.target===this)closeCustomizeAdmin()">
@@ -455,7 +567,7 @@ emailjs.init("yoxsvEb1uuAA4Ytcd");
 const auth = getAuth(app);
 const db = getDatabase(app);
 
-let orders = {}, menu = [], coupons = [], staffList = [], loyaltyRecords = {}, waittimeData = {};
+let orders = {}, menu = [], coupons = [], staffList = [], loyaltyRecords = {}, waittimeData = {}, brandingData = {};
 let tapTimers = {}, currentTab = 'orders';
 
 onAuthStateChanged(auth, async user => {
@@ -494,17 +606,19 @@ function showAdmin() {
   onValue(ref(db,'users'), snap => { const d = snap.val(); staffList = d ? Object.entries(d).map(([k,v])=>({uid:k,...v})) : []; renderStaff(); });
   onValue(ref(db,'loyalty'), snap => { loyaltyRecords = snap.val()||{}; if(currentTab==='loyalty') renderLoyaltyAdmin(); });
   onValue(ref(db,'waittime'), snap => { waittimeData = snap.val()||{}; if(currentTab==='waittime'){ updateWaitTimeUI(); renderHoursSchedule(); } });
+  onValue(ref(db,'branding'), snap => { brandingData = snap.val()||{}; applyBrandingToPage(brandingData); if(currentTab==='branding') initBranding(); });
 }
 
 window.switchTab = function(t) {
   currentTab = t;
   document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
   document.getElementById('tab-'+t).classList.add('active');
-  document.querySelectorAll('.tb').forEach((b,i) => b.classList.toggle('active', ['orders','history','menu','coupons','staff','inventory','loyalty','waittime','finance'][i]===t));
+  document.querySelectorAll('.tb').forEach((b,i) => b.classList.toggle('active', ['orders','history','menu','coupons','staff','inventory','loyalty','waittime','finance','branding'][i]===t));
   if (t==='inventory') renderInventory();
   if (t==='loyalty') renderLoyaltyAdmin();
   if (t==='waittime') initWaitTime();
   if (t==='finance') renderFinance();
+  if (t==='branding') initBranding();
   if (t==='history') renderHistory();
 }
 
@@ -1196,6 +1310,146 @@ window.renderFinance = function() {
         </td>
       </tr>`).join('');
   }
+}
+
+
+function applyBrandingToPage(b) {
+  if (!b) return;
+  const root = document.documentElement.style;
+  if (b.primary) { root.setProperty('--brand-primary', b.primary); }
+  if (b.bg)      { root.setProperty('--brand-bg', b.bg); }
+  if (b.nav)     { root.setProperty('--brand-nav', b.nav); }
+  if (b.text)    { root.setProperty('--brand-text', b.text); }
+}
+
+function initBranding() {
+  const b = brandingData;
+  // Set color inputs
+  const fields = {primary:'#ff6b35', bg:'#1a1a1a', nav:'#111111', text:'#ffffff'};
+  Object.entries(fields).forEach(([k, def]) => {
+    const val = b[k] || def;
+    const picker = document.getElementById('color-'+k);
+    const hex = document.getElementById('color-'+k+'-hex');
+    if (picker) picker.value = val;
+    if (hex) hex.value = val;
+  });
+  if (b.name) document.getElementById('brand-name').value = b.name;
+  if (b.tagline) document.getElementById('brand-tagline').value = b.tagline;
+  if (b.logo) {
+    const img = document.getElementById('logo-preview');
+    img.innerHTML = `<img src="${b.logo}" style="width:100%;height:100%;object-fit:contain;border-radius:8px">`;
+  }
+  updateBrandPreview();
+}
+
+function updateBrandPreview() {
+  const primary = document.getElementById('color-primary').value || '#ff6b35';
+  const bg      = document.getElementById('color-bg').value || '#1a1a1a';
+  const nav     = document.getElementById('color-nav').value || '#111111';
+  const text    = document.getElementById('color-text').value || '#ffffff';
+  const name    = document.getElementById('brand-name').value || 'The Buff';
+
+  document.getElementById('prev-nav').style.background = nav;
+  document.getElementById('prev-name').style.color = primary;
+  document.getElementById('prev-name').textContent = name;
+  document.getElementById('prev-body').style.background = bg;
+  ['prev-card','prev-card2','prev-card3'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.style.background = nav; el.querySelector('div').style.color = text; }
+  });
+  ['prev-price','prev-price2','prev-price3'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.color = primary;
+  });
+  document.getElementById('prev-btn').style.background = primary;
+
+  // Show logo in preview
+  const logo = brandingData.logo;
+  const prevLogo = document.getElementById('prev-logo');
+  if (logo) { prevLogo.src = logo; prevLogo.style.display = 'block'; }
+  else { prevLogo.style.display = 'none'; }
+}
+
+window.syncColorFromHex = function(key) {
+  const hex = document.getElementById('color-'+key+'-hex').value;
+  if (/^#[0-9a-fA-F]{6}$/.test(hex)) {
+    document.getElementById('color-'+key).value = hex;
+    updateBrandPreview();
+  }
+}
+
+// Sync picker → hex input
+['primary','bg','nav','text'].forEach(key => {
+  setTimeout(() => {
+    const picker = document.getElementById('color-'+key);
+    if (picker) picker.addEventListener('input', () => {
+      document.getElementById('color-'+key+'-hex').value = picker.value;
+      updateBrandPreview();
+    });
+  }, 1000);
+});
+
+window.applyPreset = function(primary, bg, nav, text) {
+  document.getElementById('color-primary').value = primary;
+  document.getElementById('color-primary-hex').value = primary;
+  document.getElementById('color-bg').value = bg;
+  document.getElementById('color-bg-hex').value = bg;
+  document.getElementById('color-nav').value = nav;
+  document.getElementById('color-nav-hex').value = nav;
+  document.getElementById('color-text').value = text;
+  document.getElementById('color-text-hex').value = text;
+  updateBrandPreview();
+}
+
+window.saveBranding = async function() {
+  const b = {
+    primary: document.getElementById('color-primary').value,
+    bg:      document.getElementById('color-bg').value,
+    nav:     document.getElementById('color-nav').value,
+    text:    document.getElementById('color-text').value,
+    name:    document.getElementById('brand-name').value.trim(),
+    tagline: document.getElementById('brand-tagline').value.trim(),
+    logo:    brandingData.logo || ''
+  };
+  await set(ref(db,'branding'), b);
+  alert('Branding saved! Customer and wait time screens will update shortly.');
+}
+
+window.saveBrandName = async function() {
+  await set(ref(db,'branding'), {
+    ...brandingData,
+    name: document.getElementById('brand-name').value.trim(),
+    tagline: document.getElementById('brand-tagline').value.trim()
+  });
+  alert('Name saved!');
+}
+
+window.resetBranding = async function() {
+  if (!confirm('Reset all colors to defaults?')) return;
+  applyPreset('#ff6b35','#1a1a1a','#111111','#ffffff');
+}
+
+window.handleLogoUpload = function(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  if (file.size > 500000) { alert('Image too large — please use an image under 500KB.'); return; }
+  const reader = new FileReader();
+  reader.onload = async function(e) {
+    const dataUrl = e.target.result;
+    const preview = document.getElementById('logo-preview');
+    preview.innerHTML = `<img src="${dataUrl}" style="width:100%;height:100%;object-fit:contain;border-radius:8px">`;
+    brandingData.logo = dataUrl;
+    await set(ref(db,'branding'), {...brandingData, logo: dataUrl});
+    updateBrandPreview();
+  };
+  reader.readAsDataURL(file);
+}
+
+window.removeLogo = async function() {
+  brandingData.logo = '';
+  document.getElementById('logo-preview').innerHTML = 'No logo';
+  document.getElementById('prev-logo').style.display = 'none';
+  await set(ref(db,'branding'), {...brandingData, logo: ''});
 }
 
 function fmtPhone(p){return p&&p.length===10?`(${p.slice(0,3)}) ${p.slice(3,6)}-${p.slice(6)}`:p;}

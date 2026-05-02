@@ -125,6 +125,37 @@ function updateDisplay() {
   }
 }
 
+// Apply branding
+onValue(ref(db, 'branding'), snap => {
+  const b = snap.val() || {};
+  if (b.bg)      document.body.style.background = b.bg;
+  if (b.primary) {
+    document.querySelector('.wait-time').style.color = b.primary;
+    document.querySelector('.logo').style.color = b.primary;
+    document.querySelector('.status-dot').style.background = b.primary;
+  }
+  if (b.text)    document.body.style.color = b.text;
+  if (b.nav) {
+    document.querySelectorAll('.stat, .message-box').forEach(el => {
+      el.style.background = b.nav;
+      el.style.borderColor = b.nav;
+    });
+  }
+  if (b.name) document.querySelector('.logo').textContent = '▶ ' + b.name;
+  if (b.tagline) document.querySelector('.subtitle').textContent = b.tagline || 'Live Order Status';
+  // Logo
+  const existing = document.getElementById('brand-logo');
+  if (b.logo) {
+    if (!existing) {
+      const img = document.createElement('img');
+      img.id = 'brand-logo';
+      img.style.cssText = 'height:70px;border-radius:8px;margin-bottom:12px';
+      img.src = b.logo;
+      document.querySelector('.logo').insertAdjacentElement('beforebegin', img);
+    } else { existing.src = b.logo; existing.style.display = 'block'; }
+  } else if (existing) { existing.style.display = 'none'; }
+});
+
 // Listen to waittime settings
 onValue(ref(db, 'waittime'), snap => {
   waittimeSettings = snap.val() || {};

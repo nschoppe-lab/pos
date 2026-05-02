@@ -174,6 +174,39 @@ let menu = [], coupons = [], cart = [], appliedCoupon = null;
 let loyaltyData = null, loyaltyDiscount = 0;
 let custItem = null, custSelections = {};
 
+// Apply branding from Firebase
+onValue(ref(db, 'branding'), snap => {
+  const b = snap.val() || {};
+  const root = document.documentElement.style;
+  if (b.primary) root.setProperty('--bp', b.primary);
+  if (b.bg)      root.setProperty('--bb', b.bg);
+  if (b.nav)     root.setProperty('--bn', b.nav);
+  if (b.text)    root.setProperty('--bt', b.text);
+  // Apply to actual elements
+  if (b.primary) {
+    document.querySelectorAll('.brand, .mi-price, .ci-price, .cust-add-btn, .place-btn').forEach(el => {
+      if (el.classList.contains('brand') || el.classList.contains('mi-price') || el.classList.contains('ci-price')) el.style.color = b.primary;
+      if (el.classList.contains('cust-add-btn') || el.classList.contains('place-btn')) el.style.background = b.primary;
+    });
+  }
+  if (b.bg) document.body.style.background = b.bg;
+  if (b.nav) document.querySelector('.topnav').style.background = b.nav;
+  if (b.text) document.body.style.color = b.text;
+  if (b.name) document.querySelector('.brand').textContent = '▶ ' + b.name;
+  // Logo
+  const existing = document.getElementById('nav-logo');
+  if (b.logo) {
+    if (!existing) {
+      const img = document.createElement('img');
+      img.id = 'nav-logo';
+      img.style.cssText = 'height:32px;border-radius:4px;margin-right:8px';
+      img.src = b.logo;
+      const brand = document.querySelector('.brand');
+      brand.parentNode.insertBefore(img, brand);
+    } else { existing.src = b.logo; existing.style.display = 'block'; }
+  } else if (existing) { existing.style.display = 'none'; }
+});
+
 onValue(ref(db, 'menu'), snap => {
   menu = snap.val() ? Object.values(snap.val()) : [];
   renderMenu();
