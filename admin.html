@@ -722,19 +722,18 @@ let tapTimers = {}, currentTab = 'orders';
 onAuthStateChanged(auth, async user => {
   if (user) {
     try {
-      const snap = await get(ref(db, `users/${user.uid}`));
-      const userData = snap.val() || {};
-      const role = userData.role;
-      console.log('Auth UID:', user.uid, '| Role:', role, '| Data:', userData);
+      const snap = await get(ref(db, 'users/' + user.uid));
+      const data = snap.val() || {};
+      const role = data.role || '';
       if (role === 'admin') {
         showAdmin();
       } else {
         await signOut(auth);
-        showLoginErr('Access denied. UID: ' + user.uid + ' | Role found: ' + (role || 'NONE') + '. Make sure role=admin exists in Firebase under users/' + user.uid);
+        showLoginErr('Access denied — role="' + role + '" found for UID ' + user.uid + '. Expected role="admin". Check Firebase users node.');
       }
     } catch(e) {
-      console.error('Auth error:', e);
-      showLoginErr('Firebase error: ' + e.message);
+      await signOut(auth);
+      showLoginErr('Firebase read error: ' + e.message + ' — check your Firebase rules allow auth != null to read users.');
     }
   } else {
     document.getElementById('login-wrap').style.display = 'flex';
@@ -763,13 +762,11 @@ function showAdmin() {
     const d = snap.val() || {};
     staffList = Object.entries(d).map(([k,v])=>({uid:k,...v}));
     renderStaff();
-    // Mirror staff to rmbStaffPublic - update per-user to preserve photos/hidden flags
+    // Mirror staff to rmbStaffPublic individually (preserves photos/hidden flags)
     staffList.forEach(s => {
       if (s.role === 'kitchen' || s.role === 'admin') {
-        const pub = rmbStaffPublicData[s.uid] || {};
-        if (pub.hidden === true) return; // skip hidden workers
         update(ref(db, 'rmbStaffPublic/' + s.uid), {
-          name: s.name || '', role: s.role, photo: pub.photo || ''
+          name: s.name || '', role: s.role
         }).catch(()=>{});
       }
     });
@@ -976,7 +973,7 @@ function renderStaff() {
       </td>
       <td style="display:flex;gap:5px;flex-wrap:wrap">
         ${isKitchen ? `<button onclick="editShift('${s.uid}','${s.shiftStart||'10:00'}','${s.shiftEnd||'22:00'}')" style="background:#1a2a3a;border:1px solid #2e75b6;color:#60a5fa;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">Edit Shift</button>` : ''}
-        ${s.role !== 'admin' ? `<button onclick="deleteStaffAccount('${s.uid}','${s.name||s.email||'this account'}')" style="background:#2a1010;border:1px solid #7f1d1d;color:#ef4444;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">Delete</button>` : '<span style="font-size:10px;color:#555;padding:2px">Admin</span>'}
+        ${s.role !== 'admin' ? `<button onclick="deleteStaffAccount('${s.uid}','${s.name||s.email||'this account'}')" style="background:#2a1010;border:1px solid #7f1d1d;color:#ef4444;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">Delete</button>` : '<span style="font-size:10px;color:#555;padding:2px 4px">Admin</span>'}
       </td>`;
     tbody.appendChild(r);
   });
@@ -1042,9 +1039,11 @@ window.createStaff = async function() {
 }
 
 window.deleteStaffAccount = async function(uid, name) {
-  const snap = await get(ref(db, 'users/' + uid + '/role'));
-  if (snap.val() === 'admin') { alert('Admin accounts cannot be deleted.'); return; }
-  if (!confirm('Delete "' + name + '"?\nThis removes their kitchen login. Cannot be undone.')) return;
+  try {
+    const snap = await get(ref(db, 'users/' + uid + '/role'));
+    if (snap.val() === 'admin') { alert('Admin accounts cannot be deleted.'); return; }
+  } catch(e) {}
+  if (!confirm('Delete "' + name + '"? This removes their kitchen login and cannot be undone.')) return;
   try {
     await remove(ref(db, 'users/' + uid));
     await remove(ref(db, 'rmbStaffPublic/' + uid));
@@ -1896,33 +1895,18 @@ function initRmbAdmin() {
 }
 
 function getAllRmbWorkers() {
+  // Merge Firebase auth-based kitchen staff + manually added rmbWorkers
   const workers = [];
-  // Kitchen/admin staff from users (filtered by hidden flag in rmbStaffPublic)
+  // From users (kitchen/admin role)
   staffList.forEach(s => {
     if (s.role === 'kitchen' || s.role === 'admin') {
       const pub = rmbStaffPublicData[s.uid] || {};
-      const hidden = pub.hidden === true;
-      workers.push({
-        uid: s.uid,
-        name: s.name || s.email || '—',
-        role: s.role,
-        source: 'staff',
-        photo: pub.photo || '',
-        hidden
-      });
+      if (pub.hidden === true) return;
+      workers.push({ uid: s.uid, name: s.name || s.email || '—', role: s.role, source: 'staff', photo: pub.photo || '', hidden: false });
     }
   });
-  // Manually added rmbWorkers
   Object.entries(rmbWorkersData).forEach(([key, w]) => {
-    workers.push({
-      uid: key,
-      name: w.name || 'Unknown',
-      role: w.role || 'kitchen',
-      source: 'manual',
-      fbKey: key,
-      photo: w.photo || '',
-      hidden: false
-    });
+    workers.push({ uid: key, name: w.name || 'Unknown', role: w.role || 'kitchen', source: 'manual', fbKey: key, photo: w.photo || '', hidden: false });
   });
   return workers;
 }
@@ -1965,37 +1949,30 @@ window.renderRmbAdmin = function() {
 
     const row = document.createElement('div');
     row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid #2a2a2a;gap:12px;flex-wrap:wrap';
-    // Build row using string concatenation to avoid template literal issues
-    const avatarHTML = w.photo
-      ? '<img src="' + w.photo + '" style="width:100%;height:100%;object-fit:cover">'
-      : (w.name||'?').slice(0,2).toUpperCase();
-    const hiddenBadge = w.hidden ? '<span style="background:#2a2a2a;color:#555;padding:1px 7px;border-radius:10px;font-size:10px;margin-left:6px">Hidden</span>' : '';
-    const manualBadge = w.source==='manual' ? '<span style="background:#1a2a3a;color:#60a5fa;padding:1px 6px;border-radius:4px;font-size:10px;margin-left:4px">Manual</span>' : '';
-    const removeBtn = w.source==='manual'
-      ? '<button onclick="removeRmbWorker('' + w.fbKey + '','' + w.name.replace(/'/g,"\'") + '','' + w.uid + '')" style="background:#2a1010;border:1px solid #7f1d1d;color:#ef4444;border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer">Remove</button>'
-      : w.hidden
-        ? '<button onclick="reAddStaffToRmb('' + w.uid + '','' + w.name.replace(/'/g,"\'") + '')" style="background:#1a2a1a;border:1px solid #22c55e44;color:#22c55e;border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer">Re-add</button>'
-        : '<button onclick="removeStaffFromRmb('' + w.uid + '','' + w.name.replace(/'/g,"\'") + '')" style="background:#2a1010;border:1px solid #7f1d1d;color:#ef4444;border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer">Remove</button>';
-    const viewBtn = count > 0
-      ? '<button onclick="viewRmbReviews('' + w.uid + '','' + w.name.replace(/'/g,"\'") + '',' + count + ')" style="background:#1a2a3a;border:1px solid #2e75b644;color:#60a5fa;border-radius:6px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer">View Reviews</button>'
-      : '<span style="font-size:11px;color:#555">No reviews yet</span>';
-
-    row.innerHTML =
-      '<div style="display:flex;align-items:center;gap:12px;flex:1;min-width:200px">'
-      + '<div onclick="uploadWorkerPhoto('' + w.uid + '','' + w.source + '','' + (w.fbKey||'') + '')" title="Click to upload photo" style="width:48px;height:48px;border-radius:10px;background:linear-gradient(135deg,#ff6b35,#e55a2b);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;flex-shrink:0;overflow:hidden;cursor:pointer;position:relative">'
-        + avatarHTML
-        + '<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.55);font-size:8px;text-align:center;color:#fff;padding:1px">📷</div>'
-      + '</div>'
-      + '<div>'
-        + '<div style="font-size:13px;font-weight:700;color:' + (w.hidden?'#555':'#fff') + '">' + w.name + hiddenBadge + '</div>'
-        + '<div style="font-size:11px;color:#888;margin-top:2px">' + roleLabel + manualBadge + '</div>'
-      + '</div>'
-      + '</div>'
-      + '<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">'
-        + '<div style="text-align:center"><div style="font-size:20px;font-weight:800;color:' + col + '">' + (avg !== null ? avg.toFixed(1) : '—') + '</div><div style="font-size:10px;color:#555">avg / 10</div></div>'
-        + '<div style="text-align:center"><div style="font-size:20px;font-weight:800;color:#fff">' + count + '</div><div style="font-size:10px;color:#555">review' + (count!==1?'s':'') + '</div></div>'
-        + '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">' + viewBtn + removeBtn + '</div>'
-      + '</div>'
+    row.innerHTML = `
+      <div style="display:flex;align-items:center;gap:12px;flex:1;min-width:200px">
+        <div onclick="uploadWorkerPhoto('${w.uid}','${w.source}','${w.fbKey||''}')" title="Upload photo" style="width:48px;height:48px;border-radius:10px;background:linear-gradient(135deg,#ff6b35,#e55a2b);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;flex-shrink:0;overflow:hidden;cursor:pointer;position:relative">${w.photo ? `<img src="${w.photo}" style="width:100%;height:100%;object-fit:cover">` : (w.name||'?').slice(0,2).toUpperCase()}<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.5);font-size:8px;text-align:center;color:#fff">📷</div></div>
+        <div>
+          <div style="font-size:13px;font-weight:700">${w.name}</div>
+          <div style="font-size:11px;color:#888;margin-top:2px">${roleLabel} ${w.source==='manual'?'<span style="background:#1a2a3a;color:#60a5fa;padding:1px 6px;border-radius:4px;font-size:10px;margin-left:4px">Manual</span>':''}</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+        <div style="text-align:center">
+          <div style="font-size:20px;font-weight:800;color:${col}">${avg !== null ? avg.toFixed(1) : '—'}</div>
+          <div style="font-size:10px;color:#555">avg / 10</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:20px;font-weight:800;color:#fff">${count}</div>
+          <div style="font-size:10px;color:#555">review${count!==1?'s':''}</div>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+          ${count > 0 ? `<button onclick="viewRmbReviews('${w.uid}','${w.name.replace(/'/g,"\\'")}',${count})" style="background:#1a2a3a;border:1px solid #2e75b644;color:#60a5fa;border-radius:6px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer">View Reviews</button>` : '<span style="font-size:11px;color:#555">No reviews yet</span>'}
+          ${w.w.source==='manual'
+            ? '<button onclick="removeRmbWorker(\'' + w.fbKey + '\',\'' + (w.name||'').replace(/\'/g,"\\'") + '\',\'' + w.uid + '\')" style="background:#2a1010;border:1px solid #7f1d1d;color:#ef4444;border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer">Remove</button>'
+            : '<button onclick="removeStaffFromRmb(\'' + w.uid + '\',\'' + (w.name||'').replace(/\'/g,"\\'") + '\')" style="background:#2a1010;border:1px solid #7f1d1d;color:#ef4444;border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer">Remove from RMB</button>'}
+        </div>
+      </div>`;
     el.appendChild(row);
   });
 }
@@ -2074,7 +2051,7 @@ window.deleteRmbReview = async function(uid, reviewKey, author) {
 }
 
 window.removeStaffFromRmb = async function(uid, name) {
-  if (!confirm('Remove "' + name + '" from Rate My Buff?\nThey will be hidden from the public page. Their kitchen login stays active.')) return;
+  if (!confirm('Remove "' + name + '" from Rate My Buff? They will be hidden from the public page.')) return;
   try {
     await update(ref(db, 'rmbStaffPublic/' + uid), { hidden: true });
     alert('"' + name + '" removed from Rate My Buff.');
@@ -2084,29 +2061,24 @@ window.removeStaffFromRmb = async function(uid, name) {
 window.reAddStaffToRmb = async function(uid, name) {
   try {
     await update(ref(db, 'rmbStaffPublic/' + uid), { hidden: false });
-    alert('"' + name + '" is back on Rate My Buff!');
+    alert('"' + name + '" re-added to Rate My Buff!');
   } catch(e) { alert('Error: ' + e.message); }
 }
 
 window.uploadWorkerPhoto = function(uid, source, fbKey) {
   const input = document.createElement('input');
-  input.type = 'file';
-  input.accept = 'image/*';
+  input.type = 'file'; input.accept = 'image/*';
   input.onchange = async function() {
     const file = input.files[0];
     if (!file) return;
-    if (file.size > 600000) { alert('Image too large — please use under 600KB.'); return; }
+    if (file.size > 600000) { alert('Image too large — use under 600KB.'); return; }
     const reader = new FileReader();
     reader.onload = async function(e) {
-      const dataUrl = e.target.result;
       try {
-        if (source === 'manual' && fbKey) {
-          await update(ref(db, 'rmbWorkers/' + fbKey), { photo: dataUrl });
-        } else {
-          await update(ref(db, 'rmbStaffPublic/' + uid), { photo: dataUrl });
-        }
-        alert('✅ Photo saved! It now shows on the Rate My Buff page.');
-      } catch(err) { alert('Error saving photo: ' + err.message); }
+        const path = (source === 'manual' && fbKey) ? 'rmbWorkers/' + fbKey : 'rmbStaffPublic/' + uid;
+        await update(ref(db, path), { photo: e.target.result });
+        alert('✅ Photo saved!');
+      } catch(err) { alert('Error: ' + err.message); }
     };
     reader.readAsDataURL(file);
   };
