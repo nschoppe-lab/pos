@@ -102,7 +102,7 @@ function updateDisplay() {
 
   const wtEl = document.getElementById('wait-time');
   const wuEl = document.getElementById('wait-unit');
-  if (estimatedMins === 0) {
+  if (openOrderCount === 0) {
     wtEl.textContent = '0';
     wuEl.textContent = 'No wait — order now!';
     wtEl.style.color = '#22c55e';
@@ -170,7 +170,7 @@ onValue(ref(db, 'orders'), snap => {
   const done = all.filter(o => o.status === 'done').length;
   document.getElementById('open-count').textContent = openOrderCount;
   document.getElementById('done-count').textContent = done;
-  updateDisplay();
+  updateDisplay(); // recalculate wait time with latest open count
 });
 </script>
 </body>

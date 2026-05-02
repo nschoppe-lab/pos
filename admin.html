@@ -967,6 +967,7 @@ window.renderLoyaltyAdmin = function() {
       <td style="display:flex;gap:5px;flex-wrap:wrap">
         <button onclick="adjustCredit('${r.key}', ${credits})" style="background:#1a2a1a;border:1px solid #22c55e44;color:#22c55e;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">Edit</button>
         <button onclick="resetLoyalty('${r.key}', '${r.name||''}', ${count})" style="background:#2a1010;border:1px solid #7f1d1d;color:#ef4444;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">Reset</button>
+        <button onclick="deleteLoyaltyAccount('${r.key}', '${r.name||r.email||''}')" style="background:#3a0a0a;border:1px solid #991b1b;color:#fca5a5;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">Delete</button>
       </td>`;
     tbody.appendChild(tr);
   });
@@ -980,6 +981,12 @@ window.adjustCredit = function(key, currentCredits) {
   update(ref(db, `loyalty/${key}`), { credits: val })
     .then(() => alert(`Credit updated to $${val.toFixed(2)}`))
     .catch(e => alert('Error: ' + e.message));
+}
+
+window.deleteLoyaltyAccount = async function(key, name) {
+  if (!confirm(`Permanently delete loyalty account for "${name}"?\nThis cannot be undone.`)) return;
+  await remove(ref(db, `loyalty/${key}`));
+  alert(`Loyalty account for "${name}" deleted.`);
 }
 
 window.resetLoyalty = function(key, name, count) {
@@ -1071,12 +1078,12 @@ window.saveHours = async function() {
   DAYS.forEach(day => {
     hours[day] = {
       enabled: document.getElementById(`hours-open-${day}`).checked,
-      open: document.getElementById(`hours-start-${day}`).value,
-      close: document.getElementById(`hours-end-${day}`).value
+      open: document.getElementById(`hours-start-${day}`).value || '10:00',
+      close: document.getElementById(`hours-end-${day}`).value || '22:00'
     };
   });
-  await set(ref(db,'waittime'), {...waittimeData, hours});
-  alert('Hours saved! The Buff will auto open/close based on this schedule.');
+  await update(ref(db,'waittime'), { hours });
+  alert('✅ Hours saved! The Buff will auto open/close based on this schedule.');
 }
 
 function checkAutoOpenClose() {
@@ -1090,7 +1097,7 @@ function checkAutoOpenClose() {
     // Today is closed — make sure we show closed
     if (!waittimeData.manualOverride) {
       if (!waittimeData.closed) {
-        set(ref(db,'waittime'), {...waittimeData, closed: true}).catch(()=>{});
+        update(ref(db,'waittime'), {closed: true}).catch(()=>{});
       }
     }
     if (nextEl) nextEl.textContent = 'Closed today';
@@ -1105,9 +1112,9 @@ function checkAutoOpenClose() {
 
   if (!waittimeData.manualOverride) {
     if (shouldBeOpen && waittimeData.closed) {
-      set(ref(db,'waittime'), {...waittimeData, closed: false}).catch(()=>{});
+      update(ref(db,'waittime'), {closed: false}).catch(()=>{});
     } else if (!shouldBeOpen && !waittimeData.closed) {
-      set(ref(db,'waittime'), {...waittimeData, closed: true}).catch(()=>{});
+      update(ref(db,'waittime'), {closed: true}).catch(()=>{});
     }
   }
 
@@ -1170,34 +1177,32 @@ function updateWaitTimeUI() {
 
 window.saveMinsPerOrder = async function() {
   const val = parseInt(document.getElementById('mins-per-order-input').value) || 2;
-  await set(ref(db,'waittime'), {...waittimeData, minsPerOrder: val});
+  await update(ref(db,'waittime'), { minsPerOrder: val });
+  alert('✅ Updated! Customer screen now uses ' + val + ' min per order.');
 }
 
 window.toggleClosed = async function() {
   isClosed = !isClosed;
-  // manualOverride = true means the schedule won't fight this manual toggle
-  // It resets automatically at the next scheduled open/close transition
-  await set(ref(db,'waittime'), {...waittimeData, closed: isClosed, manualOverride: true});
-  // Clear override after 2 hours so schedule resumes
+  await update(ref(db,'waittime'), { closed: isClosed, manualOverride: true });
   setTimeout(async () => {
-    await set(ref(db,'waittime'), {...waittimeData, manualOverride: false});
+    await update(ref(db,'waittime'), { manualOverride: false });
   }, 2 * 60 * 60 * 1000);
 }
 
 window.saveClosedMsg = async function() {
   const msg = document.getElementById('closed-msg-input').value.trim();
-  await set(ref(db,'waittime'), {...waittimeData, closedMsg: msg});
+  await update(ref(db,'waittime'), { closedMsg: msg });
 }
 
 window.saveCustomMsg = async function() {
   const msg = document.getElementById('custom-msg-input').value.trim();
   if (!msg) return;
-  await set(ref(db,'waittime'), {...waittimeData, message: msg});
+  await update(ref(db,'waittime'), { message: msg });
   document.getElementById('custom-msg-input').value = '';
 }
 
 window.clearCustomMsg = async function() {
-  await set(ref(db,'waittime'), {...waittimeData, message: ''});
+  await update(ref(db,'waittime'), { message: '' });
 }
 
 
