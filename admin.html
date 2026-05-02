@@ -1781,10 +1781,10 @@ function renderSpecialsAdmin() {
         '</div>' +
         '<div style="display:flex;gap:6px;align-items:center">' +
           '<label style="display:flex;align-items:center;gap:5px;font-size:11px;color:#888;cursor:pointer">' +
-            '<input type="checkbox" ' + (isActive ? 'checked' : '') + ' onchange="toggleSpecialActive('' + key + '',' + isActive + ')">' +
+            `<input type="checkbox" ${isActive ? 'checked' : ''} onchange="toggleSpecialActive('${key}',${isActive})">` +
             (isActive ? 'Active' : 'Hidden') +
           '</label>' +
-          '<button onclick="deleteSpecial('' + key + '')" style="background:#2a1010;border:1px solid #7f1d1d;color:#ef4444;border-radius:4px;padding:3px 10px;font-size:11px;cursor:pointer">Delete</button>' +
+          `<button onclick="deleteSpecial('${key}')" style="background:#2a1010;border:1px solid #7f1d1d;color:#ef4444;border-radius:4px;padding:3px 10px;font-size:11px;cursor:pointer">Delete</button>` +
         '</div>';
       section.appendChild(row);
     });
@@ -1835,8 +1835,8 @@ function renderExpenses() {
       + '<td style="color:#888">' + (e.note||'—') + '</td>'
       + '<td style="color:#555;font-size:11px">' + (e.addedAt||'—') + '</td>'
       + '<td style="display:flex;gap:5px">'
-        + '<button onclick="editExpense('' + key + '')" style="background:#1a2a3a;border:1px solid #2e75b6;color:#60a5fa;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">Edit</button>'
-        + '<button onclick="deleteExpense('' + key + '')" class="delbtn">Delete</button>'
+        + `<button onclick="editExpense('${key}')" style="background:#1a2a3a;border:1px solid #2e75b6;color:#60a5fa;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">Edit</button>`
+        + `<button onclick="deleteExpense('${key}')" class="delbtn">Delete</button>`
       + '</td>'
       + '</tr>';
   }).join('');
@@ -1857,7 +1857,7 @@ window.editExpense = function(key) {
     + '</div>'
     + '<div class="mbtns">'
       + '<button class="mbtn cancel" onclick="closeModal()">Cancel</button>'
-      + '<button class="mbtn ok" onclick="saveEditedExpense('' + key + '')">Save</button>'
+      + `<button class="mbtn ok" onclick="saveEditedExpense('${key}')">Save</button>`
     + '</div>'
   );
 }
