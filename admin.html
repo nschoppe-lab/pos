@@ -235,15 +235,30 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
         <div class="arow">
           <input type="text" id="new-sname" placeholder="Name">
           <input type="email" id="new-semail" placeholder="Email">
-          <input type="password" id="new-spass" placeholder="Password">
-          <button class="aadd" onclick="createStaff()">Create</button>
+          <input type="password" id="new-spass" placeholder="Password (min 6 chars)">
         </div>
-        <div style="font-size:11px;color:#666;margin-top:6px">They will log in at kitchen.html with these credentials.</div>
+        <div class="arow">
+          <label style="font-size:12px;color:#888;white-space:nowrap">Shift start:</label>
+          <input type="time" id="new-sshift-start" value="10:00" style="width:130px;flex:none">
+          <label style="font-size:12px;color:#888;white-space:nowrap;margin-left:8px">Shift end:</label>
+          <input type="time" id="new-sshift-end" value="22:00" style="width:130px;flex:none">
+          <button class="aadd" onclick="createStaff()" style="margin-left:auto">Create Account</button>
+        </div>
+        <div style="font-size:11px;color:#666;margin-top:6px">
+          Staff log in at <strong style="color:#ff6b35">kitchen.html</strong>. 
+          The Buff auto-opens when they log in and auto-closes when they log out.
+          Shift times are used as a backup schedule if no one is logged in.
+        </div>
       </div>
       <div class="asec">
         <div class="asec-title">Staff Accounts</div>
-        <table class="mtable"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Created</th></tr></thead>
-        <tbody id="staff-body"></tbody></table>
+        <div style="font-size:11px;color:#888;margin-bottom:10px">
+          <span id="staff-online-count" style="color:#22c55e;font-weight:700">0</span> staff currently clocked in
+        </div>
+        <table class="mtable">
+          <thead><tr><th>Name</th><th>Email</th><th>Shift</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody id="staff-body"></tbody>
+        </table>
       </div>
       <div class="asec" style="border-color:#7f1d1d">
         <div class="asec-title" style="color:#ef4444">Danger Zone</div>
@@ -796,31 +811,94 @@ window.deleteCoupon = async function(key) { await remove(ref(db,`coupons/${key}`
 
 // STAFF
 function renderStaff() {
-  const tbody=document.getElementById('staff-body');tbody.innerHTML='';
-  if(!staffList.length){const r=document.createElement('tr');r.innerHTML='<td colspan="4" style="color:#555;text-align:center;padding:12px;font-size:12px">No staff accounts yet</td>';tbody.appendChild(r);return;}
-  staffList.forEach(s=>{
-    const r=document.createElement('tr');
-    r.innerHTML=`<td>${s.name||'—'}</td><td>${s.email||'—'}</td><td><span style="background:${s.role==='admin'?'#2a1f5e':'#0a2a3a'};color:${s.role==='admin'?'#818cf8':'#38bdf8'};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">${s.role||'—'}</span></td><td style="color:#666;font-size:11px">${s.createdAt?new Date(s.createdAt).toLocaleDateString():'—'}</td>`;
+  const tbody = document.getElementById('staff-body');
+  tbody.innerHTML = '';
+  if (!staffList.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="color:#555;text-align:center;padding:12px;font-size:12px">No staff accounts yet</td></tr>';
+    return;
+  }
+  const onlineCount = staffList.filter(s => s.online && s.role === 'kitchen').length;
+  const oc = document.getElementById('staff-online-count');
+  if (oc) oc.textContent = onlineCount;
+
+  staffList.forEach(s => {
+    const isOnline  = s.online === true;
+    const isKitchen = s.role === 'kitchen';
+    const shift     = (s.shiftStart && s.shiftEnd) ? `${s.shiftStart} – ${s.shiftEnd}` : 'Not set';
+    const r = document.createElement('tr');
+    r.innerHTML = `
+      <td style="font-weight:600">${s.name||'—'}</td>
+      <td style="font-size:11px;color:#888">${s.email||'—'}</td>
+      <td style="font-size:11px;color:#ff6b35">${isKitchen ? shift : '—'}</td>
+      <td>
+        ${isOnline
+          ? '<span style="background:#052e16;color:#22c55e;padding:2px 9px;border-radius:10px;font-size:11px;font-weight:700">🟢 Clocked In</span>'
+          : '<span style="background:#1a1a1a;color:#555;padding:2px 9px;border-radius:10px;font-size:11px;font-weight:700">⚫ Offline</span>'}
+      </td>
+      <td style="display:flex;gap:5px;flex-wrap:wrap">
+        ${isKitchen ? `<button onclick="editShift('${s.uid}','${s.shiftStart||'10:00'}','${s.shiftEnd||'22:00'}')" style="background:#1a2a3a;border:1px solid #2e75b6;color:#60a5fa;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">Edit Shift</button>` : ''}
+      </td>`;
     tbody.appendChild(r);
   });
 }
 
+window.editShift = function(uid, currentStart, currentEnd) {
+  showModal(`
+    <h3>Edit Shift Times</h3>
+    <p style="font-size:12px;color:#aaa;margin-bottom:14px">Update this staff member's shift. The Buff auto-opens when they clock in.</p>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <label style="font-size:12px;color:#888;width:80px">Shift Start:</label>
+        <input type="time" id="edit-shift-start" value="${currentStart}"
+          style="background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:7px 9px;font-size:13px;color:#fff">
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <label style="font-size:12px;color:#888;width:80px">Shift End:</label>
+        <input type="time" id="edit-shift-end" value="${currentEnd}"
+          style="background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:7px 9px;font-size:13px;color:#fff">
+      </div>
+    </div>
+    <div class="mbtns">
+      <button class="mbtn cancel" onclick="closeModal()">Cancel</button>
+      <button class="mbtn ok" onclick="saveShift('${uid}')">Save</button>
+    </div>`);
+}
+
+window.saveShift = async function(uid) {
+  const start = document.getElementById('edit-shift-start').value;
+  const end   = document.getElementById('edit-shift-end').value;
+  await update(ref(db, `users/${uid}`), { shiftStart: start, shiftEnd: end });
+  closeModal();
+}
+
 window.createStaff = async function() {
-  const name=document.getElementById('new-sname').value.trim();
-  const email=document.getElementById('new-semail').value.trim();
-  const pass=document.getElementById('new-spass').value;
-  if(!name||!email||!pass){alert('Fill in all fields');return;}
-  if(pass.length<6){alert('Password must be at least 6 characters');return;}
+  const name        = document.getElementById('new-sname').value.trim();
+  const email       = document.getElementById('new-semail').value.trim();
+  const pass        = document.getElementById('new-spass').value;
+  const shiftStart  = document.getElementById('new-sshift-start').value || '10:00';
+  const shiftEnd    = document.getElementById('new-sshift-end').value   || '22:00';
+  if (!name||!email||!pass) { alert('Fill in all fields'); return; }
+  if (pass.length < 6)      { alert('Password must be at least 6 characters'); return; }
   try {
-    // Create user in Firebase Auth
     const cred = await createUserWithEmailAndPassword(auth, email, pass);
-    // Save role + info to DB
-    await set(ref(db,`users/${cred.user.uid}`),{name,email,role:'kitchen',createdAt:Date.now()});
-    document.getElementById('new-sname').value='';document.getElementById('new-semail').value='';document.getElementById('new-spass').value='';
-    showModal(`<h3 style="color:#22c55e">Account created!</h3><p><strong style="color:#fff">${name}</strong> can now log in to kitchen.html with:<br><br>Email: <strong style="color:#fff">${email}</strong><br>Password: (the one you set)</p><div class="mbtns"><button class="mbtn ok" onclick="closeModal()">Done</button></div>`);
-  } catch(e) {
-    alert('Error creating account: ' + e.message);
-  }
+    await set(ref(db,`users/${cred.user.uid}`), {
+      name, email, role:'kitchen',
+      shiftStart, shiftEnd,
+      createdAt: Date.now(),
+      online: false
+    });
+    document.getElementById('new-sname').value  = '';
+    document.getElementById('new-semail').value = '';
+    document.getElementById('new-spass').value  = '';
+    showModal(`<h3 style="color:#22c55e">Account created!</h3>
+      <p><strong style="color:#fff">${name}</strong> can now log in at kitchen.html</p>
+      <div style="background:#1a1a1a;border-radius:7px;padding:10px 12px;margin:10px 0;font-size:12px;color:#888">
+        Email: <span style="color:#fff">${email}</span><br>
+        Shift: <span style="color:#ff6b35">${shiftStart} – ${shiftEnd}</span><br>
+        The Buff will auto-open when they clock in and close when they clock out.
+      </div>
+      <div class="mbtns"><button class="mbtn ok" onclick="closeModal()">Done</button></div>`);
+  } catch(e) { alert('Error creating account: ' + e.message); }
 }
 
 window.clearOrders = async function() {

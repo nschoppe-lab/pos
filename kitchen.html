@@ -86,7 +86,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
       <div class="open-pill" id="open-pill">0 open</div>
       <div class="hint">Double-tap to complete</div>
     </div>
-    <button class="logout-btn" onclick="doLogout()">Sign out</button>
+    <button class="logout-btn" onclick="doLogout()" style="background:#2a1010;border-color:#7f1d1d;color:#ef4444">🔴 Clock Out</button>
   </div>
   <div class="orders-grid" id="orders-grid"><div class="empty">No open orders</div></div>
 </div>
@@ -101,7 +101,7 @@ emailjs.init("yoxsvEb1uuAA4Ytcd");
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getDatabase, ref, onValue, update, get } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+import { getDatabase, ref, onValue, update, get, set } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCG5nhzdAHBTGg2eXXmhqH8pF8S8qFqM7o",
@@ -120,20 +120,36 @@ const db = getDatabase(app);
 let orders = {};
 let tapTimers = {};
 
+let currentUID = null;
+
 onAuthStateChanged(auth, async user => {
   if (user) {
-    // Verify role is kitchen or admin
-    const snap = await get(ref(db, `users/${user.uid}/role`));
-    const role = snap.val();
-    if (role === 'kitchen' || role === 'admin') {
-      showKitchen();
+    currentUID = user.uid;
+    const snap = await get(ref(db, `users/${user.uid}`));
+    const userData = snap.val();
+    if (!userData) { await signOut(auth); showError('Account not found.'); return; }
+    if (userData.role === 'kitchen' || userData.role === 'admin') {
+      // Mark staff as online and open The Buff
+      await update(ref(db, `users/${user.uid}`), { online: true, lastLogin: new Date().toISOString() });
+      await update(ref(db, 'waittime'), { closed: false, manualOverride: false });
+      showKitchen(userData);
     } else {
       await signOut(auth);
       showError('Access denied. Kitchen accounts only.');
     }
   } else {
+    currentUID = null;
     document.getElementById('login-wrap').style.display = 'flex';
     document.getElementById('kitchen').style.display = 'none';
+  }
+});
+
+// Mark offline if browser/tab is closed
+window.addEventListener('beforeunload', async () => {
+  if (currentUID) {
+    // Use sendBeacon for reliability on page close
+    const url = `https://duncan--the-buff-default-rtdb.firebaseio.com/users/${currentUID}/online.json`;
+    navigator.sendBeacon(url + '?auth=', JSON.stringify(false));
   }
 });
 
@@ -151,6 +167,18 @@ window.doLogin = async function() {
 }
 
 window.doLogout = async function() {
+  if (currentUID) {
+    // Mark this staff member offline
+    await update(ref(db, `users/${currentUID}`), { online: false });
+    // Check if any other kitchen staff are still online
+    const usersSnap = await get(ref(db, 'users'));
+    const users = usersSnap.val() || {};
+    const anyoneOnline = Object.values(users).some(u => u.online === true && u.uid !== currentUID);
+    // If nobody else is online, close The Buff
+    if (!anyoneOnline) {
+      await update(ref(db, 'waittime'), { closed: true, manualOverride: false });
+    }
+  }
   await signOut(auth);
 }
 
@@ -160,13 +188,17 @@ function showError(msg) {
   errEl.textContent = msg;
 }
 
-function showKitchen() {
+function showKitchen(userData) {
   document.getElementById('login-wrap').style.display = 'none';
   document.getElementById('kitchen').style.display = 'flex';
+  // Show staff name in header
+  if (userData && userData.name) {
+    const brand = document.querySelector('.brand');
+    if (brand) brand.textContent = '▶ Kitchen — ' + userData.name;
+  }
   // Listen to orders in real time
   onValue(ref(db, 'orders'), snap => {
-    const data = snap.val();
-    orders = data || {};
+    orders = snap.val() || {};
     renderOrders();
   });
 }
@@ -193,12 +225,7 @@ function renderOrders() {
         <span class="oc-time">${order.time||''}</span>
       </div>
       <div class="oc-body">
-        ${(order.items||[]).map(i=>{
-          const custNote = (i.customizations||[]).length 
-            ? `<div style="font-size:10px;color:#888;margin-left:16px;margin-top:1px">${i.customizations.map(o=>(o.type==='remove'?'No ':'+')+o.name).join(', ')}</div>`
-            : '';
-          return `<div class="oc-line"><span>${i.qty}x</span> ${i.name}</div>${custNote}`;
-        }).join('')}
+        ${(order.items||[]).map(i=>`<div class="oc-line"><span>${i.qty}x</span> ${i.name}</div>`).join('')}
         ${order.discount>0?`<div style="font-size:11px;color:#22c55e;margin-top:4px">Disc: -$${parseFloat(order.discount).toFixed(2)}</div>`:''}
         ${order.comments?`<div style="font-size:11px;color:#f59e0b;margin-top:5px;padding:5px 8px;background:#2a1f0e;border-radius:5px">&#128172; ${order.comments}</div>`:''}
         <div class="oc-total">$${parseFloat(order.total).toFixed(2)}</div>
