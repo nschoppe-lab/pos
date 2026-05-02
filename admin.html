@@ -325,20 +325,18 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
       </div>
 
       <div class="asec">
-        <div class="asec-title">Wait Time</div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
-          <button onclick="setWait(5)"  style="flex:1;min-width:70px;padding:12px;background:#1e1e1e;border:1.5px solid #333;border-radius:8px;color:#fff;font-size:14px;font-weight:700;cursor:pointer" class="wait-preset">5 min</button>
-          <button onclick="setWait(10)" style="flex:1;min-width:70px;padding:12px;background:#1e1e1e;border:1.5px solid #333;border-radius:8px;color:#fff;font-size:14px;font-weight:700;cursor:pointer" class="wait-preset">10 min</button>
-          <button onclick="setWait(15)" style="flex:1;min-width:70px;padding:12px;background:#1e1e1e;border:1.5px solid #333;border-radius:8px;color:#fff;font-size:14px;font-weight:700;cursor:pointer" class="wait-preset">15 min</button>
-          <button onclick="setWait(20)" style="flex:1;min-width:70px;padding:12px;background:#1e1e1e;border:1.5px solid #333;border-radius:8px;color:#fff;font-size:14px;font-weight:700;cursor:pointer" class="wait-preset">20 min</button>
-          <button onclick="setWait(30)" style="flex:1;min-width:70px;padding:12px;background:#1e1e1e;border:1.5px solid #333;border-radius:8px;color:#fff;font-size:14px;font-weight:700;cursor:pointer" class="wait-preset">30 min</button>
-          <button onclick="setWait(0)"  style="flex:1;min-width:70px;padding:12px;background:#2a1010;border:1.5px solid #7f1d1d;border-radius:8px;color:#ef4444;font-size:14px;font-weight:700;cursor:pointer">Clear</button>
+        <div class="asec-title">Auto Wait Time</div>
+        <div style="background:#1a1a1a;border-radius:8px;padding:14px;margin-bottom:12px;border:1px solid #2a2a2a">
+          <div style="font-size:12px;color:#888;margin-bottom:6px">Wait time is calculated automatically:</div>
+          <div style="font-size:14px;color:#fff;font-weight:600">Open Orders × Minutes Per Order = Wait Time</div>
+          <div style="font-size:22px;font-weight:800;color:#ff6b35;margin-top:8px" id="current-wait-display">Calculating...</div>
         </div>
-        <div style="display:flex;gap:8px">
-          <input type="number" id="custom-wait-input" placeholder="Custom minutes" min="1" max="120" style="flex:1;background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:7px 9px;font-size:12px;color:#fff">
-          <button class="aadd" onclick="setWait(parseInt(document.getElementById('custom-wait-input').value)||0)">Set</button>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+          <label style="font-size:12px;color:#888;white-space:nowrap">Minutes per order:</label>
+          <input type="number" id="mins-per-order-input" placeholder="2" min="1" max="30" value="2" style="width:80px;background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:7px 9px;font-size:13px;color:#fff;font-weight:700">
+          <button class="aadd" onclick="saveMinsPerOrder()">Save</button>
         </div>
-        <div style="margin-top:10px;font-size:12px;color:#888">Current: <span id="current-wait-display" style="color:#ff6b35;font-weight:700">Not set</span></div>
+        <div style="font-size:11px;color:#555">Currently using <span id="mins-per-order-display" style="color:#ff6b35;font-weight:700">2</span> min per order</div>
       </div>
 
       <div class="asec">
@@ -441,7 +439,7 @@ function showLoginErr(msg) { const e = document.getElementById('login-err'); e.s
 function showAdmin() {
   document.getElementById('login-wrap').style.display = 'none';
   document.getElementById('admin-app').style.display = 'flex';
-  onValue(ref(db,'orders'), snap => { orders = snap.val()||{}; renderOrders(); renderHistory(); updateBadge(); });
+  onValue(ref(db,'orders'), snap => { orders = snap.val()||{}; renderOrders(); renderHistory(); updateBadge(); if(currentTab==='waittime') updateWaitTimeUI(); });
   onValue(ref(db,'menu'), snap => { const d = snap.val(); menu = d ? Object.values(d) : []; renderMenuAdmin(); });
   onValue(ref(db,'coupons'), snap => { const d = snap.val(); coupons = d ? Object.entries(d).map(([k,v])=>({fbKey:k,...v})) : []; renderCoupons(); });
   onValue(ref(db,'users'), snap => { const d = snap.val(); staffList = d ? Object.entries(d).map(([k,v])=>({uid:k,...v})) : []; renderStaff(); });
@@ -846,10 +844,15 @@ window.addLoyaltyCredit = async function() {
 var isClosed = false;
 
 function initWaitTime() {
-  // Set the URL display
   const url = window.location.href.replace('admin.html', 'waittime.html');
   document.getElementById('waittime-url').textContent = url;
   updateWaitTimeUI();
+}
+
+function calcWaitTime() {
+  const openOrders = Object.values(orders).filter(o => o.status === 'pending').length;
+  const minsPerOrder = waittimeData.minsPerOrder || 2;
+  return openOrders * minsPerOrder;
 }
 
 function updateWaitTimeUI() {
@@ -863,20 +866,36 @@ function updateWaitTimeUI() {
     label.textContent = isClosed ? 'The Buff is Closed' : 'The Buff is Open';
     label.style.color = isClosed ? '#ef4444' : '#22c55e';
   }
-  const mins = waittimeData.minutes || 0;
+
+  // Auto wait time display
   const waitDisplay = document.getElementById('current-wait-display');
-  if (waitDisplay) waitDisplay.textContent = mins ? mins + ' min' : 'Not set';
+  if (waitDisplay) {
+    const mins = calcWaitTime();
+    waitDisplay.textContent = mins === 0 ? 'No wait — order now!' : mins + ' min estimated wait';
+  }
+
+  // Mins per order display
+  const mpo = waittimeData.minsPerOrder || 2;
+  const mpoDisplay = document.getElementById('mins-per-order-display');
+  if (mpoDisplay) mpoDisplay.textContent = mpo;
+  const mpoInput = document.getElementById('mins-per-order-input');
+  if (mpoInput && !mpoInput._userEdited) mpoInput.value = mpo;
+
   const msgDisplay = document.getElementById('current-msg-display');
   if (msgDisplay) msgDisplay.textContent = waittimeData.message || 'None';
   if (waittimeData.closedMsg) {
     const inp = document.getElementById('closed-msg-input');
     if (inp && !inp.value) inp.value = waittimeData.closedMsg;
   }
-  // Highlight active preset
-  document.querySelectorAll('.wait-preset').forEach(btn => {
-    btn.style.borderColor = btn.textContent.trim() === mins + ' min' ? '#ff6b35' : '#333';
-    btn.style.color = btn.textContent.trim() === mins + ' min' ? '#ff6b35' : '#fff';
-  });
+
+  // Push calculated wait time to Firebase so waittime.html can read it
+  const autoMins = calcWaitTime();
+  set(ref(db,'waittime'), {...waittimeData, minutes: autoMins}).catch(()=>{});
+}
+
+window.saveMinsPerOrder = async function() {
+  const val = parseInt(document.getElementById('mins-per-order-input').value) || 2;
+  await set(ref(db,'waittime'), {...waittimeData, minsPerOrder: val});
 }
 
 window.toggleClosed = async function() {
@@ -887,11 +906,6 @@ window.toggleClosed = async function() {
 window.saveClosedMsg = async function() {
   const msg = document.getElementById('closed-msg-input').value.trim();
   await set(ref(db,'waittime'), {...waittimeData, closedMsg: msg});
-}
-
-window.setWait = async function(mins) {
-  await set(ref(db,'waittime'), {...waittimeData, minutes: mins});
-  document.getElementById('custom-wait-input').value = '';
 }
 
 window.saveCustomMsg = async function() {
