@@ -631,6 +631,11 @@ window.placeOrder = async function() {
         });
       } catch(emailErr) { console.warn('Confirmation email failed:', emailErr); }
     }
+    // Write order token so Rate My Buff knows this device placed an order
+    try {
+      const token = { name, email, ts: Date.now() };
+      localStorage.setItem('rmbOrderToken', JSON.stringify(token));
+    } catch(e) {}
     cart = []; appliedCoupon = null; loyaltyData = null; loyaltyDiscount = 0;
     ['cust-name','cust-email','cust-comments','disc-code'].forEach(id => document.getElementById(id).value = '');
     document.getElementById('disc-msg').className = 'disc-msg';
