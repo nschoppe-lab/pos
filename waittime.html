@@ -85,25 +85,31 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
-// Listen to wait time settings from admin
-onValue(ref(db, 'waittime'), snap => {
-  const data = snap.val() || {};
-  
+let waittimeSettings = {};
+let openOrderCount = 0;
+
+function updateDisplay() {
+  const data = waittimeSettings;
+
   // Closed status
   const closed = data.closed === true;
   document.getElementById('closed-overlay').className = 'closed-overlay' + (closed ? ' show' : '');
   if (data.closedMsg) document.getElementById('closed-msg').textContent = data.closedMsg;
 
-  // Wait time
-  const mins = data.minutes;
+  // Calculate wait time directly from open orders × minsPerOrder
+  const minsPerOrder = data.minsPerOrder || 2;
+  const estimatedMins = openOrderCount * minsPerOrder;
+
   const wtEl = document.getElementById('wait-time');
   const wuEl = document.getElementById('wait-unit');
-  if (mins === null || mins === undefined || mins === 0) {
-    wtEl.textContent = '—';
-    wuEl.textContent = 'minutes';
+  if (estimatedMins === 0) {
+    wtEl.textContent = '0';
+    wuEl.textContent = 'No wait — order now!';
+    wtEl.style.color = '#22c55e';
   } else {
-    wtEl.textContent = mins;
-    wuEl.textContent = mins === 1 ? 'minute' : 'minutes';
+    wtEl.textContent = estimatedMins;
+    wuEl.textContent = estimatedMins === 1 ? 'minute' : 'minutes';
+    wtEl.style.color = '#ff6b35';
   }
 
   // Custom message
@@ -117,16 +123,23 @@ onValue(ref(db, 'waittime'), snap => {
     msgEl.className = 'message';
     defEl.style.display = 'block';
   }
+}
+
+// Listen to waittime settings
+onValue(ref(db, 'waittime'), snap => {
+  waittimeSettings = snap.val() || {};
+  updateDisplay();
 });
 
-// Listen to live order counts
+// Listen to live order counts — calculates wait time directly
 onValue(ref(db, 'orders'), snap => {
   const data = snap.val() || {};
   const all = Object.values(data);
-  const open = all.filter(o => o.status === 'pending').length;
+  openOrderCount = all.filter(o => o.status === 'pending').length;
   const done = all.filter(o => o.status === 'done').length;
-  document.getElementById('open-count').textContent = open;
+  document.getElementById('open-count').textContent = openOrderCount;
   document.getElementById('done-count').textContent = done;
+  updateDisplay();
 });
 </script>
 </body>
