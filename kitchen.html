@@ -129,9 +129,11 @@ onAuthStateChanged(auth, async user => {
     const userData = snap.val();
     if (!userData) { await signOut(auth); showError('Account not found.'); return; }
     if (userData.role === 'kitchen' || userData.role === 'admin') {
-      // Mark staff as online and open The Buff
+      // Mark staff as online
       await update(ref(db, `users/${user.uid}`), { online: true, lastLogin: new Date().toISOString() });
-      await update(ref(db, 'waittime'), { closed: false, manualOverride: false });
+      try {
+        await update(ref(db, 'waittime'), { closed: false, manualOverride: false });
+      } catch(e) { console.warn('Could not update waittime on login:', e); }
       showKitchen(userData);
     } else {
       await signOut(auth);
@@ -176,7 +178,9 @@ window.doLogout = async function() {
     const anyoneOnline = Object.values(users).some(u => u.online === true && u.uid !== currentUID);
     // If nobody else is online, close The Buff
     if (!anyoneOnline) {
-      await update(ref(db, 'waittime'), { closed: true, manualOverride: false });
+      try {
+        await update(ref(db, 'waittime'), { closed: true, manualOverride: false });
+      } catch(e) { console.warn('Could not update waittime on logout:', e); }
     }
   }
   await signOut(auth);
