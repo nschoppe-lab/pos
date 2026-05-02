@@ -1661,9 +1661,6 @@ function renderRewardStaff() {
 function fmtPhone(p){return p&&p.length===10?`(${p.slice(0,3)}) ${p.slice(3,6)}-${p.slice(6)}`:p;}
 window.showModal = function(html){document.getElementById('modal-content').innerHTML=html;document.getElementById('modal').style.display='flex';}
 window.closeModal = function(){document.getElementById('modal').style.display='none';}
-</script>
-</body>
-</html>
 
 window.addExpense = async function() {
   const week   = (document.getElementById('exp-week')   || {}).value.trim();
@@ -1715,11 +1712,14 @@ function renderPLSummary(totalRev, totalDisc, couponDisc, loyaltyDisc) {
     { label:'Total Discounts', val:'-$'+totalDisc.toFixed(2),color:'#f59e0b',  icon:'🏷️' },
     { label:'Net Profit',      val:(profit >= 0 ? '+' : '') + '$'+profit.toFixed(2), color: profit >= 0 ? '#22c55e' : '#ef4444', icon: profit >= 0 ? '📈' : '📉' },
   ];
-  el.innerHTML = stats.map(s =>
-    `<div style="background:#111;border:1px solid #1a2a1a;border-radius:10px;padding:16px">
-      <div style="font-size:18px;margin-bottom:6px">${s.icon}</div>
-      <div style="font-size:10px;color:#666;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">${s.label}</div>
-      <div style="font-size:24px;font-weight:800;color:${s.color}">${s.val}</div>
-    </div>`
-  ).join('');
+  el.innerHTML = stats.map(function(s) {
+    return '<div style="background:#111;border:1px solid #1a2a1a;border-radius:10px;padding:16px">'
+      + '<div style="font-size:18px;margin-bottom:6px">' + s.icon + '</div>'
+      + '<div style="font-size:10px;color:#666;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">' + s.label + '</div>'
+      + '<div style="font-size:24px;font-weight:800;color:' + s.color + '">' + s.val + '</div>'
+      + '</div>';
+  }).join('');
 }
+</script>
+</body>
+</html>
