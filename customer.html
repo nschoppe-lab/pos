@@ -178,7 +178,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
-let menu = [], coupons = [], cart = [], appliedCoupon = null, activeBranding = {};
+let menu = [], coupons = [], cart = [], appliedCoupon = null, activeBranding = {}, openOrderCount = 0;
 let loyaltyData = null, loyaltyDiscount = 0;
 let custItem = null, custSelections = {};
 
@@ -240,38 +240,42 @@ let currentWaitTime = '';
 let waittimeSnap = {};
 
 function renderWaitBlock(panel) {
-  const existing = panel.querySelector('.wait-block');
+  var existing = panel.querySelector('.wait-block');
   if (existing) existing.remove();
 
-  const d = waittimeSnap;
+  var d = waittimeSnap;
   if (d.closed === true) return;
 
-  // Calculate using effective mpo (staff speed or default)
-  const minsPerOrder = parseFloat(d.activeStaffMpo || d.minsPerOrder || 2);
-  const totalSecs = Math.round(openOrderCount * minsPerOrder * 60);
-  let wait = '';
+  // Use activeStaffMpo (set when staff clock in) or fall back to default minsPerOrder
+  var minsPerOrder = parseFloat(d.activeStaffMpo || d.minsPerOrder || 2);
+  var totalSecs = Math.round(openOrderCount * minsPerOrder * 60);
+
+  var waitLabel = '';
   if (openOrderCount > 0) {
-    if (totalSecs < 60) wait = totalSecs + ' sec';
-    else {
-      const mins = Math.floor(totalSecs/60), secs = totalSecs%60;
-      wait = mins + (secs>0 ? ' min '+secs+' sec' : ' min');
+    if (totalSecs < 60) {
+      waitLabel = totalSecs + ' sec';
+    } else {
+      var mins = Math.floor(totalSecs / 60);
+      var secs = totalSecs % 60;
+      waitLabel = mins + (secs > 0 ? ' min ' + secs + ' sec' : ' min');
     }
   }
-  const customMsg = d.message || '';
-  if (!wait && !customMsg) return;
+
+  var customMsg = d.message || '';
+  if (!waitLabel && !customMsg) return;
 
   const block = document.createElement('div');
   block.className = 'wait-block';
   block.style.cssText = 'margin-top:24px;padding:20px;background:#1f1a0e;border:1.5px solid #f59e0b55;border-radius:12px;text-align:center';
 
-  let html = '<div style="font-size:28px;margin-bottom:8px">⏱️</div>';
-  if (wait) {
-    html += '<div style="font-size:26px;font-weight:800;color:#f59e0b;margin-bottom:4px">' + wait + '</div>';
-    html += '<div style="font-size:13px;color:#888;margin-bottom:' + (customMsg ? '10px' : '0') + '">estimated wait time</div>';
+  var html = '<div style="font-size:13px;font-weight:700;color:#f59e0b;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">⏱️ Estimated Wait Time</div>';
+  if (openOrderCount === 0) {
+    html += '<div style="font-size:22px;font-weight:800;color:#22c55e">No wait — order now!</div>';
+  } else {
+    html += '<div style="font-size:32px;font-weight:800;color:#f59e0b">' + waitLabel + '</div>';
+    html += '<div style="font-size:12px;color:#888;margin-top:4px">' + openOrderCount + ' order' + (openOrderCount !== 1 ? 's' : '') + ' ahead</div>';
   }
-  if (customMsg) {
-    html += '<div style="font-size:13px;color:#ccc;font-style:italic">' + customMsg + '</div>';
-  }
+  if (customMsg) html += '<div style="font-size:13px;color:#ccc;margin-top:8px;font-style:italic">' + customMsg + '</div>';
   block.innerHTML = html;
   panel.appendChild(block);
 }
@@ -290,6 +294,14 @@ onValue(ref(db, 'waittime'), snap => {
   currentWaitTime = d.calculatedWait || '';
   // Re-render wait block on menu panel
   const panel = document.getElementById('menu-panel');
+  if (panel) renderWaitBlock(panel);
+});
+
+// Track open orders for wait time calculation
+onValue(ref(db, 'orders'), snap => {
+  const data = snap.val() || {};
+  openOrderCount = Object.values(data).filter(function(o){ return o.status === 'pending'; }).length;
+  var panel = document.getElementById('menu-panel');
   if (panel) renderWaitBlock(panel);
 });
 
