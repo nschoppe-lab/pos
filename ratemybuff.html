@@ -273,6 +273,7 @@ function mergeAndRender() {
 onValue(ref(db, 'rmbStaffPublic'), snap => {
   const data = snap.val() || {};
   staffWorkers = Object.entries(data)
+    .filter(([uid, u]) => u.hidden !== true)  // skip hidden workers
     .map(([uid, u]) => ({ uid, name: u.name || 'Unknown', role: u.role || 'kitchen', photo: u.photo || '' }));
   mergeAndRender();
 });

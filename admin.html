@@ -756,15 +756,17 @@ function showAdmin() {
     const d = snap.val() || {};
     staffList = Object.entries(d).map(([k,v])=>({uid:k,...v}));
     renderStaff();
-    // Mirror public-safe staff info so ratemybuff.html can read without auth
-    // Mirror staff to rmbStaffPublic — use update per-user to preserve uploaded photos
+    // Mirror staff to rmbStaffPublic so ratemybuff.html can read without auth
+    // Only add/update workers that are not explicitly hidden (hidden flag set by Remove button)
     staffList.forEach(s => {
       if (s.role === 'kitchen' || s.role === 'admin') {
-        const existing = rmbStaffPublicData[s.uid] || {};
+        const existing = rmbStaffPublicData[s.uid];
+        // If hidden=true, they were manually removed from Rate My Buff — don't re-add
+        if (existing && existing.hidden === true) return;
         update(ref(db, 'rmbStaffPublic/' + s.uid), {
           name: s.name || '',
           role: s.role,
-          photo: existing.photo || ''
+          photo: (existing && existing.photo) || ''
         }).catch(()=>{});
       }
     });
@@ -1885,7 +1887,7 @@ function getAllRmbWorkers() {
   staffList.forEach(s => {
     if (s.role === 'kitchen' || s.role === 'admin') {
       const pub = rmbStaffPublicData[s.uid] || {};
-      workers.push({ uid: s.uid, name: s.name || s.email || '—', role: s.role, source: 'staff', photo: pub.photo || '' });
+      workers.push({ uid: s.uid, name: s.name || s.email || '—', role: s.role, source: 'staff', photo: pub.photo || '', hidden: pub.hidden === true });
     }
   });
   // From manually added rmbWorkers
@@ -1940,7 +1942,7 @@ window.renderRmbAdmin = function() {
           <div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.6);font-size:9px;color:#fff;text-align:center;padding:1px">📷</div>
         </div>
         <div>
-          <div style="font-size:13px;font-weight:700">${w.name}</div>
+          <div style="font-size:13px;font-weight:700;color:${w.hidden?'#555':'#fff'}">${w.name} ${w.hidden?'<span style="background:#2a2a2a;color:#555;padding:1px 6px;border-radius:4px;font-size:10px">Hidden</span>':''}</div>
           <div style="font-size:11px;color:#888;margin-top:2px">${roleLabel} ${w.source==='manual'?'<span style="background:#1a2a3a;color:#60a5fa;padding:1px 6px;border-radius:4px;font-size:10px;margin-left:4px">Manual</span>':''}</div>
         </div>
       </div>
@@ -1957,7 +1959,9 @@ window.renderRmbAdmin = function() {
           ${count > 0 ? `<button onclick="viewRmbReviews('${w.uid}','${w.name.replace(/'/g,"\\'")}',${count})" style="background:#1a2a3a;border:1px solid #2e75b644;color:#60a5fa;border-radius:6px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer">View Reviews</button>` : '<span style="font-size:11px;color:#555">No reviews yet</span>'}
           ${w.w.source==='manual'
             ? `<button onclick="removeRmbWorker('${w.fbKey}','${w.name.replace(/'/g,"\\'")}','${w.uid}')" style="background:#2a1010;border:1px solid #7f1d1d;color:#ef4444;border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer">Remove</button>`
-            : `<button onclick="removeStaffFromRmb('${w.uid}','${w.name.replace(/'/g,"\\'")}' )" style="background:#2a1010;border:1px solid #7f1d1d;color:#ef4444;border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer">Remove</button>`}
+            : w.hidden
+              ? `<button onclick="reAddStaffToRmb('${w.uid}','${w.name.replace(/'/g,"\\'")}' )" style="background:#1a2a1a;border:1px solid #22c55e44;color:#22c55e;border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer">Re-add</button>`
+              : `<button onclick="removeStaffFromRmb('${w.uid}','${w.name.replace(/'/g,"\\'")}' )" style="background:#2a1010;border:1px solid #7f1d1d;color:#ef4444;border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer">Remove</button>`}
         </div>
       </div>`;
     el.appendChild(row);
@@ -1988,9 +1992,10 @@ window.removeRmbWorker = async function(fbKey, name, uid) {
 }
 
 window.removeStaffFromRmb = async function(uid, name) {
-  if (!confirm(`Remove "${name}" from Rate My Buff?\n\nThis removes them from the public ratings page. Their kitchen login stays active. Their reviews stay unless you also delete them.`)) return;
+  if (!confirm(`Remove "${name}" from Rate My Buff?\n\nThis hides them from the public ratings page. Their kitchen login stays active. Their reviews stay. You can re-add them from the Staff tab.`)) return;
   try {
-    await remove(ref(db, 'rmbStaffPublic/'+uid));
+    // Set hidden=true so the auto-mirror doesn't re-add them
+    await update(ref(db, 'rmbStaffPublic/'+uid), { hidden: true });
     alert('"' + name + '" removed from Rate My Buff!');
   } catch(e) { alert('Error: '+e.message); }
 }
@@ -2069,6 +2074,13 @@ window.deleteRmbReview = async function(uid, reviewKey, author) {
       viewRmbReviews(uid, rmbSelectedWorker.name, Math.max(0, remaining));
     }
   } catch(e) { alert('Error deleting review: '+e.message); }
+}
+
+window.reAddStaffToRmb = async function(uid, name) {
+  try {
+    await update(ref(db, 'rmbStaffPublic/'+uid), { hidden: false });
+    alert('"' + name + '" is back on Rate My Buff!');
+  } catch(e) { alert('Error: '+e.message); }
 }
 
 window.closeRmbReviews = function() {
