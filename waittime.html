@@ -128,41 +128,37 @@ function updateDisplay() {
 // Apply branding
 onValue(ref(db, 'branding'), snap => {
   const b = snap.val() || {};
-  const p = b.primary || '#ff6b35';
-  const bg = b.bg || '#111';
-  const n = b.nav || '#1e1e1e';
-  const t = b.text || '#fff';
-
-  // Inject a style tag to cover everything at once
-  let styleTag = document.getElementById('brand-styles');
-  if (!styleTag) { styleTag = document.createElement('style'); styleTag.id = 'brand-styles'; document.head.appendChild(styleTag); }
-  styleTag.textContent = `
-    body { background: ${bg} !important; color: ${t} !important; }
-    .wait-time { color: ${p} !important; }
-    .logo { color: ${p} !important; }
-    .status-dot { background: ${p} !important; }
-    .stat, .message-box { background: ${n} !important; border-color: ${n} !important; }
-    .open-pill { background: ${n} !important; }
+  if (!Object.keys(b).length) return;
+  let s = document.getElementById('brand-styles');
+  if (!s) { s = document.createElement('style'); s.id = 'brand-styles'; document.head.appendChild(s); }
+  const p  = b.primary || '#ff6b35';
+  const bg = b.bg      || '#111111';
+  const n  = b.nav     || '#1e1e1e';
+  const t  = b.text    || '#ffffff';
+  s.textContent = `
+    body{background:${bg}!important;color:${t}!important}
+    .wait-time{color:${p}!important}
+    .logo{color:${p}!important}
+    .status-dot{background:${p}!important}
+    .stat,.message-box{background:${n}!important;border-color:${n}dd!important}
   `;
-
-  // Name and tagline
   const logoEl = document.querySelector('.logo');
-  if (logoEl && b.name) logoEl.textContent = '▶ ' + b.name;
+  if (logoEl && b.name) logoEl.textContent = '\u25BA ' + b.name;
   const subEl = document.querySelector('.subtitle');
   if (subEl) subEl.textContent = b.tagline || 'Live Order Status';
-
   // Logo image
-  const existing = document.getElementById('brand-logo');
+  let img = document.getElementById('brand-logo');
   if (b.logo) {
-    if (!existing) {
-      const img = document.createElement('img');
+    if (!img) {
+      img = document.createElement('img');
       img.id = 'brand-logo';
-      img.style.cssText = 'height:70px;border-radius:8px;margin-bottom:12px;object-fit:contain';
-      img.src = b.logo;
+      img.style.cssText = 'height:70px;border-radius:8px;margin-bottom:16px;object-fit:contain';
       const logoEl2 = document.querySelector('.logo');
       if (logoEl2) logoEl2.insertAdjacentElement('beforebegin', img);
-    } else { existing.src = b.logo; existing.style.display = 'block'; }
-  } else if (existing) { existing.style.display = 'none'; }
+    }
+    img.src = b.logo;
+    img.style.display = 'block';
+  } else if (img) { img.style.display = 'none'; }
 });
 
 // Listen to waittime settings

@@ -176,56 +176,47 @@ let custItem = null, custSelections = {};
 
 // Apply branding from Firebase
 function applyBranding(b) {
-  if (!b) return;
-  activeBranding = b;
-  // Background and body
-  if (b.bg)  document.body.style.background = b.bg;
-  if (b.text) document.body.style.color = b.text;
-  // Nav
-  const nav = document.querySelector('.topnav');
-  if (nav && b.nav) nav.style.background = b.nav;
-  // Cart panel
-  const cart = document.querySelector('.cart-panel');
-  if (cart && b.nav) cart.style.background = b.nav;
-  // Brand name
-  const brand = document.querySelector('.brand');
-  if (brand && b.name) brand.textContent = '▶ ' + b.name;
-  // Primary color via injected style tag (covers ALL dynamic elements)
-  let styleTag = document.getElementById('brand-styles');
-  if (!styleTag) { styleTag = document.createElement('style'); styleTag.id = 'brand-styles'; document.head.appendChild(styleTag); }
-  const p = b.primary || '#ff6b35';
-  const bg = b.bg || '#1a1a1a';
-  const n = b.nav || '#111';
-  const t = b.text || '#fff';
-  styleTag.textContent = `
-    .mi-price, .ci-price, .brand, .loyalty-title, .hstat-val { color: ${p} !important; }
-    .place-btn, .cust-add-btn, .apply-btn:hover, .aadd { background: ${p} !important; }
-    .place-btn:hover, .cust-add-btn:hover { background: ${p}cc !important; }
-    .mi:hover { border-color: ${p} !important; }
-    .cust-form input:focus, .cust-form textarea:focus, .disc-row input:focus { border-color: ${p} !important; }
-    body { background: ${bg} !important; color: ${t} !important; }
-    .topnav, .cart-panel { background: ${n} !important; }
-    .mi { background: ${n}88 !important; }
-    .cat-hdr { color: ${p} !important; }
-    .loyalty-bar-fill { background: linear-gradient(90deg,${p},${p}88) !important; }
+  if (!b || !Object.keys(b).length) return;
+  let s = document.getElementById('brand-styles');
+  if (!s) { s = document.createElement('style'); s.id = 'brand-styles'; document.head.appendChild(s); }
+  const p  = b.primary || '#ff6b35';
+  const bg = b.bg      || '#1a1a1a';
+  const n  = b.nav     || '#111111';
+  const t  = b.text    || '#ffffff';
+  s.textContent = `
+    body{background:${bg}!important;color:${t}!important}
+    .topnav,.cart-panel{background:${n}!important}
+    .brand,.mi-price,.ci-price,.cat-hdr,.loyalty-title,.hstat-val{color:${p}!important}
+    .place-btn,.cust-add-btn{background:${p}!important}
+    .place-btn:hover,.cust-add-btn:hover{opacity:0.85}
+    .mi{background:${n}99!important;border-color:#33333399!important}
+    .mi:hover{border-color:${p}!important}
+    .cust-form input:focus,.cust-form textarea:focus,.disc-row input:focus{border-color:${p}!important}
+    .cust-option.selected{border-color:${p}!important}
+    .cust-option.selected .cust-check{background:${p}!important;border-color:${p}!important}
+    .loyalty-bar-fill{background:linear-gradient(90deg,${p},${p}88)!important}
+    .disc-msg.ok{background:#052e16}
   `;
+  // Name
+  const brandEl = document.querySelector('.brand');
+  if (brandEl && b.name) brandEl.textContent = '\u25BA ' + b.name;
   // Logo
-  const existing = document.getElementById('nav-logo');
+  let logoEl = document.getElementById('nav-logo');
   if (b.logo) {
-    if (!existing) {
-      const img = document.createElement('img');
-      img.id = 'nav-logo';
-      img.style.cssText = 'height:32px;border-radius:4px;margin-right:8px;object-fit:contain';
-      img.src = b.logo;
-      const brandEl = document.querySelector('.brand');
-      if (brandEl) brandEl.parentNode.insertBefore(img, brandEl);
-    } else { existing.src = b.logo; existing.style.display = 'block'; }
-  } else if (existing) { existing.style.display = 'none'; }
+    if (!logoEl) {
+      logoEl = document.createElement('img');
+      logoEl.id = 'nav-logo';
+      logoEl.style.cssText = 'height:32px;border-radius:4px;margin-right:8px;object-fit:contain;vertical-align:middle';
+      const nav = document.querySelector('.topnav');
+      if (nav) nav.insertBefore(logoEl, nav.firstChild);
+    }
+    logoEl.src = b.logo;
+    logoEl.style.display = 'inline-block';
+  } else if (logoEl) { logoEl.style.display = 'none'; }
 }
 
-onValue(ref(db, 'branding'), snap => {
-  applyBranding(snap.val() || {});
-});
+onValue(ref(db, 'branding'), snap => { applyBranding(snap.val() || {}); });
+
 
 onValue(ref(db, 'menu'), snap => {
   menu = snap.val() ? Object.values(snap.val()) : [];

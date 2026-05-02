@@ -605,9 +605,8 @@ function showAdmin() {
   onValue(ref(db,'coupons'), snap => { const d = snap.val(); coupons = d ? Object.entries(d).map(([k,v])=>({fbKey:k,...v})) : []; renderCoupons(); });
   onValue(ref(db,'users'), snap => { const d = snap.val(); staffList = d ? Object.entries(d).map(([k,v])=>({uid:k,...v})) : []; renderStaff(); });
   onValue(ref(db,'loyalty'), snap => { loyaltyRecords = snap.val()||{}; if(currentTab==='loyalty') renderLoyaltyAdmin(); });
-  onValue(ref(db,'waittime'), snap => { const wasEmpty = Object.keys(waittimeData).length === 0;
-    waittimeData = snap.val()||{};
-    if(currentTab==='waittime'){ updateWaitTimeUI(); if(wasEmpty) renderHoursSchedule(); } });
+  onValue(ref(db,'waittime'), snap => { waittimeData = snap.val()||{};
+    if(currentTab==='waittime') updateWaitTimeUI(); });
   onValue(ref(db,'branding'), snap => { brandingData = snap.val()||{}; applyBrandingToPage(brandingData); if(currentTab==='branding') initBranding(); });
 }
 
@@ -1014,211 +1013,188 @@ window.addLoyaltyCredit = async function() {
 }
 
 
-var isClosed = false;
+// ── WAIT TIME TAB FUNCTIONS ──────────────────────────────────
+const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 
+// ── WAIT TIME TAB FUNCTIONS ──────────────────────────────────
 const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 
 function initWaitTime() {
-  const url = window.location.href.replace('admin.html', 'waittime.html');
+  // Set customer screen URL
   const urlEl = document.getElementById('waittime-url');
-  if (urlEl) urlEl.textContent = url;
-  renderHoursSchedule(); // always fresh render when tab opens
+  if (urlEl) urlEl.textContent = window.location.href.replace('admin.html','waittime.html');
+  // Render hours from current waittimeData
+  renderHoursSchedule();
   updateWaitTimeUI();
-  setInterval(checkAutoOpenClose, 60000);
+  // Auto check every 60s
+  if (!window._waittimeInterval) {
+    window._waittimeInterval = setInterval(checkAutoOpenClose, 60000);
+  }
   checkAutoOpenClose();
+}
+
+function updateWaitTimeUI() {
+  const d = waittimeData;
+  const closed = d.closed === true;
+
+  // Toggle button
+  const tog = document.getElementById('open-closed-toggle');
+  const knob = document.getElementById('open-closed-knob');
+  const lbl  = document.getElementById('open-closed-label');
+  if (tog)  tog.style.background  = closed ? '#ef4444' : '#22c55e';
+  if (knob) knob.style.left       = closed ? '2px' : '26px';
+  if (lbl)  { lbl.textContent = closed ? 'The Buff is Closed' : 'The Buff is Open'; lbl.style.color = closed ? '#ef4444' : '#22c55e'; }
+
+  // Wait time
+  const openOrders  = Object.values(orders).filter(o => o.status === 'pending').length;
+  const minsPerOrder = parseInt(d.minsPerOrder) || 2;
+  const totalMins   = openOrders * minsPerOrder;
+  const waitEl = document.getElementById('current-wait-display');
+  if (waitEl) waitEl.textContent = totalMins === 0 ? 'No wait — order now!' : totalMins + ' min estimated';
+
+  // Mins per order input
+  const mpoEl = document.getElementById('mins-per-order-input');
+  const mpoDisp = document.getElementById('mins-per-order-display');
+  if (mpoEl && document.activeElement !== mpoEl) mpoEl.value = minsPerOrder;
+  if (mpoDisp) mpoDisp.textContent = minsPerOrder;
+
+  // Custom message
+  const msgDisp = document.getElementById('current-msg-display');
+  if (msgDisp) msgDisp.textContent = d.message || 'None';
+
+  // Closed message input
+  const closedMsgEl = document.getElementById('closed-msg-input');
+  if (closedMsgEl && document.activeElement !== closedMsgEl && d.closedMsg) {
+    closedMsgEl.value = d.closedMsg;
+  }
 }
 
 function renderHoursSchedule() {
   const el = document.getElementById('hours-schedule');
-  const hours = waittimeData.hours || {};
+  if (!el) return;
+  const hours = (waittimeData && waittimeData.hours) || {};
   el.innerHTML = '';
   DAYS.forEach(day => {
-    const h = hours[day] || {};
+    const h = hours[day] || { enabled: false, open: '10:00', close: '22:00' };
+    const isToday = DAYS[new Date().getDay()] === day;
+    const statusText = !h.enabled ? 'Closed all day' : isToday ? getStatusText(h) : 'Scheduled';
+    const statusColor = !h.enabled ? '#555' : isToday && statusText === 'Open Now' ? '#22c55e' : isToday ? '#ef4444' : '#888';
     const row = document.createElement('div');
-    row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #2a2a2a;flex-wrap:wrap';
+    row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #2a2a2a;flex-wrap:wrap';
     row.innerHTML = `
-      <div style="font-size:12px;font-weight:700;color:#fff;width:90px;flex-shrink:0">${day}</div>
-      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#888;cursor:pointer">
+      <div style="width:95px;font-size:13px;font-weight:700;color:#fff;flex-shrink:0">${day}</div>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#aaa;cursor:pointer;flex-shrink:0">
         <input type="checkbox" id="hours-open-${day}" ${h.enabled ? 'checked' : ''} onchange="toggleDayEnabled('${day}')">
         Open
       </label>
-      <div id="hours-times-${day}" style="display:flex;align-items:center;gap:8px;${h.enabled ? '' : 'opacity:0.3;pointer-events:none'}">
-        <input type="time" id="hours-start-${day}" value="${h.open||'10:00'}" style="background:#1a1a1a;border:1px solid #444;border-radius:5px;padding:4px 8px;font-size:12px;color:#fff">
+      <div id="hours-times-${day}" style="display:flex;align-items:center;gap:8px;${h.enabled ? '' : 'opacity:0.35;pointer-events:none'}">
+        <input type="time" id="hours-start-${day}" value="${h.open || '10:00'}"
+          style="background:#1a1a1a;border:1px solid #444;border-radius:5px;padding:5px 8px;font-size:12px;color:#fff;width:110px">
         <span style="color:#555;font-size:12px">to</span>
-        <input type="time" id="hours-end-${day}" value="${h.close||'22:00'}" style="background:#1a1a1a;border:1px solid #444;border-radius:5px;padding:4px 8px;font-size:12px;color:#fff">
+        <input type="time" id="hours-end-${day}" value="${h.close || '22:00'}"
+          style="background:#1a1a1a;border:1px solid #444;border-radius:5px;padding:5px 8px;font-size:12px;color:#fff;width:110px">
       </div>
-      <div id="hours-status-${day}" style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;${getHoursBadgeStyle(day, h)}"></div>`;
+      <span style="font-size:10px;font-weight:700;padding:2px 9px;border-radius:10px;background:#1a1a1a;color:${statusColor}">${statusText}</span>`;
     el.appendChild(row);
   });
 }
 
-function getHoursBadgeStyle(day, h) {
-  if (!h.enabled) return 'background:#2a2a2a;color:#555">Closed all day';
+function getStatusText(h) {
   const now = new Date();
-  const todayName = DAYS[now.getDay()];
-  if (todayName !== day) return 'background:#1a1a1a;color:#555">Scheduled';
-  // Check if currently in window
-  const [sh, sm] = (h.open||'10:00').split(':').map(Number);
-  const [eh, em] = (h.close||'22:00').split(':').map(Number);
-  const nowMins = now.getHours()*60 + now.getMinutes();
-  const startMins = sh*60+sm, endMins = eh*60+em;
-  if (nowMins >= startMins && nowMins < endMins) {
-    return 'background:#052e16;color:#22c55e">Open Now';
-  }
-  return 'background:#2a1010;color:#ef4444">Closed Now';
+  const [sh, sm] = (h.open || '10:00').split(':').map(Number);
+  const [eh, em] = (h.close || '22:00').split(':').map(Number);
+  const nowM = now.getHours() * 60 + now.getMinutes();
+  return (nowM >= sh*60+sm && nowM < eh*60+em) ? 'Open Now' : 'Closed Now';
 }
 
 window.toggleDayEnabled = function(day) {
-  const checked = document.getElementById(`hours-open-${day}`).checked;
-  const timesEl = document.getElementById(`hours-times-${day}`);
-  timesEl.style.opacity = checked ? '1' : '0.3';
-  timesEl.style.pointerEvents = checked ? 'auto' : 'none';
+  const cb = document.getElementById(`hours-open-${day}`);
+  const times = document.getElementById(`hours-times-${day}`);
+  if (times) { times.style.opacity = cb.checked ? '1' : '0.35'; times.style.pointerEvents = cb.checked ? 'auto' : 'none'; }
 }
 
 window.saveHours = async function() {
   const hours = {};
   DAYS.forEach(day => {
+    const cb    = document.getElementById(`hours-open-${day}`);
+    const start = document.getElementById(`hours-start-${day}`);
+    const end   = document.getElementById(`hours-end-${day}`);
     hours[day] = {
-      enabled: document.getElementById(`hours-open-${day}`).checked,
-      open: document.getElementById(`hours-start-${day}`).value || '10:00',
-      close: document.getElementById(`hours-end-${day}`).value || '22:00'
+      enabled: cb ? cb.checked : false,
+      open:    start ? (start.value || '10:00') : '10:00',
+      close:   end   ? (end.value   || '22:00') : '22:00'
     };
   });
-  await update(ref(db,'waittime'), { hours });
-  alert('✅ Hours saved! The Buff will auto open/close based on this schedule.');
-}
-
-function checkAutoOpenClose() {
-  const hours = waittimeData.hours || {};
-  const now = new Date();
-  const dayName = DAYS[now.getDay()];
-  const h = hours[dayName];
-  const nextEl = document.getElementById('next-check');
-
-  if (!h || !h.enabled) {
-    // Today is closed — make sure we show closed
-    if (!waittimeData.manualOverride) {
-      if (!waittimeData.closed) {
-        update(ref(db,'waittime'), {closed: true}).catch(()=>{});
-      }
-    }
-    if (nextEl) nextEl.textContent = 'Closed today';
-    return;
-  }
-
-  const [sh, sm] = (h.open||'10:00').split(':').map(Number);
-  const [eh, em] = (h.close||'22:00').split(':').map(Number);
-  const nowMins = now.getHours()*60 + now.getMinutes();
-  const startMins = sh*60+sm, endMins = eh*60+em;
-  const shouldBeOpen = nowMins >= startMins && nowMins < endMins;
-
-  if (!waittimeData.manualOverride) {
-    if (shouldBeOpen && waittimeData.closed) {
-      update(ref(db,'waittime'), {closed: false}).catch(()=>{});
-    } else if (!shouldBeOpen && !waittimeData.closed) {
-      update(ref(db,'waittime'), {closed: true}).catch(()=>{});
-    }
-  }
-
-  if (nextEl) {
-    if (shouldBeOpen) {
-      const closeAt = `${String(eh).padStart(2,'0')}:${String(em).padStart(2,'0')}`;
-      nextEl.textContent = `Auto-closes at ${closeAt}`;
-    } else if (nowMins < startMins) {
-      const openAt = `${String(sh).padStart(2,'0')}:${String(sm).padStart(2,'0')}`;
-      nextEl.textContent = `Auto-opens at ${openAt}`;
-    } else {
-      nextEl.textContent = 'Closed for today';
-    }
-  }
-}
-
-function calcWaitTime() {
-  const openOrders = Object.values(orders).filter(o => o.status === 'pending').length;
-  const minsPerOrder = waittimeData.minsPerOrder || 2;
-  return openOrders * minsPerOrder;
-}
-
-function updateWaitTimeUI() {
-  isClosed = waittimeData.closed === true;
-  const toggle = document.getElementById('open-closed-toggle');
-  const knob = document.getElementById('open-closed-knob');
-  const label = document.getElementById('open-closed-label');
-  if (toggle) {
-    toggle.style.background = isClosed ? '#ef4444' : '#22c55e';
-    knob.style.left = isClosed ? '2px' : '26px';
-    label.textContent = isClosed ? 'The Buff is Closed' : 'The Buff is Open';
-    label.style.color = isClosed ? '#ef4444' : '#22c55e';
-  }
-
-  // Auto wait time display
-  const waitDisplay = document.getElementById('current-wait-display');
-  if (waitDisplay) {
-    const mins = calcWaitTime();
-    waitDisplay.textContent = mins === 0 ? 'No wait — order now!' : mins + ' min estimated wait';
-  }
-
-  // Mins per order display
-  const mpo = waittimeData.minsPerOrder || 2;
-  const mpoDisplay = document.getElementById('mins-per-order-display');
-  if (mpoDisplay) mpoDisplay.textContent = mpo;
-  const mpoInput = document.getElementById('mins-per-order-input');
-  if (mpoInput && !mpoInput._userEdited) mpoInput.value = mpo;
-
-  const msgDisplay = document.getElementById('current-msg-display');
-  if (msgDisplay) msgDisplay.textContent = waittimeData.message || 'None';
-  if (waittimeData.closedMsg) {
-    const inp = document.getElementById('closed-msg-input');
-    if (inp && !inp.value) inp.value = waittimeData.closedMsg;
-  }
-
-  // Push calculated wait time to Firebase so waittime.html can read it
-  const autoMins = calcWaitTime();
-  set(ref(db,'waittime'), {...waittimeData, minutes: autoMins}).catch(()=>{});
-}
-
-window.saveMinsPerOrder = async function() {
-  const val = parseInt(document.getElementById('mins-per-order-input').value) || 2;
-  await update(ref(db,'waittime'), { minsPerOrder: val });
-  alert('✅ Updated! Customer screen now uses ' + val + ' min per order.');
+  try {
+    await update(ref(db, 'waittime'), { hours });
+    alert('✅ Hours saved!');
+  } catch(e) { alert('Error saving: ' + e.message); }
 }
 
 window.toggleClosed = async function() {
   const nowClosed = waittimeData.closed === true;
-  const newClosed = !nowClosed;
-  waittimeData.closed = newClosed; // update local copy immediately
-  await update(ref(db,'waittime'), { closed: newClosed, manualOverride: true });
-  // Visual update immediately without waiting for Firebase round-trip
-  const toggle = document.getElementById('open-closed-toggle');
-  const knob   = document.getElementById('open-closed-knob');
-  const label  = document.getElementById('open-closed-label');
-  if (toggle) toggle.style.background = newClosed ? '#ef4444' : '#22c55e';
-  if (knob)   knob.style.left         = newClosed ? '2px' : '26px';
-  if (label)  { label.textContent = newClosed ? 'The Buff is Closed' : 'The Buff is Open'; label.style.color = newClosed ? '#ef4444' : '#22c55e'; }
-  setTimeout(async () => { await update(ref(db,'waittime'), { manualOverride: false }); }, 2 * 60 * 60 * 1000);
+  const newVal    = !nowClosed;
+  // Update UI immediately
+  const tog  = document.getElementById('open-closed-toggle');
+  const knob = document.getElementById('open-closed-knob');
+  const lbl  = document.getElementById('open-closed-label');
+  if (tog)  tog.style.background = newVal ? '#ef4444' : '#22c55e';
+  if (knob) knob.style.left      = newVal ? '2px' : '26px';
+  if (lbl)  { lbl.textContent = newVal ? 'The Buff is Closed' : 'The Buff is Open'; lbl.style.color = newVal ? '#ef4444' : '#22c55e'; }
+  // Write to Firebase
+  try {
+    await update(ref(db, 'waittime'), { closed: newVal, manualOverride: true });
+    waittimeData.closed = newVal;
+  } catch(e) { alert('Error: ' + e.message); }
 }
 
 window.saveClosedMsg = async function() {
-  const msg = document.getElementById('closed-msg-input').value.trim();
-  await update(ref(db,'waittime'), { closedMsg: msg });
+  const msg = (document.getElementById('closed-msg-input') || {}).value || '';
+  await update(ref(db, 'waittime'), { closedMsg: msg.trim() });
+}
+
+window.saveMinsPerOrder = async function() {
+  const val = parseInt((document.getElementById('mins-per-order-input') || {}).value) || 2;
+  await update(ref(db, 'waittime'), { minsPerOrder: val });
+  alert('✅ Updated to ' + val + ' min/order. Customer screen updates automatically.');
 }
 
 window.saveCustomMsg = async function() {
-  const msg = document.getElementById('custom-msg-input').value.trim();
+  const msg = ((document.getElementById('custom-msg-input') || {}).value || '').trim();
   if (!msg) return;
-  await update(ref(db,'waittime'), { message: msg });
+  await update(ref(db, 'waittime'), { message: msg });
   document.getElementById('custom-msg-input').value = '';
 }
 
 window.clearCustomMsg = async function() {
-  await update(ref(db,'waittime'), { message: '' });
+  await update(ref(db, 'waittime'), { message: '' });
 }
 
-
-window.deleteOrder = async function(key, name) {
-  if (!confirm(`Delete order from ${name}? This cannot be undone.`)) return;
-  await remove(ref(db, `orders/${key}`));
+function checkAutoOpenClose() {
+  const hours   = (waittimeData && waittimeData.hours) || {};
+  const dayName = DAYS[new Date().getDay()];
+  const h       = hours[dayName];
+  const nextEl  = document.getElementById('next-check');
+  if (!h || !h.enabled) {
+    if (nextEl) nextEl.textContent = 'Closed today';
+    if (!waittimeData.manualOverride && !waittimeData.closed) update(ref(db,'waittime'),{closed:true}).catch(()=>{});
+    return;
+  }
+  const [sh,sm] = (h.open||'10:00').split(':').map(Number);
+  const [eh,em] = (h.close||'22:00').split(':').map(Number);
+  const nowM    = new Date().getHours()*60 + new Date().getMinutes();
+  const shouldBeOpen = nowM >= sh*60+sm && nowM < eh*60+em;
+  if (!waittimeData.manualOverride) {
+    if (shouldBeOpen  && waittimeData.closed)  update(ref(db,'waittime'),{closed:false}).catch(()=>{});
+    if (!shouldBeOpen && !waittimeData.closed) update(ref(db,'waittime'),{closed:true}).catch(()=>{});
+  }
+  if (nextEl) {
+    if (shouldBeOpen) nextEl.textContent = `Auto-closes at ${String(eh).padStart(2,'0')}:${String(em).padStart(2,'0')}`;
+    else if (nowM < sh*60+sm) nextEl.textContent = `Auto-opens at ${String(sh).padStart(2,'0')}:${String(sm).padStart(2,'0')}`;
+    else nextEl.textContent = 'Closed for today';
+  }
 }
+
 
 window.renderFinance = function() {
   const range = document.getElementById('finance-range').value;
