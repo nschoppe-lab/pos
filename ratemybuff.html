@@ -185,25 +185,37 @@ body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min
     <!-- RATE THIS WORKER -->
     <div class="rate-box">
       <div class="rate-box-title">✏️ Leave a Rating</div>
-      <div class="star-picker" id="star-picker">
-        <span class="sp-star" data-val="1" onclick="setRating(1)">⭐</span>
-        <span class="sp-star" data-val="2" onclick="setRating(2)">⭐</span>
-        <span class="sp-star" data-val="3" onclick="setRating(3)">⭐</span>
-        <span class="sp-star" data-val="4" onclick="setRating(4)">⭐</span>
-        <span class="sp-star" data-val="5" onclick="setRating(5)">⭐</span>
-        <span class="sp-star" data-val="6" onclick="setRating(6)">⭐</span>
-        <span class="sp-star" data-val="7" onclick="setRating(7)">⭐</span>
-        <span class="sp-star" data-val="8" onclick="setRating(8)">⭐</span>
-        <span class="sp-star" data-val="9" onclick="setRating(9)">⭐</span>
-        <span class="sp-star" data-val="10" onclick="setRating(10)">⭐</span>
+
+      <!-- Locked state: shown when there's no verified order on this device -->
+      <div id="rate-gate" style="display:none;text-align:center;padding:6px 4px 4px">
+        <div style="font-size:32px;margin-bottom:10px">🔒</div>
+        <div style="font-size:14px;font-weight:700;margin-bottom:6px">Order something first!</div>
+        <div style="font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:18px">You can only rate a Buff worker after placing an order through our website.</div>
+        <a href="customer.html" style="display:inline-block;background:var(--orange);color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:11px 24px;border-radius:10px">Place an Order</a>
       </div>
-      <div class="rate-label" id="rate-label">Tap a star to rate (1–10)</div>
-      <div class="rate-name-row">
-        <input class="rate-name-in" id="rate-name" type="text" placeholder="Your name (or 'Anonymous')">
+
+      <!-- Unlocked state: shown once a verified order is found for this device -->
+      <div id="rate-form" style="display:none">
+        <div class="star-picker" id="star-picker">
+          <span class="sp-star" data-val="1" onclick="setRating(1)">⭐</span>
+          <span class="sp-star" data-val="2" onclick="setRating(2)">⭐</span>
+          <span class="sp-star" data-val="3" onclick="setRating(3)">⭐</span>
+          <span class="sp-star" data-val="4" onclick="setRating(4)">⭐</span>
+          <span class="sp-star" data-val="5" onclick="setRating(5)">⭐</span>
+          <span class="sp-star" data-val="6" onclick="setRating(6)">⭐</span>
+          <span class="sp-star" data-val="7" onclick="setRating(7)">⭐</span>
+          <span class="sp-star" data-val="8" onclick="setRating(8)">⭐</span>
+          <span class="sp-star" data-val="9" onclick="setRating(9)">⭐</span>
+          <span class="sp-star" data-val="10" onclick="setRating(10)">⭐</span>
+        </div>
+        <div class="rate-label" id="rate-label">Tap a star to rate (1–10)</div>
+        <div class="rate-name-row">
+          <div id="rate-identity" style="flex:1;background:var(--surface2);border:1.5px solid var(--border);border-radius:10px;padding:11px 14px;font-size:14px;color:var(--muted)">Reviewing as <strong id="rate-identity-name" style="color:var(--text)"></strong></div>
+        </div>
+        <textarea class="rate-input" id="rate-comment" placeholder="What did you think of their food? (optional)"></textarea>
+        <button class="submit-btn" id="submit-btn" onclick="submitReview()">Submit Review</button>
+        <div class="rate-msg" id="rate-msg"></div>
       </div>
-      <textarea class="rate-input" id="rate-comment" placeholder="What did you think of their food? (optional)"></textarea>
-      <button class="submit-btn" id="submit-btn" onclick="submitReview()">Submit Review</button>
-      <div class="rate-msg" id="rate-msg"></div>
     </div>
 
     </div>
@@ -239,6 +251,17 @@ let allWorkers = [];
 let allReviews = {};
 let currentWorker = null;
 let selectedRating = 0;
+
+// ── Order verification (gates rating so it can't be done anonymously / without ordering) ──
+// customer.html writes this to localStorage the moment an order is placed.
+let orderToken = null;
+try {
+  const raw = localStorage.getItem('rmbOrderToken');
+  if (raw) {
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.name && parsed.email) orderToken = parsed;
+  }
+} catch(e) { orderToken = null; }
 
 function getRoleLabel(role) {
   const map = {
@@ -425,11 +448,20 @@ window.openWorker = function(w) {
   document.getElementById('detail-view').className = 'detail show';
 
   // Reset form
-  document.getElementById('rate-name').value = '';
   document.getElementById('rate-comment').value = '';
   document.getElementById('rate-msg').className = 'rate-msg';
   document.getElementById('rate-label').textContent = 'Tap a star to rate (1–10)';
   document.querySelectorAll('.sp-star').forEach(s => s.classList.remove('active'));
+
+  // Gate the rating form behind proof of an order placed through the website
+  if (orderToken) {
+    document.getElementById('rate-gate').style.display = 'none';
+    document.getElementById('rate-form').style.display = '';
+    document.getElementById('rate-identity-name').textContent = orderToken.name;
+  } else {
+    document.getElementById('rate-gate').style.display = '';
+    document.getElementById('rate-form').style.display = 'none';
+  }
 
 
   renderDetailHeader(w);
@@ -542,10 +574,17 @@ window.submitReview = async function() {
   const btn = document.getElementById('submit-btn');
   const msgEl = document.getElementById('rate-msg');
 
+  // Hard gate: no verified order = no submission. Ratings can never be anonymous.
+  if (!orderToken || !orderToken.name || !orderToken.email) {
+    msgEl.className = 'rate-msg err';
+    msgEl.textContent = 'You need to place an order before you can rate a worker.';
+    return;
+  }
   if (!selectedRating) {
     msgEl.className = 'rate-msg err'; msgEl.textContent = 'Please select a star rating first.'; return;
   }
-  const author = document.getElementById('rate-name').value.trim() || 'Anonymous';
+  const author = orderToken.name;
+  const email = orderToken.email;
   const comment = document.getElementById('rate-comment').value.trim();
 
   btn.disabled = true; btn.textContent = 'Submitting...';
@@ -553,13 +592,12 @@ window.submitReview = async function() {
 
   try {
     const review = {
-      author, comment, rating: selectedRating,
+      author, email, comment, rating: selectedRating,
       date: new Date().toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}),
       createdAt: Date.now()
     };
     await push(ref(db, `ratings/${currentWorker.uid}`), review);
     msgEl.className = 'rate-msg ok'; msgEl.textContent = '✓ Review submitted! Thank you.';
-    document.getElementById('rate-name').value = '';
     document.getElementById('rate-comment').value = '';
     selectedRating = 0;
     document.querySelectorAll('.sp-star').forEach(s => s.classList.remove('active'));
