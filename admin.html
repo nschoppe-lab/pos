@@ -111,6 +111,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 .sms-link{display:block;background:#052e16;border:1px solid #22c55e;color:#22c55e;border-radius:7px;padding:11px;text-decoration:none;font-size:12px;font-weight:600;text-align:center;margin-top:8px}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -330,6 +331,18 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
           <button class="aadd" onclick="addLoyaltyCredit()">Add Credit</button>
         </div>
       </div>
+      <div class="asec">
+        <div class="asec-title">Bulk Upload Customers</div>
+        <div style="font-size:12px;color:#888;margin-bottom:12px">
+          Upload a spreadsheet (.csv or .xlsx) with columns <strong style="color:#ccc">name</strong>, <strong style="color:#ccc">email</strong>, and optionally <strong style="color:#ccc">credits</strong>.
+          Existing customers (matched by email) get their name updated and any credits added on top of their current balance; new emails create new accounts.
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+          <input type="file" id="bulk-loyalty-file" accept=".csv,.xlsx,.xls" onchange="handleBulkLoyaltyUpload(event)" style="font-size:12px;color:#ccc">
+          <button onclick="downloadLoyaltyTemplate()" style="background:#1a1a1a;border:1px solid #444;color:#ccc;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer">Download Template</button>
+        </div>
+        <div id="bulk-loyalty-result" style="font-size:12px;color:#888"></div>
+      </div>
     </div></div>
   </div>
 
@@ -481,6 +494,16 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
         <div class="asec-title" style="color:#22c55e">Profit & Loss Summary</div>
         <div style="font-size:12px;color:#888;margin-bottom:14px">Based on the date range selected above.</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px" id="pl-summary"></div>
+      </div>
+
+      <!-- DANGER ZONE: FULL FINANCE RESET -->
+      <div class="asec" style="border-color:#7f1d1d44;background:#1a0a0a">
+        <div class="asec-title" style="color:#ef4444">Danger Zone</div>
+        <div style="font-size:12px;color:#888;margin-bottom:12px">
+          Permanently wipes everything behind this Finance tab: every order (revenue by day, item breakdown, and P&L all go back to zero) and every logged weekly expense.
+          Since orders are shared data, this also clears the Orders/History tab and today's completed-order count on the Kitchen display. This cannot be undone.
+        </div>
+        <button onclick="resetFinanceTab()" style="background:#2a1010;border:1px solid #7f1d1d;color:#ef4444;border-radius:6px;padding:9px 18px;font-size:13px;font-weight:700;cursor:pointer">🗑️ Reset Finance Tab (clears orders + expenses)</button>
       </div>
 
     </div></div>
@@ -1218,7 +1241,7 @@ window.renderLoyaltyAdmin = function() {
       </td>
       <td style="font-size:11px;color:#666">${lastOrder}</td>
       <td style="display:flex;gap:5px;flex-wrap:wrap">
-        <button onclick="adjustCredit('${r.key}', ${credits})" style="background:#1a2a1a;border:1px solid #22c55e44;color:#22c55e;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">Edit</button>
+        <button onclick="editLoyaltyCustomer('${r.key}')" style="background:#1a2a1a;border:1px solid #22c55e44;color:#22c55e;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">Edit</button>
         <button onclick="resetLoyalty('${r.key}', '${r.name||''}', ${count})" style="background:#2a1010;border:1px solid #7f1d1d;color:#ef4444;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">Reset</button>
         <button onclick="deleteLoyaltyAccount('${r.key}', '${r.name||r.email||''}')" style="background:#3a0a0a;border:1px solid #991b1b;color:#fca5a5;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">Delete</button>
       </td>`;
@@ -1226,14 +1249,52 @@ window.renderLoyaltyAdmin = function() {
   });
 }
 
-window.adjustCredit = function(key, currentCredits) {
-  const newVal = prompt(`Current credit: $${currentCredits.toFixed(2)}\nEnter new credit amount ($):`);
-  if (newVal === null) return;
-  const val = parseFloat(newVal);
-  if (isNaN(val) || val < 0) { alert('Invalid amount'); return; }
-  update(ref(db, `loyalty/${key}`), { credits: val })
-    .then(() => alert(`Credit updated to $${val.toFixed(2)}`))
-    .catch(e => alert('Error: ' + e.message));
+window.editLoyaltyCustomer = function(key) {
+  const r = loyaltyRecords[key] || {};
+  const esc = (s) => String(s||'').replace(/"/g,'&quot;');
+  showModal(`
+    <h3>Edit Customer</h3>
+    <p>Update this customer's name, email, and credit balance.</p>
+    <label style="font-size:11px;color:#888;font-weight:600;display:block;margin-bottom:4px">Name</label>
+    <input type="text" id="edit-loy-name" value="${esc(r.name)}" placeholder="Customer name" style="width:100%;background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:9px 11px;font-size:13px;color:#fff;margin-bottom:12px;box-sizing:border-box">
+    <label style="font-size:11px;color:#888;font-weight:600;display:block;margin-bottom:4px">Email</label>
+    <input type="email" id="edit-loy-email" value="${esc(r.email)}" placeholder="Customer email" style="width:100%;background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:9px 11px;font-size:13px;color:#fff;margin-bottom:12px;box-sizing:border-box">
+    <label style="font-size:11px;color:#888;font-weight:600;display:block;margin-bottom:4px">Credits ($)</label>
+    <input type="number" id="edit-loy-credits" min="0" step="0.01" value="${r.credits||0}" style="width:100%;background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:9px 11px;font-size:13px;color:#fff;margin-bottom:6px;box-sizing:border-box">
+    <div class="mbtns">
+      <button class="mbtn cancel" onclick="closeModal()">Cancel</button>
+      <button class="mbtn ok" onclick="saveLoyaltyEdit('${key}')">Save Changes</button>
+    </div>
+  `);
+}
+
+window.saveLoyaltyEdit = async function(oldKey) {
+  const name = document.getElementById('edit-loy-name').value.trim();
+  const email = document.getElementById('edit-loy-email').value.trim().toLowerCase();
+  const creditsVal = parseFloat(document.getElementById('edit-loy-credits').value);
+
+  if (!email || !/^[^@]+@[^@]+\.[^@]+$/.test(email)) { alert('Enter a valid email address'); return; }
+  if (isNaN(creditsVal) || creditsVal < 0) { alert('Enter a valid, non-negative credit amount'); return; }
+
+  const newKey = email.replace(/\./g, ',').replace(/@/g, '_at_');
+  const existing = loyaltyRecords[oldKey] || {};
+  const updatedRecord = { ...existing, name, email, credits: Math.round(creditsVal*100)/100 };
+
+  try {
+    if (newKey !== oldKey) {
+      // Email changed, so the record's key must change too
+      if (loyaltyRecords[newKey]) {
+        alert('Another customer account already exists with that email. Please resolve manually before merging.');
+        return;
+      }
+      await set(ref(db, `loyalty/${newKey}`), updatedRecord);
+      await remove(ref(db, `loyalty/${oldKey}`));
+    } else {
+      await update(ref(db, `loyalty/${oldKey}`), updatedRecord);
+    }
+    closeModal();
+    alert('Customer account updated.');
+  } catch(e) { alert('Error saving: ' + e.message); }
 }
 
 window.deleteLoyaltyAccount = async function(key, name) {
@@ -1268,6 +1329,90 @@ window.addLoyaltyCredit = async function() {
     document.getElementById('loyalty-credit-input').value = '';
     alert('$' + amount.toFixed(2) + ' credit added! ' + (name || email) + ' now has $' + newCredits.toFixed(2) + ' total.');
   } catch(e) { alert('Error adding credit: ' + e.message); }
+}
+
+window.downloadLoyaltyTemplate = function() {
+  const csv = 'name,email,credits\nJane Doe,jane@example.com,0\nJohn Smith,john@example.com,5\n';
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'loyalty_customers_template.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+window.handleBulkLoyaltyUpload = async function(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const resultEl = document.getElementById('bulk-loyalty-result');
+  resultEl.style.color = '#888';
+  resultEl.textContent = 'Processing...';
+
+  try {
+    const data = await file.arrayBuffer();
+    const wb = XLSX.read(data, { type: 'array' });
+    const firstSheet = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(firstSheet, { defval: '' });
+
+    if (!rows.length) {
+      resultEl.style.color = '#ef4444';
+      resultEl.textContent = 'No rows found in that file.';
+      event.target.value = '';
+      return;
+    }
+
+    let added = 0, updatedCount = 0, skipped = 0;
+    const errors = [];
+
+    for (const rawRow of rows) {
+      // Normalize header keys so "Name", "Email Address", etc. all match
+      const row = {};
+      Object.keys(rawRow).forEach(k => { row[String(k).trim().toLowerCase()] = rawRow[k]; });
+
+      const name = String(row.name || row['customer name'] || '').trim();
+      const email = String(row.email || row['customer email'] || row['e-mail'] || '').trim().toLowerCase();
+      const creditsRaw = row.credits !== undefined ? row.credits : row.credit;
+      const creditsToAdd = parseFloat(creditsRaw) || 0;
+
+      if (!email || !/^[^@]+@[^@]+\.[^@]+$/.test(email)) {
+        skipped++;
+        errors.push(`Skipped row with invalid/missing email: ${JSON.stringify(rawRow)}`);
+        continue;
+      }
+
+      const key = email.replace(/\./g, ',').replace(/@/g, '_at_');
+      try {
+        const snap = await get(ref(db, `loyalty/${key}`));
+        if (snap.exists()) {
+          const existing = snap.val();
+          const mergedCredits = Math.round(((existing.credits||0) + creditsToAdd) * 100) / 100;
+          await update(ref(db, `loyalty/${key}`), {
+            name: name || existing.name || '',
+            email,
+            credits: mergedCredits
+          });
+          updatedCount++;
+        } else {
+          await set(ref(db, `loyalty/${key}`), {
+            name, email, credits: Math.round(creditsToAdd*100)/100, orderCount: 0
+          });
+          added++;
+        }
+      } catch(e) {
+        skipped++;
+        errors.push(`Error saving ${email}: ${e.message}`);
+      }
+    }
+
+    resultEl.style.color = '#22c55e';
+    resultEl.textContent = `Done! ${added} new customer(s) added, ${updatedCount} existing updated, ${skipped} skipped.` + (errors.length ? ' See browser console for row-level details.' : '');
+    if (errors.length) console.warn('Bulk loyalty upload issues:', errors);
+  } catch(e) {
+    resultEl.style.color = '#ef4444';
+    resultEl.textContent = 'Error reading file: ' + e.message;
+    console.error(e);
+  }
+  event.target.value = '';
 }
 
 
@@ -1463,6 +1608,20 @@ window.deleteOrder = async function(key, name) {
   try {
     await remove(ref(db, 'orders/' + key));
   } catch(e) { alert('Error deleting order: ' + e.message); }
+}
+
+window.resetFinanceTab = async function() {
+  const step1 = confirm('This will permanently delete:\n\n• ALL orders (revenue by day, item breakdown, and P&L reset to zero)\n• ALL logged weekly expenses\n\nThis also clears the Orders/History tab and today\'s completed-order count on the Kitchen display, since they read from the same order data.\n\nThis CANNOT be undone. Continue?');
+  if (!step1) return;
+  const step2 = confirm('Last check — are you absolutely sure you want to wipe all finance data? This is permanent.');
+  if (!step2) return;
+  try {
+    await remove(ref(db, 'orders'));
+    await remove(ref(db, 'expenses'));
+    alert('Finance tab has been reset.');
+    renderFinance();
+    renderExpenses();
+  } catch(e) { alert('Error resetting finance data: ' + e.message); }
 }
 
 window.renderFinance = function() {
