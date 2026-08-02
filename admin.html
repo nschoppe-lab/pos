@@ -2043,6 +2043,7 @@ window.giveCredit = async function(key, name, email, currentTotal) {
     const newCredits = Math.round(((current.credits || 0) + amount) * 100) / 100;
     await update(ref(db, `loyalty/${loyaltyKey}`), {
       email, name,
+      orderCount: current.orderCount || 0,
       credits: newCredits,
       lastCreditAt: new Date().toISOString()
     });

@@ -163,7 +163,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getDatabase, ref, push, onValue, serverTimestamp, get, update } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+import { getDatabase, ref, push, onValue, serverTimestamp, get, update, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCG5nhzdAHBTGg2eXXmhqH8pF8S8qFqM7o",
@@ -678,6 +678,27 @@ window.placeOrder = async function() {
     if (appliedCoupon && appliedCoupon.singleUse && appliedCoupon.fbKey) {
       try { await update(ref(db, 'coupons/' + appliedCoupon.fbKey), { used: true }); }
       catch(e) { console.error('Failed to mark coupon used:', e); }
+    }
+
+    // Decrement tracked stock quantities (non-fatal — never blocks order success)
+    for (const c of cart) {
+      let ci = -1, ii = -1;
+      menu.forEach((cat, cIdx) => {
+        (cat.items || []).forEach((it, iIdx) => { if (it.id === c.id) { ci = cIdx; ii = iIdx; } });
+      });
+      if (ci === -1) continue;
+      try {
+        await runTransaction(ref(db, `menu/${ci}/items/${ii}`), item => {
+          if (!item || typeof item.stock !== 'number') return item; // not stock-tracked, leave untouched
+          const newStock = Math.max(0, item.stock - c.qty);
+          item.stock = newStock;
+          if (newStock <= 0 && item.unavailable !== true) {
+            item.unavailable = true;
+            item.autoDisabledByStock = true;
+          }
+          return item;
+        });
+      } catch(e) { console.error('Stock update error (non-fatal):', e); }
     }
 
     // Write order token so Rate My Buff knows this device placed an order
