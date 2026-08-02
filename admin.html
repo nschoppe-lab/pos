@@ -1165,19 +1165,29 @@ function renderInventory() {
     sec.innerHTML = `<div class="asec-title">${cat.label}</div>`;
     (cat.items || []).forEach((item, ii) => {
       const unavailable = item.unavailable === true;
+      const hasStock = typeof item.stock === 'number' && !isNaN(item.stock);
+      const outOfStock = hasStock && item.stock <= 0;
       const row = document.createElement('div');
-      row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #2a2a2a';
+      row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #2a2a2a;gap:12px;flex-wrap:wrap';
       row.innerHTML = `
-        <div>
-          <div style="font-size:13px;font-weight:600;color:${unavailable?'#666':'#fff'}">${item.name} ${unavailable?'<span style="font-size:10px;color:#ef4444;font-weight:700;background:#2a1010;padding:2px 7px;border-radius:10px;margin-left:4px">UNAVAILABLE</span>':''}</div>
+        <div style="min-width:140px">
+          <div style="font-size:13px;font-weight:600;color:${unavailable?'#666':'#fff'}">${item.name} ${unavailable?`<span style="font-size:10px;color:#ef4444;font-weight:700;background:#2a1010;padding:2px 7px;border-radius:10px;margin-left:4px">${outOfStock?'OUT OF STOCK':'UNAVAILABLE'}</span>`:''}</div>
           <div style="font-size:11px;color:#888;margin-top:2px">$${parseFloat(item.price).toFixed(2)}</div>
         </div>
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-          <span style="font-size:12px;color:${unavailable?'#ef4444':'#22c55e'}">${unavailable?'Off':'On'}</span>
-          <div onclick="toggleAvailability(${ci},${ii})" style="width:44px;height:24px;border-radius:12px;background:${unavailable?'#444':'#22c55e'};position:relative;cursor:pointer;transition:background 0.2s">
-            <div style="width:20px;height:20px;border-radius:50%;background:#fff;position:absolute;top:2px;${unavailable?'left:2px':'left:22px'};transition:left 0.2s"></div>
+        <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="font-size:11px;color:#888;white-space:nowrap">Qty:</span>
+            <input type="number" min="0" step="1" value="${hasStock ? item.stock : ''}" placeholder="∞"
+              onchange="updateStock(${ci},${ii},this.value)"
+              style="width:64px;background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:5px 8px;font-size:12px;color:#fff;text-align:center">
           </div>
-        </label>`;
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <span style="font-size:12px;color:${unavailable?'#ef4444':'#22c55e'}">${unavailable?'Off':'On'}</span>
+            <div onclick="toggleAvailability(${ci},${ii})" style="width:44px;height:24px;border-radius:12px;background:${unavailable?'#444':'#22c55e'};position:relative;cursor:pointer;transition:background 0.2s">
+              <div style="width:20px;height:20px;border-radius:50%;background:#fff;position:absolute;top:2px;${unavailable?'left:2px':'left:22px'};transition:left 0.2s"></div>
+            </div>
+          </label>
+        </div>`;
       sec.appendChild(row);
     });
     body.appendChild(sec);
@@ -1186,7 +1196,44 @@ function renderInventory() {
 
 window.toggleAvailability = async function(ci, ii) {
   const newMenu = JSON.parse(JSON.stringify(menu));
-  newMenu[ci].items[ii].unavailable = !newMenu[ci].items[ii].unavailable;
+  const item = newMenu[ci].items[ii];
+  item.unavailable = !item.unavailable;
+  // Manual toggle overrides any automatic out-of-stock state
+  item.autoDisabledByStock = false;
+  await setMenu(newMenu);
+  renderInventory();
+}
+
+window.updateStock = async function(ci, ii, rawValue) {
+  const newMenu = JSON.parse(JSON.stringify(menu));
+  const item = newMenu[ci].items[ii];
+  const trimmed = String(rawValue).trim();
+
+  if (trimmed === '') {
+    // Cleared field = stop tracking stock for this item; leave availability as-is
+    delete item.stock;
+    await setMenu(newMenu);
+    renderInventory();
+    return;
+  }
+
+  const qty = Math.max(0, Math.floor(Number(trimmed)));
+  if (isNaN(qty)) { renderInventory(); return; }
+
+  item.stock = qty;
+
+  if (qty <= 0) {
+    // Ran out — auto-disable ordering, but only flag it as "auto" if it wasn't already manually off
+    if (item.unavailable !== true) {
+      item.unavailable = true;
+      item.autoDisabledByStock = true;
+    }
+  } else if (item.autoDisabledByStock === true) {
+    // Restocked — automatically re-enable only if it was auto-disabled (not manually turned off)
+    item.unavailable = false;
+    item.autoDisabledByStock = false;
+  }
+
   await setMenu(newMenu);
   renderInventory();
 }
@@ -1412,7 +1459,7 @@ window.addLoyaltyCredit = async function() {
     const snap = await get(ref(db, `loyalty/${key}`));
     const current = snap.exists() ? snap.val() : { orderCount: 0, credits: 0 };
     const newCredits = Math.round(((current.credits||0) + amount)*100)/100;
-    const update_data = { credits: newCredits, email };
+    const update_data = { credits: newCredits, email, orderCount: current.orderCount || 0 };
     if (name) update_data.name = name;
     await update(ref(db, `loyalty/${key}`), update_data);
     document.getElementById('loyalty-name-input').value  = '';
