@@ -313,6 +313,28 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
         </div>
       </div>
       <div class="asec">
+        <div class="asec-title">Custom Loyalty Milestones</div>
+        <div style="font-size:12px;color:#888;margin-bottom:12px">Create your own rewards on top of the built-in 5th-order and 10th-order perks. Each one repeats automatically — e.g. "every 3rd order" triggers again at order 3, 6, 9, 12...</div>
+        <table class="mtable" style="margin-bottom:14px">
+          <thead><tr><th>Milestone</th><th>Reward</th><th>Label</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody id="loyalty-milestones-body"></tbody>
+        </table>
+        <div class="arow" style="flex-wrap:wrap">
+          <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:#ccc;white-space:nowrap">
+            Every
+            <input type="number" id="ms-interval" min="2" step="1" placeholder="5" class="w80">
+            orders, give
+          </div>
+          <select id="ms-type">
+            <option value="percent">% off that order</option>
+            <option value="credit">$ credit toward next order</option>
+          </select>
+          <input type="number" id="ms-value" min="0" step="0.5" placeholder="Amount" class="w80">
+          <input type="text" id="ms-label" placeholder="Label (optional, e.g. 'VIP Bonus')" style="flex:2;min-width:160px">
+          <button class="aadd" onclick="addLoyaltyMilestone()">Add Milestone</button>
+        </div>
+      </div>
+      <div class="asec">
         <div class="asec-title" style="display:flex;justify-content:space-between;align-items:center">
           <span>Customer Loyalty Records</span>
           <input type="text" id="loyalty-search" placeholder="Search by name or email..." oninput="renderLoyaltyAdmin()" style="background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:5px 9px;font-size:12px;color:#fff;width:220px">
@@ -759,7 +781,7 @@ emailjs.init("yoxsvEb1uuAA4Ytcd");
 const auth = getAuth(app);
 const db = getDatabase(app);
 
-let orders = {}, menu = [], coupons = [], staffList = [], loyaltyRecords = {}, waittimeData = {}, brandingData = {}, expensesData = {}, rewardStaffData = {}, specialsData = {}, ratingsData = {}, rmbWorkersData = {};
+let orders = {}, menu = [], coupons = [], staffList = [], loyaltyRecords = {}, loyaltyMilestonesData = {}, waittimeData = {}, brandingData = {}, expensesData = {}, rewardStaffData = {}, specialsData = {}, ratingsData = {}, rmbWorkersData = {};
 let tapTimers = {}, currentTab = 'orders';
 
 onAuthStateChanged(auth, async user => {
@@ -809,6 +831,7 @@ function showAdmin() {
     set(ref(db, 'rmbStaffPublic'), publicMirror).catch(()=>{});
   });
   onValue(ref(db,'loyalty'), snap => { loyaltyRecords = snap.val()||{}; if(currentTab==='loyalty') renderLoyaltyAdmin(); });
+  onValue(ref(db,'loyaltyMilestones'), snap => { loyaltyMilestonesData = snap.val()||{}; if(currentTab==='loyalty') renderLoyaltyMilestones(); });
   onValue(ref(db,'waittime'), snap => { waittimeData = snap.val()||{};
     if(currentTab==='waittime') updateWaitTimeUI(); });
   onValue(ref(db,'branding'), snap => { brandingData = snap.val()||{}; applyBrandingToPage(brandingData); if(currentTab==='branding') initBranding(); });
@@ -828,7 +851,7 @@ window.switchTab = function(t) {
   if (t==='staff') renderRewardStaff();
   if (t==='ratings') initRmbAdmin();
   if (t==='inventory') renderInventory();
-  if (t==='loyalty') renderLoyaltyAdmin();
+  if (t==='loyalty') { renderLoyaltyAdmin(); renderLoyaltyMilestones(); }
   if (t==='waittime') initWaitTime();
   if (t==='finance') renderFinance();
   if (t==='branding') initBranding();
@@ -1247,6 +1270,74 @@ window.renderLoyaltyAdmin = function() {
       </td>`;
     tbody.appendChild(tr);
   });
+}
+
+window.renderLoyaltyMilestones = function() {
+  const tbody = document.getElementById('loyalty-milestones-body');
+  if (!tbody) return;
+  const entries = Object.entries(loyaltyMilestonesData).map(([k,v]) => ({key:k, ...v}));
+  entries.sort((a,b) => (parseInt(a.interval)||0)-(parseInt(b.interval)||0));
+  if (!entries.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="color:#555;text-align:center;padding:14px;font-size:12px">No custom milestones yet — add one below.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = '';
+  entries.forEach(m => {
+    const active = m.active !== false;
+    const interval = parseInt(m.interval) || 0;
+    const value = parseFloat(m.value) || 0;
+    const rewardText = m.type === 'credit' ? `$${value.toFixed(2)} credit` : `${value}% off`;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td style="font-weight:600">Every ${interval}${ordinalSuffix(interval)} order</td>
+      <td style="color:${m.type==='credit'?'#22c55e':'#f59e0b'};font-weight:700">${rewardText}</td>
+      <td style="color:#888">${m.label||'—'}</td>
+      <td>${active ? '<span style="color:#22c55e;font-size:11px;font-weight:700">Active</span>' : '<span style="color:#666;font-size:11px">Paused</span>'}</td>
+      <td style="display:flex;gap:5px;flex-wrap:wrap">
+        <button onclick="toggleLoyaltyMilestone('${m.key}', ${!active})" style="background:${active?'#2a1f0e':'#1a2a1a'};border:1px solid ${active?'#f59e0b44':'#22c55e44'};color:${active?'#f59e0b':'#22c55e'};border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">${active?'Pause':'Resume'}</button>
+        <button onclick="deleteLoyaltyMilestone('${m.key}','${(m.label||('Every '+interval+' orders')).replace(/'/g,"\\'")}')" style="background:#3a0a0a;border:1px solid #991b1b;color:#fca5a5;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">Delete</button>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function ordinalSuffix(n) {
+  n = parseInt(n) || 0;
+  const j = n % 10, k = n % 100;
+  if (j === 1 && k !== 11) return 'st';
+  if (j === 2 && k !== 12) return 'nd';
+  if (j === 3 && k !== 13) return 'rd';
+  return 'th';
+}
+
+window.addLoyaltyMilestone = async function() {
+  const interval = parseInt(document.getElementById('ms-interval').value);
+  const type = document.getElementById('ms-type').value;
+  const value = parseFloat(document.getElementById('ms-value').value);
+  const label = document.getElementById('ms-label').value.trim();
+
+  if (!interval || interval < 2) { alert('Enter a valid order interval (2 or more)'); return; }
+  if (type === 'percent' && (isNaN(value) || value <= 0 || value > 100)) { alert('Enter a percent between 1 and 100'); return; }
+  if (type === 'credit' && (isNaN(value) || value <= 0)) { alert('Enter a valid credit amount greater than 0'); return; }
+
+  try {
+    await push(ref(db, 'loyaltyMilestones'), { interval, type, value, label, active: true, createdAt: Date.now() });
+    document.getElementById('ms-interval').value = '';
+    document.getElementById('ms-value').value = '';
+    document.getElementById('ms-label').value = '';
+    alert('Milestone added!');
+  } catch(e) { alert('Error adding milestone: ' + e.message); }
+}
+
+window.toggleLoyaltyMilestone = async function(key, newActive) {
+  try { await update(ref(db, `loyaltyMilestones/${key}`), { active: newActive }); }
+  catch(e) { alert('Error: ' + e.message); }
+}
+
+window.deleteLoyaltyMilestone = async function(key, label) {
+  if (!confirm(`Delete the "${label}" milestone? This cannot be undone.`)) return;
+  try { await remove(ref(db, `loyaltyMilestones/${key}`)); }
+  catch(e) { alert('Error: ' + e.message); }
 }
 
 window.editLoyaltyCustomer = function(key) {

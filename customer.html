@@ -180,6 +180,7 @@ const db = getDatabase(app);
 
 let menu = [], coupons = [], cart = [], appliedCoupon = null, activeBranding = {}, openOrderCount = 0;
 let loyaltyData = null, loyaltyDiscount = 0;
+let customMilestones = {};
 let custItem = null, custSelections = {};
 
 // Apply branding from Firebase
@@ -325,6 +326,49 @@ function emailToKey(email) {
   return email.replace(/\./g, ',').replace(/@/g, '_at_');
 }
 
+// ── Custom loyalty milestones (admin-configurable, on top of the built-in 5th/10th order rewards) ──
+onValue(ref(db, 'loyaltyMilestones'), snap => {
+  customMilestones = snap.val() || {};
+  if (loyaltyData) { renderLoyaltyBanner(); updateTotals(); }
+});
+
+function getActiveMilestones() {
+  return Object.values(customMilestones).filter(m => m && m.active !== false && parseInt(m.interval) >= 2);
+}
+
+// Highest % discount triggered on this order number (built-in 5th-order rule + any custom % milestones)
+function getPercentRewardForOrder(orderNum) {
+  let best = 0;
+  if (orderNum % 5 === 0 && orderNum % 10 !== 0) best = 50;
+  getActiveMilestones().forEach(m => {
+    if (m.type === 'percent' && orderNum % parseInt(m.interval) === 0) {
+      best = Math.max(best, parseFloat(m.value) || 0);
+    }
+  });
+  return best;
+}
+
+// Total $ credit earned for reaching this order number (built-in $5-at-10th rule + any custom credit milestones)
+function getCreditRewardForOrder(orderNum) {
+  let total = 0;
+  if (orderNum % 10 === 0) total += 5;
+  getActiveMilestones().forEach(m => {
+    if (m.type === 'credit' && orderNum % parseInt(m.interval) === 0) {
+      total += parseFloat(m.value) || 0;
+    }
+  });
+  return Math.round(total * 100) / 100;
+}
+
+function ordinalSuffix(n) {
+  n = parseInt(n) || 0;
+  const j = n % 10, k = n % 100;
+  if (j === 1 && k !== 11) return 'st';
+  if (j === 2 && k !== 12) return 'nd';
+  if (j === 3 && k !== 13) return 'rd';
+  return 'th';
+}
+
 function renderLoyaltyBanner() {
   if (!loyaltyData) { hideLoyaltyBanner(); return; }
   const banner = document.getElementById('loyalty-banner');
@@ -344,10 +388,12 @@ function renderLoyaltyBanner() {
     rewardEl.className = 'loyalty-reward credit';
     rewardEl.textContent = `🎉 $${credits.toFixed(2)} credit applied automatically!`;
     loyaltyDiscount = Math.min(credits, cart.reduce((s,c)=>s+c.price*c.qty,0));
-  } else if ((count + 1) % 10 === 5 || count + 1 === 5) {
-    document.getElementById('loyalty-next').textContent = `🎉 Your next order is your 5th — you get 50% off!`;
-  } else if ((count + 1) % 10 === 0) {
-    document.getElementById('loyalty-next').textContent = `🎉 Your next order is your ${count+1}th — you get a free $5 credit!`;
+  } else if (getPercentRewardForOrder(count + 1) > 0) {
+    const p = getPercentRewardForOrder(count + 1);
+    document.getElementById('loyalty-next').textContent = `🎉 Your next order is your ${count+1}${ordinalSuffix(count+1)} — you get ${p}% off!`;
+  } else if (getCreditRewardForOrder(count + 1) > 0) {
+    const c = getCreditRewardForOrder(count + 1);
+    document.getElementById('loyalty-next').textContent = `🎉 Your next order is your ${count+1}${ordinalSuffix(count+1)} — you get a free $${c.toFixed(2)} credit!`;
   } else {
     document.getElementById('loyalty-next').textContent = `${remaining} more order${remaining !== 1 ? 's' : ''} until your next reward`;
     if (cart.reduce((s,c)=>s+c.price*c.qty,0) < 5) {
@@ -530,16 +576,16 @@ function updateTotals() {
     const count = loyaltyData.orderCount || 0;
     const credits = loyaltyData.credits || 0;
     const nextOrder = count + 1;
-    const isFifthOrder = (nextOrder % 5 === 0) && (nextOrder % 10 !== 0);
+    const percentReward = getPercentRewardForOrder(nextOrder);
     if (credits > 0) {
       loyDisc = Math.round(Math.min(credits, sub)*100)/100;
       lr.style.display = 'flex';
       document.getElementById('loyalty-label').textContent = `⭐ Loyalty Credit`;
       document.getElementById('loyalty-amt').textContent = `-$${loyDisc.toFixed(2)}`;
-    } else if (isFifthOrder) {
-      loyDisc = Math.round(sub*0.5*100)/100;
+    } else if (percentReward > 0) {
+      loyDisc = Math.round(sub*(percentReward/100)*100)/100;
       lr.style.display = 'flex';
-      document.getElementById('loyalty-label').textContent = `⭐ 5th Order (50% off)`;
+      document.getElementById('loyalty-label').textContent = `⭐ ${nextOrder}${ordinalSuffix(nextOrder)} Order (${percentReward}% off)`;
       document.getElementById('loyalty-amt').textContent = `-$${loyDisc.toFixed(2)}`;
     } else { lr.style.display = 'none'; }
   } else { lr.style.display = 'none'; }
@@ -601,12 +647,14 @@ window.placeOrder = async function() {
         newCredits = Math.max(0, Math.round((newCredits-used)*100)/100);
         loyaltyMsg = `$${used.toFixed(2)} loyalty credit used!`;
       }
-      if (newOrderCount % 5 === 0 && newOrderCount % 10 !== 0) {
-        loyaltyMsg = `🎉 ${newOrderCount}th order — 50% off applied!`;
+      const earnedPercent = getPercentRewardForOrder(newOrderCount);
+      const earnedCredit = getCreditRewardForOrder(newOrderCount);
+      if (earnedPercent > 0) {
+        loyaltyMsg = `🎉 ${newOrderCount}${ordinalSuffix(newOrderCount)} order — ${earnedPercent}% off applied!`;
       }
-      if (newOrderCount % 10 === 0) {
-        newCredits = Math.round((newCredits+5)*100)/100;
-        loyaltyMsg = `🎉 You've reached order #${newOrderCount}! $5 credit added for your next visit!`;
+      if (earnedCredit > 0) {
+        newCredits = Math.round((newCredits + earnedCredit)*100)/100;
+        loyaltyMsg = `🎉 You've reached order #${newOrderCount}! $${earnedCredit.toFixed(2)} credit added for your next visit!` + (earnedPercent > 0 ? ` Plus ${earnedPercent}% off applied to this order!` : '');
       }
     }
     await update(ref(db, `loyalty/${loyaltyKey}`), { email, name, orderCount: newOrderCount, credits: newCredits, lastOrder: new Date().toISOString() });
