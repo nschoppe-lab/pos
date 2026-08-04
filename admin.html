@@ -144,6 +144,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
       <button class="tb" onclick="switchTab('branding')">Branding</button>
       <button class="tb" onclick="switchTab('specials')">Specials</button>
       <button class="tb" onclick="switchTab('ratings')" style="border:1px solid #f59e0b44;color:#f59e0b">⭐ Rate My Buff</button>
+      <button class="tb" onclick="switchTab('delivery')">🚚 Delivery</button>
     </div>
     <button class="logout-btn" onclick="doLogout()">Sign out</button>
   </div>
@@ -289,7 +290,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
   <div class="tab-content" id="tab-inventory">
     <div class="admin-scroll"><div class="admin-wrap">
       <div class="admin-title">Inventory / Availability</div>
-      <div class="admin-sub">Toggle items on or off instantly. Unavailable items are hidden from customers immediately.</div>
+      <div class="admin-sub">Toggle items on or off instantly, or set a stock quantity — items automatically go unavailable when their quantity hits 0, and come back the moment you restock.</div>
       <div id="inventory-body"></div>
     </div></div>
   </div>
@@ -735,6 +736,25 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
   </div>
 </div>
 
+<!-- DELIVERY TAB -->
+<div class="tab-content" id="tab-delivery">
+  <div class="admin-scroll"><div class="admin-wrap">
+    <div class="admin-title">🚚 Delivery Locations</div>
+    <div class="admin-sub">Manage the locations customers can choose when they place a delivery order. Delivery itself is only offered to customers Monday–Thursday, 7–8 PM ET, and adds a $5 fee automatically — that scheduling and fee are built in and don't need to be set here.</div>
+    <div class="asec">
+      <div class="asec-title">Locations</div>
+      <table class="mtable" style="margin-bottom:14px">
+        <thead><tr><th>Location</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody id="delivery-locations-body"></tbody>
+      </table>
+      <div class="arow">
+        <input type="text" id="new-delivery-location" placeholder="Location name (e.g. Duncan Hall Lobby)" style="flex:2">
+        <button class="aadd" onclick="addDeliveryLocation()">Add Location</button>
+      </div>
+    </div>
+  </div></div>
+</div>
+
 <div class="modal-bg" id="custom-admin-modal" style="display:none" onclick="if(event.target===this)closeCustomizeAdmin()">
   <div class="modal" style="width:460px;max-width:95vw">
     <h3 id="ca-title" style="margin-bottom:4px"></h3>
@@ -781,7 +801,7 @@ emailjs.init("yoxsvEb1uuAA4Ytcd");
 const auth = getAuth(app);
 const db = getDatabase(app);
 
-let orders = {}, menu = [], coupons = [], staffList = [], loyaltyRecords = {}, loyaltyMilestonesData = {}, waittimeData = {}, brandingData = {}, expensesData = {}, rewardStaffData = {}, specialsData = {}, ratingsData = {}, rmbWorkersData = {};
+let orders = {}, menu = [], coupons = [], staffList = [], loyaltyRecords = {}, loyaltyMilestonesData = {}, waittimeData = {}, brandingData = {}, expensesData = {}, rewardStaffData = {}, specialsData = {}, ratingsData = {}, rmbWorkersData = {}, deliveryLocationsData = {};
 let tapTimers = {}, currentTab = 'orders';
 
 onAuthStateChanged(auth, async user => {
@@ -832,6 +852,7 @@ function showAdmin() {
   });
   onValue(ref(db,'loyalty'), snap => { loyaltyRecords = snap.val()||{}; if(currentTab==='loyalty') renderLoyaltyAdmin(); });
   onValue(ref(db,'loyaltyMilestones'), snap => { loyaltyMilestonesData = snap.val()||{}; if(currentTab==='loyalty') renderLoyaltyMilestones(); });
+  onValue(ref(db,'deliveryLocations'), snap => { deliveryLocationsData = snap.val()||{}; if(currentTab==='delivery') renderDeliveryLocations(); });
   onValue(ref(db,'waittime'), snap => { waittimeData = snap.val()||{};
     if(currentTab==='waittime') updateWaitTimeUI(); });
   onValue(ref(db,'branding'), snap => { brandingData = snap.val()||{}; applyBrandingToPage(brandingData); if(currentTab==='branding') initBranding(); });
@@ -846,12 +867,13 @@ window.switchTab = function(t) {
   currentTab = t;
   document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
   document.getElementById('tab-'+t).classList.add('active');
-  document.querySelectorAll('.tb').forEach((b,i) => b.classList.toggle('active', ['orders','history','menu','coupons','staff','inventory','loyalty','waittime','finance','branding','specials','ratings'][i]===t));
+  document.querySelectorAll('.tb').forEach((b,i) => b.classList.toggle('active', ['orders','history','menu','coupons','staff','inventory','loyalty','waittime','finance','branding','specials','ratings','delivery'][i]===t));
   if (t==='specials') renderSpecialsAdmin();
   if (t==='staff') renderRewardStaff();
   if (t==='ratings') initRmbAdmin();
   if (t==='inventory') renderInventory();
   if (t==='loyalty') { renderLoyaltyAdmin(); renderLoyaltyMilestones(); }
+  if (t==='delivery') renderDeliveryLocations();
   if (t==='waittime') initWaitTime();
   if (t==='finance') renderFinance();
   if (t==='branding') initBranding();
@@ -872,7 +894,7 @@ function renderOrders() {
     const card = document.createElement('div');
     card.className = 'oc'+(order.status==='done'?' done':'');
     card.dataset.key = order.fbKey;
-    card.innerHTML = `<div class="oc-hdr"><span class="oc-num">#${order.fbKey.slice(-4).toUpperCase()}</span><span class="oc-name">${order.name}</span><span class="oc-time">${order.time||''}</span></div><div class="oc-body">${(order.items||[]).map(i=>`<div class="oc-line"><span>${i.qty}x</span> ${i.name}</div>`).join('')}${order.discount>0?`<div style="font-size:11px;color:#22c55e;margin-top:3px">Disc: -$${parseFloat(order.discount).toFixed(2)}</div>`:''}${order.comments?`<div style="font-size:11px;color:#f59e0b;margin-top:4px;padding:4px 8px;background:#2a1f0e;border-radius:5px">&#128172; ${order.comments}</div>`:''}<div class="oc-total">$${parseFloat(order.total).toFixed(2)}</div></div><div class="oc-foot"><span class="sbadge ${order.status==='done'?'done':'pending'}">${order.status==='done'?'Done':'In Progress'}</span><span class="tap-hint">${order.status==='done'?'Completed':'Double-tap to complete'}</span></div>`;
+    card.innerHTML = `<div class="oc-hdr"><span class="oc-num">#${order.fbKey.slice(-4).toUpperCase()}</span><span class="oc-name">${order.name}</span><span class="oc-time">${order.time||''}</span></div><div class="oc-body">${order.delivery?`<div style="font-size:11px;color:#3b82f6;font-weight:700;margin-bottom:4px;padding:4px 8px;background:#0e1a2a;border-radius:5px">🚚 DELIVERY → ${order.deliveryLocation||'—'}${order.deliveryPhone?' · 📞 '+order.deliveryPhone:''}</div>`:''}${order.preorder?`<div style="font-size:11px;color:#a78bfa;font-weight:700;margin-bottom:4px;padding:4px 8px;background:#1a1030;border-radius:5px">⏰ PRE-ORDER</div>`:''}${(order.items||[]).map(i=>`<div class="oc-line"><span>${i.qty}x</span> ${i.name}</div>`).join('')}${order.discount>0?`<div style="font-size:11px;color:#22c55e;margin-top:3px">Disc: -$${parseFloat(order.discount).toFixed(2)}</div>`:''}${order.comments?`<div style="font-size:11px;color:#f59e0b;margin-top:4px;padding:4px 8px;background:#2a1f0e;border-radius:5px">&#128172; ${order.comments}</div>`:''}<div class="oc-total">$${parseFloat(order.total).toFixed(2)}</div></div><div class="oc-foot"><span class="sbadge ${order.status==='done'?'done':'pending'}">${order.status==='done'?'Done':'In Progress'}</span><span class="tap-hint">${order.status==='done'?'Completed':'Double-tap to complete'}</span></div>`;
     if (order.status!=='done') card.addEventListener('click',()=>handleTap(order.fbKey,order));
     grid.appendChild(card);
   });
@@ -933,7 +955,7 @@ window.renderHistory = function() {
     const hdr=document.createElement('div');hdr.className='hcard-hdr';
     hdr.innerHTML=`<div style="display:flex;align-items:center;gap:8px"><span style="font-size:12px;font-weight:700;color:#ff6b35">#${order.fbKey.slice(-4).toUpperCase()}</span><span style="font-size:12px;font-weight:600">${order.name}</span><span class="hbadge ${order.status==='done'?'done':'pending'}">${order.status==='done'?'Done':'Pending'}</span></div><div style="display:flex;align-items:center;gap:8px"><span style="font-size:12px;font-weight:700;color:#ff6b35">$${parseFloat(order.total||0).toFixed(2)}</span><span style="font-size:11px;color:#666">${order.date||''} ${order.time||''}</span><button onclick="event.stopPropagation();deleteOrder('${order.fbKey}','${order.name}')" style="background:#2a1010;border:1px solid #7f1d1d;color:#ef4444;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">Delete</button><span style="color:#555">&#9660;</span></div>`;
     const body=document.createElement('div');body.className='hcard-body';
-    body.innerHTML=(order.items||[]).map(i=>`<div style="font-size:12px;color:#ccc;padding:2px 0"><span style="color:#777">${i.qty}x</span> ${i.name} — $${(i.price*i.qty).toFixed(2)}</div>`).join('')+(order.discount>0?`<div style="font-size:11px;color:#22c55e;margin-top:5px">Discount (${order.coupon}): -$${parseFloat(order.discount).toFixed(2)}</div>`:'')+`<div style="font-size:11px;color:#888;margin-top:6px">${order.email?'Email: '+order.email:'No email'}${order.coupon?' | Code: '+order.coupon:''}</div>`;
+    body.innerHTML=(order.items||[]).map(i=>`<div style="font-size:12px;color:#ccc;padding:2px 0"><span style="color:#777">${i.qty}x</span> ${i.name} — $${(i.price*i.qty).toFixed(2)}</div>`).join('')+(order.discount>0?`<div style="font-size:11px;color:#22c55e;margin-top:5px">Discount (${order.coupon}): -$${parseFloat(order.discount).toFixed(2)}</div>`:'')+(order.delivery?`<div style="font-size:11px;color:#3b82f6;margin-top:5px">🚚 Delivery (+$${parseFloat(order.deliveryFee||5).toFixed(2)}) → ${order.deliveryLocation||'—'}${order.deliveryPhone?' · 📞 '+order.deliveryPhone:''}</div>`:'')+(order.preorder?`<div style="font-size:11px;color:#a78bfa;margin-top:5px">⏰ Pre-Order (+$${parseFloat(order.preorderFee||1).toFixed(2)})</div>`:'')+`<div style="font-size:11px;color:#888;margin-top:6px">${order.email?'Email: '+order.email:'No email'}${order.coupon?' | Code: '+order.coupon:''}</div>`;
     hdr.onclick=()=>body.classList.toggle('open');
     card.appendChild(hdr);card.appendChild(body);el.appendChild(card);
   });
@@ -1165,21 +1187,21 @@ function renderInventory() {
     sec.innerHTML = `<div class="asec-title">${cat.label}</div>`;
     (cat.items || []).forEach((item, ii) => {
       const unavailable = item.unavailable === true;
-      const hasStock = typeof item.stock === 'number' && !isNaN(item.stock);
-      const outOfStock = hasStock && item.stock <= 0;
+      const hasStock = item.stock !== undefined && item.stock !== null;
+      const stockVal = hasStock ? parseInt(item.stock) : '';
       const row = document.createElement('div');
-      row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #2a2a2a;gap:12px;flex-wrap:wrap';
+      row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #2a2a2a;gap:14px;flex-wrap:wrap';
       row.innerHTML = `
-        <div style="min-width:140px">
-          <div style="font-size:13px;font-weight:600;color:${unavailable?'#666':'#fff'}">${item.name} ${unavailable?`<span style="font-size:10px;color:#ef4444;font-weight:700;background:#2a1010;padding:2px 7px;border-radius:10px;margin-left:4px">${outOfStock?'OUT OF STOCK':'UNAVAILABLE'}</span>`:''}</div>
+        <div>
+          <div style="font-size:13px;font-weight:600;color:${unavailable?'#666':'#fff'}">${item.name} ${unavailable?'<span style="font-size:10px;color:#ef4444;font-weight:700;background:#2a1010;padding:2px 7px;border-radius:10px;margin-left:4px">UNAVAILABLE</span>':''}</div>
           <div style="font-size:11px;color:#888;margin-top:2px">$${parseFloat(item.price).toFixed(2)}</div>
         </div>
         <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
-          <div style="display:flex;align-items:center;gap:6px">
-            <span style="font-size:11px;color:#888;white-space:nowrap">Qty:</span>
-            <input type="number" min="0" step="1" value="${hasStock ? item.stock : ''}" placeholder="∞"
-              onchange="updateStock(${ci},${ii},this.value)"
-              style="width:64px;background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:5px 8px;font-size:12px;color:#fff;text-align:center">
+          <div style="display:flex;flex-direction:column;align-items:flex-start;gap:2px">
+            <span style="font-size:9px;color:#888;text-transform:uppercase;letter-spacing:0.5px">Qty in Stock</span>
+            <input type="number" min="0" step="1" value="${stockVal}" placeholder="No limit"
+              onchange="updateItemStock(${ci},${ii}, this.value)"
+              style="width:84px;background:#1a1a1a;border:1px solid ${hasStock && stockVal<=0?'#7f1d1d':'#444'};border-radius:6px;padding:5px 8px;font-size:12px;color:#fff;text-align:center">
           </div>
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
             <span style="font-size:12px;color:${unavailable?'#ef4444':'#22c55e'}">${unavailable?'Off':'On'}</span>
@@ -1196,42 +1218,28 @@ function renderInventory() {
 
 window.toggleAvailability = async function(ci, ii) {
   const newMenu = JSON.parse(JSON.stringify(menu));
-  const item = newMenu[ci].items[ii];
-  item.unavailable = !item.unavailable;
-  // Manual toggle overrides any automatic out-of-stock state
-  item.autoDisabledByStock = false;
+  newMenu[ci].items[ii].unavailable = !newMenu[ci].items[ii].unavailable;
   await setMenu(newMenu);
   renderInventory();
 }
 
-window.updateStock = async function(ci, ii, rawValue) {
+window.updateItemStock = async function(ci, ii, rawVal) {
   const newMenu = JSON.parse(JSON.stringify(menu));
   const item = newMenu[ci].items[ii];
-  const trimmed = String(rawValue).trim();
+  const trimmed = String(rawVal).trim();
 
   if (trimmed === '') {
-    // Cleared field = stop tracking stock for this item; leave availability as-is
+    // Field cleared — stop tracking stock for this item (leaves current on/off as-is)
     delete item.stock;
-    await setMenu(newMenu);
-    renderInventory();
-    return;
-  }
-
-  const qty = Math.max(0, Math.floor(Number(trimmed)));
-  if (isNaN(qty)) { renderInventory(); return; }
-
-  item.stock = qty;
-
-  if (qty <= 0) {
-    // Ran out — auto-disable ordering, but only flag it as "auto" if it wasn't already manually off
-    if (item.unavailable !== true) {
-      item.unavailable = true;
-      item.autoDisabledByStock = true;
+  } else {
+    const qty = parseInt(trimmed, 10);
+    if (isNaN(qty) || qty < 0) {
+      alert('Enter a whole number 0 or greater');
+      renderInventory();
+      return;
     }
-  } else if (item.autoDisabledByStock === true) {
-    // Restocked — automatically re-enable only if it was auto-disabled (not manually turned off)
-    item.unavailable = false;
-    item.autoDisabledByStock = false;
+    item.stock = qty;
+    item.unavailable = qty <= 0; // auto-hide at 0, auto-restore the moment it's restocked
   }
 
   await setMenu(newMenu);
@@ -1387,6 +1395,52 @@ window.deleteLoyaltyMilestone = async function(key, label) {
   catch(e) { alert('Error: ' + e.message); }
 }
 
+// DELIVERY LOCATIONS
+window.renderDeliveryLocations = function() {
+  const tbody = document.getElementById('delivery-locations-body');
+  if (!tbody) return;
+  const entries = Object.entries(deliveryLocationsData).map(([k,v]) => ({key:k, ...v}));
+  entries.sort((a,b) => (a.name||'').localeCompare(b.name||''));
+  if (!entries.length) {
+    tbody.innerHTML = '<tr><td colspan="3" style="color:#555;text-align:center;padding:14px;font-size:12px">No delivery locations yet — add one below.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = '';
+  entries.forEach(loc => {
+    const active = loc.active !== false;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td style="font-weight:600">${loc.name}</td>
+      <td>${active ? '<span style="color:#22c55e;font-size:11px;font-weight:700">Active</span>' : '<span style="color:#666;font-size:11px">Hidden</span>'}</td>
+      <td style="display:flex;gap:5px;flex-wrap:wrap">
+        <button onclick="toggleDeliveryLocation('${loc.key}', ${!active})" style="background:${active?'#2a1f0e':'#1a2a1a'};border:1px solid ${active?'#f59e0b44':'#22c55e44'};color:${active?'#f59e0b':'#22c55e'};border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">${active?'Hide':'Show'}</button>
+        <button onclick="deleteDeliveryLocation('${loc.key}','${(loc.name||'').replace(/'/g,"\\'")}')" style="background:#3a0a0a;border:1px solid #991b1b;color:#fca5a5;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">Delete</button>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+window.addDeliveryLocation = async function() {
+  const input = document.getElementById('new-delivery-location');
+  const name = input.value.trim();
+  if (!name) { alert('Enter a location name'); return; }
+  try {
+    await push(ref(db, 'deliveryLocations'), { name, active: true, createdAt: Date.now() });
+    input.value = '';
+  } catch(e) { alert('Error adding location: ' + e.message); }
+}
+
+window.toggleDeliveryLocation = async function(key, newActive) {
+  try { await update(ref(db, `deliveryLocations/${key}`), { active: newActive }); }
+  catch(e) { alert('Error: ' + e.message); }
+}
+
+window.deleteDeliveryLocation = async function(key, name) {
+  if (!confirm(`Delete "${name}" from the delivery locations list? This cannot be undone.`)) return;
+  try { await remove(ref(db, `deliveryLocations/${key}`)); }
+  catch(e) { alert('Error: ' + e.message); }
+}
+
 window.editLoyaltyCustomer = function(key) {
   const r = loyaltyRecords[key] || {};
   const esc = (s) => String(s||'').replace(/"/g,'&quot;');
@@ -1459,7 +1513,7 @@ window.addLoyaltyCredit = async function() {
     const snap = await get(ref(db, `loyalty/${key}`));
     const current = snap.exists() ? snap.val() : { orderCount: 0, credits: 0 };
     const newCredits = Math.round(((current.credits||0) + amount)*100)/100;
-    const update_data = { credits: newCredits, email, orderCount: current.orderCount || 0 };
+    const update_data = { credits: newCredits, email };
     if (name) update_data.name = name;
     await update(ref(db, `loyalty/${key}`), update_data);
     document.getElementById('loyalty-name-input').value  = '';
@@ -2043,7 +2097,6 @@ window.giveCredit = async function(key, name, email, currentTotal) {
     const newCredits = Math.round(((current.credits || 0) + amount) * 100) / 100;
     await update(ref(db, `loyalty/${loyaltyKey}`), {
       email, name,
-      orderCount: current.orderCount || 0,
       credits: newCredits,
       lastCreditAt: new Date().toISOString()
     });

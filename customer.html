@@ -68,6 +68,25 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#22c55e;color:#fff;padding:14px 24px;border-radius:10px;font-size:14px;font-weight:600;display:none;z-index:999;text-align:center;max-width:320px}
 .loading{text-align:center;padding:60px;color:#555}
 .cust-modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.8);display:flex;align-items:flex-end;justify-content:center;z-index:998;opacity:0;pointer-events:none;transition:opacity 0.2s}
+.order-opts{padding:12px 16px;border-bottom:1px solid #333}
+.oo-title{font-size:11px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px}
+.oo-option{background:#1a1a1a;border:1.5px solid #333;border-radius:8px;padding:10px 12px;margin-bottom:8px;transition:border-color 0.15s}
+.oo-option.active{border-color:#ff6b35}
+.oo-option.unavailable{opacity:0.5}
+.oo-row{display:flex;align-items:center;justify-content:space-between;cursor:pointer}
+.oo-row-left{display:flex;flex-direction:column}
+.oo-label{font-size:13px;font-weight:600;color:#fff}
+.oo-sub{font-size:11px;color:#888;margin-top:2px}
+.oo-fee{font-size:12px;font-weight:700;color:#ff6b35}
+.oo-toggle{width:18px;height:18px;accent-color:#ff6b35;cursor:pointer}
+.oo-toggle:disabled{cursor:not-allowed}
+.oo-fields{margin-top:10px;display:none}
+.oo-fields.show{display:block}
+.oo-fields label{font-size:11px;color:#888;font-weight:600;display:block;margin-top:8px}
+.oo-fields label:first-child{margin-top:0}
+.oo-fields select,.oo-fields input{width:100%;background:#111;border:1px solid #333;border-radius:6px;padding:8px 10px;font-size:13px;color:#fff;margin-top:4px}
+.oo-fields select:focus,.oo-fields input:focus{outline:none;border-color:#ff6b35}
+.oo-fields select::placeholder,.oo-fields input::placeholder{color:#555}
 .cust-modal-bg.open{opacity:1;pointer-events:all}
 .cust-modal{background:#1e1e1e;border:1px solid #333;border-radius:16px 16px 0 0;width:100%;max-width:480px;padding:20px;transform:translateY(100%);transition:transform 0.25s ease;max-height:85vh;overflow-y:auto}
 .cust-modal-bg.open .cust-modal{transform:translateY(0)}
@@ -134,10 +153,45 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
       </div>
       <div class="disc-msg" id="disc-msg"></div>
     </div>
+    <div class="order-opts" id="order-opts">
+      <div class="oo-title">Order Options</div>
+      <div class="oo-option" id="delivery-card">
+        <label class="oo-row" for="delivery-toggle">
+          <div class="oo-row-left">
+            <span class="oo-label">🚚 Delivery</span>
+            <span class="oo-sub" id="delivery-sub">Available Mon–Thu, 7–8 PM ET</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span class="oo-fee">+$5.00</span>
+            <input type="checkbox" id="delivery-toggle" class="oo-toggle" disabled onchange="onDeliveryToggle(this.checked)">
+          </div>
+        </label>
+        <div class="oo-fields" id="delivery-fields">
+          <label>Delivery Location</label>
+          <select id="delivery-location"><option value="">Select a location...</option></select>
+          <label>Contact Phone Number</label>
+          <input type="tel" id="delivery-phone" placeholder="e.g. (555) 123-4567">
+        </div>
+      </div>
+      <div class="oo-option" id="preorder-card">
+        <label class="oo-row" for="preorder-toggle">
+          <div class="oo-row-left">
+            <span class="oo-label">⏰ Pre-Order</span>
+            <span class="oo-sub" id="preorder-sub">Available nightly starting 7 PM ET</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span class="oo-fee">+$1.00</span>
+            <input type="checkbox" id="preorder-toggle" class="oo-toggle" disabled onchange="onPreorderToggle(this.checked)">
+          </div>
+        </label>
+      </div>
+    </div>
     <div class="cart-footer">
       <div class="tr"><span>Subtotal</span><span id="subtotal">$0.00</span></div>
       <div class="tr disc" id="disc-row" style="display:none"><span id="disc-label">Discount</span><span id="disc-amt">-$0.00</span></div>
       <div class="tr loyalty" id="loyalty-row" style="display:none"><span id="loyalty-label">Loyalty</span><span id="loyalty-amt">-$0.00</span></div>
+      <div class="tr" id="delivery-fee-row" style="display:none;color:#ff6b35"><span>🚚 Delivery Fee</span><span>+$5.00</span></div>
+      <div class="tr" id="preorder-fee-row" style="display:none;color:#ff6b35"><span>⏰ Pre-Order Fee</span><span>+$1.00</span></div>
       <div class="tr total"><span>Total</span><span id="cart-total">$0.00</span></div>
       <button class="place-btn" onclick="placeOrder()">Place Order</button>
     </div>
@@ -163,7 +217,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getDatabase, ref, push, onValue, serverTimestamp, get, update, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+import { getDatabase, ref, push, onValue, serverTimestamp, get, update } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCG5nhzdAHBTGg2eXXmhqH8pF8S8qFqM7o",
@@ -181,6 +235,8 @@ const db = getDatabase(app);
 let menu = [], coupons = [], cart = [], appliedCoupon = null, activeBranding = {}, openOrderCount = 0;
 let loyaltyData = null, loyaltyDiscount = 0;
 let customMilestones = {};
+let deliveryLocations = {};
+let deliveryOn = false, preorderOn = false;
 let custItem = null, custSelections = {};
 
 // Apply branding from Firebase
@@ -286,6 +342,8 @@ onValue(ref(db, 'waittime'), snap => {
   // Re-render wait block on menu panel
   const panel = document.getElementById('menu-panel');
   if (panel) renderWaitBlock(panel);
+  // Store open/closed state affects pre-order availability
+  if (typeof refreshOrderOptionAvailability === 'function') refreshOrderOptionAvailability();
 });
 
 // Track open orders for wait time
@@ -368,6 +426,108 @@ function ordinalSuffix(n) {
   if (j === 3 && k !== 13) return 'rd';
   return 'th';
 }
+
+// ── Delivery locations (admin-managed) ──
+onValue(ref(db, 'deliveryLocations'), snap => {
+  deliveryLocations = snap.val() || {};
+  renderDeliveryLocationOptions();
+});
+
+function escapeHtmlAttr(str) {
+  return String(str||'').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+
+function renderDeliveryLocationOptions() {
+  const sel = document.getElementById('delivery-location');
+  if (!sel) return;
+  const current = sel.value;
+  const entries = Object.values(deliveryLocations)
+    .filter(v => v && v.active !== false && v.name)
+    .sort((a,b) => a.name.localeCompare(b.name));
+  sel.innerHTML = '<option value="">Select a location...</option>' +
+    entries.map(v => `<option value="${escapeHtmlAttr(v.name)}">${escapeHtmlAttr(v.name)}</option>`).join('');
+  if (entries.some(v => v.name === current)) sel.value = current;
+}
+
+// ── Delivery (Mon–Thu, 7–8 PM ET) and pre-order (any open night, 7 PM ET onward) windows ──
+function getEasternParts(date) {
+  date = date || new Date();
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York', weekday: 'short', hour: 'numeric', hour12: false
+  });
+  const map = {};
+  fmt.formatToParts(date).forEach(p => { map[p.type] = p.value; });
+  let hour = parseInt(map.hour, 10);
+  if (hour === 24) hour = 0;
+  return { weekday: map.weekday, hour: hour };
+}
+
+function isDeliveryWindowOpen() {
+  const p = getEasternParts();
+  const validDays = ['Mon','Tue','Wed','Thu'];
+  return validDays.indexOf(p.weekday) !== -1 && p.hour === 19;
+}
+
+function isPreorderWindowOpen() {
+  const p = getEasternParts();
+  const storeOpen = !(waittimeSnap && waittimeSnap.closed === true);
+  return storeOpen && p.hour >= 19;
+}
+
+function refreshOrderOptionAvailability() {
+  const delivToggle = document.getElementById('delivery-toggle');
+  const delivCard = document.getElementById('delivery-card');
+  const delivSub = document.getElementById('delivery-sub');
+  if (delivToggle) {
+    const delivOk = isDeliveryWindowOpen();
+    delivToggle.disabled = !delivOk;
+    if (delivCard) delivCard.classList.toggle('unavailable', !delivOk);
+    if (!delivOk && delivToggle.checked) {
+      delivToggle.checked = false;
+      deliveryOn = false;
+      const fields = document.getElementById('delivery-fields');
+      if (fields) fields.classList.remove('show');
+      if (delivCard) delivCard.classList.remove('active');
+    }
+    if (delivSub) delivSub.textContent = delivOk ? 'Available now — Mon–Thu, 7–8 PM ET' : 'Available Mon–Thu, 7–8 PM ET only';
+  }
+
+  const preToggle = document.getElementById('preorder-toggle');
+  const preCard = document.getElementById('preorder-card');
+  const preSub = document.getElementById('preorder-sub');
+  if (preToggle) {
+    const preOk = isPreorderWindowOpen();
+    preToggle.disabled = !preOk;
+    if (preCard) preCard.classList.toggle('unavailable', !preOk);
+    if (!preOk && preToggle.checked) {
+      preToggle.checked = false;
+      preorderOn = false;
+      if (preCard) preCard.classList.remove('active');
+    }
+    if (preSub) preSub.textContent = preOk ? 'Available now' : "Available nightly starting 7 PM ET while we're open";
+  }
+
+  updateTotals();
+}
+
+window.onDeliveryToggle = function(checked) {
+  deliveryOn = checked;
+  const fields = document.getElementById('delivery-fields');
+  if (fields) fields.classList.toggle('show', checked);
+  const card = document.getElementById('delivery-card');
+  if (card) card.classList.toggle('active', checked);
+  updateTotals();
+};
+
+window.onPreorderToggle = function(checked) {
+  preorderOn = checked;
+  const card = document.getElementById('preorder-card');
+  if (card) card.classList.toggle('active', checked);
+  updateTotals();
+};
+
+refreshOrderOptionAvailability();
+setInterval(refreshOrderOptionAvailability, 20000);
 
 function renderLoyaltyBanner() {
   if (!loyaltyData) { hideLoyaltyBanner(); return; }
@@ -590,8 +750,16 @@ function updateTotals() {
     } else { lr.style.display = 'none'; }
   } else { lr.style.display = 'none'; }
   document.getElementById('subtotal').textContent = `$${sub.toFixed(2)}`;
-  document.getElementById('cart-total').textContent = `$${Math.max(0, sub-disc-loyDisc).toFixed(2)}`;
-  return {sub, disc, loyDisc, total: Math.max(0, sub-disc-loyDisc)};
+  const baseTotal = Math.max(0, sub-disc-loyDisc);
+  const deliveryFee = (deliveryOn && isDeliveryWindowOpen()) ? 5 : 0;
+  const preorderFee = (preorderOn && isPreorderWindowOpen()) ? 1 : 0;
+  const grandTotal = Math.round((baseTotal + deliveryFee + preorderFee) * 100) / 100;
+  const delivRow = document.getElementById('delivery-fee-row');
+  if (delivRow) delivRow.style.display = deliveryFee > 0 ? 'flex' : 'none';
+  const preRow = document.getElementById('preorder-fee-row');
+  if (preRow) preRow.style.display = preorderFee > 0 ? 'flex' : 'none';
+  document.getElementById('cart-total').textContent = `$${grandTotal.toFixed(2)}`;
+  return {sub, disc, loyDisc, deliveryFee, preorderFee, total: grandTotal};
 }
 
 window.applyDiscount = function() {
@@ -616,6 +784,26 @@ window.placeOrder = async function() {
   if (!name) { alert('Please enter your name'); return; }
   if (!email) { alert('Please enter your email'); return; }
   if (!cart.length) { alert('Your cart is empty'); return; }
+
+  // Re-validate delivery / pre-order windows at the moment of submission (they can expire while the cart is open)
+  let deliveryLocationVal = '', deliveryPhoneVal = '';
+  if (deliveryOn) {
+    if (!isDeliveryWindowOpen()) {
+      alert("The delivery window (Mon–Thu, 7–8 PM ET) has just closed. Please uncheck Delivery to continue, or place your order without it.");
+      refreshOrderOptionAvailability();
+      return;
+    }
+    deliveryLocationVal = document.getElementById('delivery-location').value;
+    deliveryPhoneVal = document.getElementById('delivery-phone').value.trim();
+    if (!deliveryLocationVal) { alert('Please select a delivery location'); return; }
+    if (!deliveryPhoneVal) { alert('Please enter a contact phone number for delivery'); return; }
+  }
+  if (preorderOn && !isPreorderWindowOpen()) {
+    alert("Pre-orders are no longer available right now. Please uncheck Pre-Order to continue, or place your order without it.");
+    refreshOrderOptionAvailability();
+    return;
+  }
+
   const t = updateTotals();
   const loyaltyKey = emailToKey(email);
   let currentLoyalty = { orderCount: 0, credits: 0 };
@@ -664,6 +852,12 @@ window.placeOrder = async function() {
     name, email, comments,
     items: cart.map(c => ({ id: c.id, name: c.name, price: c.price, qty: c.qty, customizations: c.customizations || [] })),
     subtotal: t.sub, discount: t.disc, loyaltyDiscount: t.loyDisc,
+    delivery: !!deliveryOn,
+    deliveryLocation: deliveryOn ? deliveryLocationVal : null,
+    deliveryPhone: deliveryOn ? deliveryPhoneVal : null,
+    deliveryFee: t.deliveryFee,
+    preorder: !!preorderOn,
+    preorderFee: t.preorderFee,
     loyaltyOrderNum: newOrderCount, total: t.total,
     coupon: appliedCoupon ? appliedCoupon.code : null,
     waitTime: currentWaitTime || '',
@@ -680,33 +874,25 @@ window.placeOrder = async function() {
       catch(e) { console.error('Failed to mark coupon used:', e); }
     }
 
-    // Decrement tracked stock quantities (non-fatal — never blocks order success)
-    for (const c of cart) {
-      let ci = -1, ii = -1;
-      menu.forEach((cat, cIdx) => {
-        (cat.items || []).forEach((it, iIdx) => { if (it.id === c.id) { ci = cIdx; ii = iIdx; } });
-      });
-      if (ci === -1) continue;
-      try {
-        await runTransaction(ref(db, `menu/${ci}/items/${ii}`), item => {
-          if (!item || typeof item.stock !== 'number') return item; // not stock-tracked, leave untouched
-          const newStock = Math.max(0, item.stock - c.qty);
-          item.stock = newStock;
-          if (newStock <= 0 && item.unavailable !== true) {
-            item.unavailable = true;
-            item.autoDisabledByStock = true;
-          }
-          return item;
-        });
-      } catch(e) { console.error('Stock update error (non-fatal):', e); }
-    }
-
     // Write order token so Rate My Buff knows this device placed an order
     try {
       const token = { name, email, ts: Date.now() };
       localStorage.setItem('rmbOrderToken', JSON.stringify(token));
     } catch(e) {}
     cart = []; appliedCoupon = null; loyaltyData = null; loyaltyDiscount = 0;
+    deliveryOn = false; preorderOn = false;
+    ['delivery-toggle','preorder-toggle'].forEach(function(id) {
+      var el = document.getElementById(id); if (el) el.checked = false;
+    });
+    ['delivery-location','delivery-phone'].forEach(function(id) {
+      var el = document.getElementById(id); if (el) el.value = '';
+    });
+    var delivFields = document.getElementById('delivery-fields');
+    if (delivFields) delivFields.classList.remove('show');
+    var delivCard = document.getElementById('delivery-card');
+    if (delivCard) delivCard.classList.remove('active');
+    var preCard = document.getElementById('preorder-card');
+    if (preCard) preCard.classList.remove('active');
     ['cust-name','cust-email','cust-comments','disc-code'].forEach(function(id) {
       var el = document.getElementById(id); if (el) el.value = '';
     });
