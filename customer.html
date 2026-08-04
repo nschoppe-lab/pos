@@ -497,7 +497,7 @@ function refreshOrderOptionAvailability() {
   const preCard = document.getElementById('preorder-card');
   const preSub = document.getElementById('preorder-sub');
   if (preToggle) {
-    const preOk = isPreorderWindowOpen();
+    const preOk = isPreorderWindowOpen() && !deliveryOn;
     preToggle.disabled = !preOk;
     if (preCard) preCard.classList.toggle('unavailable', !preOk);
     if (!preOk && preToggle.checked) {
@@ -505,7 +505,11 @@ function refreshOrderOptionAvailability() {
       preorderOn = false;
       if (preCard) preCard.classList.remove('active');
     }
-    if (preSub) preSub.textContent = preOk ? 'Available now (until 7:59 PM ET)' : "Available nightly, 7:00–7:59 PM ET, while we're open";
+    if (preSub) {
+      preSub.textContent = deliveryOn
+        ? 'Not available with Delivery selected'
+        : (isPreorderWindowOpen() ? 'Available now (until 7:59 PM ET)' : "Available nightly, 7:00–7:59 PM ET, while we're open");
+    }
   }
 
   updateTotals();
@@ -517,6 +521,8 @@ window.onDeliveryToggle = function(checked) {
   if (fields) fields.classList.toggle('show', checked);
   const card = document.getElementById('delivery-card');
   if (card) card.classList.toggle('active', checked);
+  // Delivery and Pre-Order are mutually exclusive
+  refreshOrderOptionAvailability();
   updateTotals();
 };
 
