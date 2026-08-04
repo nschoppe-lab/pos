@@ -60,6 +60,18 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 .mbtn.cancel:hover{background:#3a3a3a}
 .sms-link{display:block;background:#052e16;border:1px solid #22c55e;color:#22c55e;border-radius:7px;padding:11px;text-decoration:none;font-size:13px;font-weight:600;text-align:center;margin-top:8px}
 .sms-link:hover{background:#0a3d1e}
+/* PRINT TICKET (hidden on screen, shown only when printing) */
+#print-ticket{display:none}
+@media print{
+  body *{visibility:hidden}
+  #print-ticket,#print-ticket *{visibility:visible}
+  #print-ticket{display:block;position:absolute;top:0;left:0;width:100%}
+  .pt-wrap{padding:24px;font-family:'Courier New',monospace;color:#000;text-align:center}
+  .pt-name{font-size:16px;font-weight:700;margin-bottom:14px}
+  .pt-items{font-size:13px;margin-bottom:18px;text-align:left;display:inline-block}
+  .pt-line{padding:2px 0}
+  .pt-paid{font-size:24px;font-weight:900;letter-spacing:3px;border:3px solid #000;display:inline-block;padding:6px 22px}
+}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 </head>
@@ -95,6 +107,8 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 <div class="modal-bg" id="modal" style="display:none" onclick="if(event.target===this)closeModal()">
   <div class="modal" id="modal-content"></div>
 </div>
+
+<div id="print-ticket"></div>
 
 <script type="module">
 // Initialize EmailJS
@@ -300,6 +314,28 @@ window.undoDone = async function(key) {
 
 window.togglePaid = async function(key, paid) {
   await update(ref(db, `orders/${key}`), { paid });
+  if (paid) {
+    const order = orders[key];
+    if (order) printPaidTicket(order);
+  }
+}
+
+function escapeHtml(str) {
+  return String(str||'').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+
+function printPaidTicket(order) {
+  const ticket = document.getElementById('print-ticket');
+  if (!ticket) return;
+  const itemsHtml = (order.items||[]).map(i => `<div class="pt-line">${escapeHtml(i.qty)}x ${escapeHtml(i.name)}</div>`).join('');
+  ticket.innerHTML = `
+    <div class="pt-wrap">
+      <div class="pt-name">${escapeHtml(order.name)}</div>
+      <div class="pt-items">${itemsHtml}</div>
+      <div class="pt-paid">PAID</div>
+    </div>`;
+  // Let the DOM paint the ticket content before opening the print dialog
+  setTimeout(() => window.print(), 50);
 }
 
 window.showModal = function(html) { document.getElementById('modal-content').innerHTML=html; document.getElementById('modal').style.display='flex'; }
