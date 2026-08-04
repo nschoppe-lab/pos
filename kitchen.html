@@ -313,11 +313,11 @@ window.undoDone = async function(key) {
 }
 
 window.togglePaid = async function(key, paid) {
-  await update(ref(db, `orders/${key}`), { paid });
   if (paid) {
     const order = orders[key];
     if (order) printPaidTicket(order);
   }
+  await update(ref(db, `orders/${key}`), { paid });
 }
 
 function escapeHtml(str) {
@@ -334,8 +334,7 @@ function printPaidTicket(order) {
       <div class="pt-items">${itemsHtml}</div>
       <div class="pt-paid">PAID</div>
     </div>`;
-  // Let the DOM paint the ticket content before opening the print dialog
-  setTimeout(() => window.print(), 50);
+  window.print();
 }
 
 window.showModal = function(html) { document.getElementById('modal-content').innerHTML=html; document.getElementById('modal').style.display='flex'; }
