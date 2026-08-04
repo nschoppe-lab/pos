@@ -159,7 +159,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
         <label class="oo-row" for="delivery-toggle">
           <div class="oo-row-left">
             <span class="oo-label">🚚 Delivery</span>
-            <span class="oo-sub" id="delivery-sub">Available Mon–Thu, 7–8 PM ET</span>
+            <span class="oo-sub" id="delivery-sub">Available Mon, Wed & Thu, 7–8 PM ET</span>
           </div>
           <div style="display:flex;align-items:center;gap:8px">
             <span class="oo-fee">+$5.00</span>
@@ -167,6 +167,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
           </div>
         </label>
         <div class="oo-fields" id="delivery-fields">
+          <div style="font-size:11px;color:#f59e0b;background:#2a1f0e;border:1px solid #f59e0b44;border-radius:6px;padding:7px 9px;margin-bottom:4px">⏰ Heads up: deliveries all go out between <strong>8:30–9 PM ET</strong> — we can't accommodate any other delivery time.</div>
           <label>Delivery Location</label>
           <select id="delivery-location"><option value="">Select a location...</option></select>
           <label>Contact Phone Number</label>
@@ -177,7 +178,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
         <label class="oo-row" for="preorder-toggle">
           <div class="oo-row-left">
             <span class="oo-label">⏰ Pre-Order</span>
-            <span class="oo-sub" id="preorder-sub">Available nightly starting 7 PM ET</span>
+            <span class="oo-sub" id="preorder-sub">Available nightly, 7:00–7:59 PM ET</span>
           </div>
           <div style="display:flex;align-items:center;gap:8px">
             <span class="oo-fee">+$1.00</span>
@@ -449,7 +450,7 @@ function renderDeliveryLocationOptions() {
   if (entries.some(v => v.name === current)) sel.value = current;
 }
 
-// ── Delivery (Mon–Thu, 7–8 PM ET) and pre-order (any open night, 7 PM ET onward) windows ──
+// ── Delivery (Mon/Wed/Thu, 7–8 PM ET) and pre-order (7:00–7:59 PM ET, any open night) windows ──
 function getEasternParts(date) {
   date = date || new Date();
   const fmt = new Intl.DateTimeFormat('en-US', {
@@ -464,14 +465,14 @@ function getEasternParts(date) {
 
 function isDeliveryWindowOpen() {
   const p = getEasternParts();
-  const validDays = ['Mon','Tue','Wed','Thu'];
+  const validDays = ['Mon','Wed','Thu'];
   return validDays.indexOf(p.weekday) !== -1 && p.hour === 19;
 }
 
 function isPreorderWindowOpen() {
   const p = getEasternParts();
   const storeOpen = !(waittimeSnap && waittimeSnap.closed === true);
-  return storeOpen && p.hour >= 19;
+  return storeOpen && p.hour === 19;
 }
 
 function refreshOrderOptionAvailability() {
@@ -489,7 +490,7 @@ function refreshOrderOptionAvailability() {
       if (fields) fields.classList.remove('show');
       if (delivCard) delivCard.classList.remove('active');
     }
-    if (delivSub) delivSub.textContent = delivOk ? 'Available now — Mon–Thu, 7–8 PM ET' : 'Available Mon–Thu, 7–8 PM ET only';
+    if (delivSub) delivSub.textContent = delivOk ? 'Available now — Mon, Wed & Thu, 7–8 PM ET' : 'Available Mon, Wed & Thu, 7–8 PM ET only';
   }
 
   const preToggle = document.getElementById('preorder-toggle');
@@ -504,7 +505,7 @@ function refreshOrderOptionAvailability() {
       preorderOn = false;
       if (preCard) preCard.classList.remove('active');
     }
-    if (preSub) preSub.textContent = preOk ? 'Available now' : "Available nightly starting 7 PM ET while we're open";
+    if (preSub) preSub.textContent = preOk ? 'Available now (until 7:59 PM ET)' : "Available nightly, 7:00–7:59 PM ET, while we're open";
   }
 
   updateTotals();
@@ -789,7 +790,7 @@ window.placeOrder = async function() {
   let deliveryLocationVal = '', deliveryPhoneVal = '';
   if (deliveryOn) {
     if (!isDeliveryWindowOpen()) {
-      alert("The delivery window (Mon–Thu, 7–8 PM ET) has just closed. Please uncheck Delivery to continue, or place your order without it.");
+      alert("The delivery window (Mon, Wed & Thu, 7–8 PM ET) has just closed. Please uncheck Delivery to continue, or place your order without it.");
       refreshOrderOptionAvailability();
       return;
     }
