@@ -461,11 +461,13 @@ function renderDrinkPictures() {
 }
 
 // Only items currently toggled AVAILABLE (Inventory tab) are shown here — this list updates instantly.
+// Items that already have a picture in the Drinks section are skipped here to avoid showing the same drink twice.
 function renderMenuList() {
   const el = document.getElementById('menu-list');
   el.innerHTML = '';
+  const picturedItemIds = new Set(Object.values(drinkPictures).map(dp => dp.itemId));
   menu.forEach(cat => {
-    const availableItems = (cat.items || []).filter(i => i.unavailable !== true);
+    const availableItems = (cat.items || []).filter(i => i.unavailable !== true && !picturedItemIds.has(i.id));
     if (!availableItems.length) return;
     const catLabel = document.createElement('div');
     catLabel.className = 'menu-cat-label';
@@ -531,6 +533,7 @@ onValue(ref(db, 'menu'), snap => {
 
 onValue(ref(db, 'drinkPictures'), snap => {
   drinkPictures = snap.val() || {};
+  renderMenuList();
   renderDrinkPictures();
 });
 
