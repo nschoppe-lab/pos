@@ -75,6 +75,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
   .pt-tag{font-size:10px;font-weight:900}
   .pt-sauce{font-size:11px;padding:0 0 1mm 3mm;text-align:left}
   .pt-coupon{font-size:12px;font-weight:700;text-align:left;margin-bottom:2mm}
+  .pt-total{font-size:14px;font-weight:900;text-align:left;margin-bottom:2mm;padding-top:2mm;border-top:1px dashed #000}
   .pt-msg-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-top:3mm;margin-bottom:1mm;text-align:left}
   .pt-msg{font-size:12px;text-align:left;padding:2mm;border:1px dashed #000;margin-bottom:3mm;word-break:break-word}
   .pt-paid{font-size:20px;font-weight:900;letter-spacing:2px;border:2px solid #000;display:inline-block;padding:4px 16px;margin-top:2mm}
@@ -253,7 +254,7 @@ function renderOrders() {
       <div class="oc-body">
         ${order.delivery?`<div style="font-size:11px;color:#3b82f6;font-weight:700;margin-bottom:5px;padding:5px 8px;background:#0e1a2a;border-radius:5px">🚚 DELIVERY → ${order.deliveryLocation||'—'}${order.deliveryPhone?' · 📞 '+order.deliveryPhone:''}</div>`:''}
         ${order.preorder?`<div style="font-size:11px;color:#a78bfa;font-weight:700;margin-bottom:5px;padding:5px 8px;background:#1a1030;border-radius:5px">⏰ PRE-ORDER</div>`:''}
-        ${(order.items||[]).map(i=>`<div class="oc-line"><span>${i.qty}x</span> ${i.name}${i.sauces&&i.sauces.length?` <span style="color:#f59e0b">(${i.sauces.join(', ')})</span>`:''}</div>`).join('')}
+        ${(order.items||[]).map(i=>`<div class="oc-line"><span>${i.qty}x</span> ${i.name}</div>${i.sauces&&i.sauces.length?`<div style="font-size:11px;color:#f59e0b;padding-left:18px">🥫 Side: ${i.sauces.join(', ')}</div>`:''}`).join('')}
         ${order.discount>0?`<div style="font-size:11px;color:#22c55e;margin-top:4px">Disc: -$${parseFloat(order.discount).toFixed(2)}</div>`:''}
         ${order.comments?`<div style="font-size:11px;color:#f59e0b;margin-top:5px;padding:5px 8px;background:#2a1f0e;border-radius:5px">&#128172; ${order.comments}</div>`:''}
         <div class="oc-total">$${parseFloat(order.total).toFixed(2)}</div>
@@ -338,7 +339,7 @@ function printPaidTicket(order) {
   if (!ticket) return;
   const itemsHtml = (order.items||[]).map(i => {
     const specialTag = i.isSpecial ? ' <span class="pt-tag">★ SPECIAL</span>' : '';
-    const sauceNote = (i.sauces && i.sauces.length) ? `<div class="pt-sauce">🥫 ${escapeHtml(i.sauces.join(', '))}</div>` : '';
+    const sauceNote = (i.sauces && i.sauces.length) ? `<div class="pt-sauce">🥫 Side: ${escapeHtml(i.sauces.join(', '))}</div>` : '';
     return `<div class="pt-line">${escapeHtml(i.qty)}x ${escapeHtml(i.name)}${specialTag}</div>${sauceNote}`;
   }).join('');
   const msgHtml = order.comments
@@ -350,12 +351,14 @@ function printPaidTicket(order) {
   const couponHtml = order.coupon
     ? `<div class="pt-coupon">Coupon used: ${escapeHtml(order.coupon)}${order.discount ? ' (-$' + parseFloat(order.discount).toFixed(2) + ')' : ''}</div>`
     : '';
+  const totalHtml = `<div class="pt-total">Total: $${parseFloat(order.total||0).toFixed(2)}</div>`;
   ticket.innerHTML = `
     <div class="pt-wrap">
       <div class="pt-name">${escapeHtml(order.name)}</div>
       <div class="pt-items">${itemsHtml}</div>
       ${deliveryHtml}
       ${couponHtml}
+      ${totalHtml}
       ${msgHtml}
       <div class="pt-paid">PAID</div>
     </div>`;
