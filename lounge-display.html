@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Buff — Lounge Display</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500&family=Baloo+2:wght@700;800&family=Sacramento&display=swap" rel="stylesheet">
+<style>
+:root{
+  --gold:#c9a227;
+  --gold-bright:#e0bd4f;
+  --cream:#f3efe2;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:#000;
+  color:var(--cream);
+  font-family:'Cormorant Garamond',serif;
+  overflow:hidden;
+}
+.display{
+  height:100vh;
+  width:100vw;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:flex-start;
+  text-align:center;
+  padding:3vh 5vw 2.5vh;
+  overflow-y:auto;
+}
+
+/* LOGO + HOURS */
+.logo{
+  font-family:'Sacramento',cursive;
+  font-size:clamp(30px,6.5vh,58px);
+  color:var(--gold-bright);
+  line-height:1;
+}
+.hours-label{
+  font-size:clamp(10px,1.5vh,14px);
+  letter-spacing:3px;
+  text-transform:uppercase;
+  color:var(--cream);
+  opacity:0.75;
+  margin-top:1.4vh;
+}
+.hours-value{
+  font-weight:600;
+  font-size:clamp(14px,2.1vh,20px);
+  color:var(--cream);
+  margin-top:0.3vh;
+}
+
+.divider{
+  width:64%;
+  height:1px;
+  background:linear-gradient(90deg,transparent,var(--gold),transparent);
+  margin:2.2vh 0;
+  flex-shrink:0;
+}
+
+/* WAIT TIME (live) */
+.wait-section{width:100%}
+.wait-label{
+  font-size:clamp(10px,1.5vh,14px);
+  text-transform:uppercase;
+  letter-spacing:3px;
+  color:var(--gold);
+}
+.wait-time{
+  font-size:clamp(34px,7.5vh,74px);
+  font-weight:700;
+  line-height:1;
+  color:var(--cream);
+  margin-top:0.6vh;
+  transition:all 0.4s ease;
+}
+.wait-unit{
+  font-size:clamp(12px,1.9vh,17px);
+  color:var(--cream);
+  opacity:0.8;
+  margin-top:0.4vh;
+}
+.wait-stats{
+  font-size:clamp(11px,1.6vh,15px);
+  color:var(--cream);
+  opacity:0.7;
+  margin-top:1vh;
+  letter-spacing:0.5px;
+}
+.wait-msg{
+  font-size:clamp(11px,1.7vh,15px);
+  color:var(--gold-bright);
+  font-style:italic;
+  margin-top:1vh;
+  display:none;
+}
+.wait-msg.show{display:block}
+
+/* MENU */
+.menu-section{width:100%}
+.menu-cat-label{
+  font-size:clamp(10px,1.3vh,13px);
+  letter-spacing:3px;
+  text-transform:uppercase;
+  color:var(--gold);
+  margin-top:1.6vh;
+  margin-bottom:0.6vh;
+}
+.menu-cat-label:first-child{margin-top:0}
+.menu-row{
+  display:flex;
+  justify-content:center;
+  align-items:baseline;
+  gap:0.6em;
+  width:100%;
+  font-size:clamp(17px,2.7vh,27px);
+  margin:0.15vh 0;
+}
+.menu-row .mname{color:var(--cream)}
+.menu-row .mprice{color:var(--cream);font-weight:600}
+.menu-empty{
+  font-size:clamp(12px,1.8vh,16px);
+  color:var(--cream);
+  opacity:0.5;
+  font-style:italic;
+}
+
+/* CUSTOMIZE */
+.customize-title{
+  font-family:'Baloo 2',sans-serif;
+  font-weight:800;
+  font-size:clamp(22px,4vh,38px);
+  color:var(--gold-bright);
+  line-height:1.05;
+}
+.customize-brace{
+  font-size:clamp(20px,3.4vh,32px);
+  color:var(--gold);
+  margin:0.6vh 0;
+  line-height:1;
+}
+.customize-list{
+  list-style:none;
+  display:inline-flex;
+  flex-direction:column;
+  align-items:flex-start;
+  gap:0.35vh;
+  font-size:clamp(14px,2.1vh,19px);
+  color:var(--cream);
+}
+.customize-list li{position:relative;padding-left:1.15em}
+.customize-list li::before{content:'•';position:absolute;left:0;color:var(--cream)}
+
+/* DRINKS */
+.drinks-title{
+  font-family:'Baloo 2',sans-serif;
+  font-weight:800;
+  font-size:clamp(20px,3.8vh,34px);
+  color:var(--gold-bright);
+}
+.drinks-list{
+  font-size:clamp(13px,1.9vh,18px);
+  color:var(--cream);
+  opacity:0.9;
+  margin-top:0.8vh;
+  line-height:1.7;
+  max-width:90%;
+}
+
+/* CLOSED OVERLAY */
+.closed-overlay{
+  display:none;
+  position:fixed;inset:0;
+  background:#000;
+  flex-direction:column;
+  align-items:center;justify-content:center;
+  text-align:center;
+  padding:6vh 8vw;
+  z-index:99;
+}
+.closed-overlay.show{display:flex}
+.closed-icon{font-size:clamp(40px,8vh,76px);margin-bottom:2vh}
+.closed-title{
+  font-family:'Baloo 2',sans-serif;
+  font-weight:800;
+  font-size:clamp(24px,5vh,44px);
+  color:var(--gold-bright);
+  margin-bottom:1.2vh;
+}
+.closed-sub{
+  font-size:clamp(14px,2.2vh,20px);
+  color:var(--cream);
+  opacity:0.8;
+}
+</style>
+</head>
+<body>
+
+<div class="closed-overlay" id="closed-overlay">
+  <div class="closed-icon">🔒</div>
+  <div class="closed-title">The Buff is Closed</div>
+  <div class="closed-sub" id="closed-msg">We'll be back soon!</div>
+</div>
+
+<div class="display">
+
+  <div class="logo">The Buff</div>
+  <div class="hours-label">Hours of Operation</div>
+  <div class="hours-value">Sunday – Thursday, 10:00 – 11:30 PM</div>
+
+  <div class="divider"></div>
+
+  <div class="wait-section">
+    <div class="wait-label">Estimated Wait</div>
+    <div class="wait-time" id="wait-time">—</div>
+    <div class="wait-unit" id="wait-unit">minutes</div>
+    <div class="wait-stats" id="wait-stats"></div>
+    <div class="wait-msg" id="wait-msg"></div>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="menu-section" id="menu-list"></div>
+
+  <div class="divider"></div>
+
+  <div class="customize-section">
+    <div class="customize-title">Customize<br>your food!</div>
+    <div class="customize-brace">⏝</div>
+    <ul class="customize-list">
+      <li>Buffalo Sauce</li>
+      <li>Ranch</li>
+      <li>Hot Honey</li>
+      <li>BBQ Sauce</li>
+      <li>Bacon</li>
+      <li>Extra Cheese</li>
+    </ul>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="drinks-section">
+    <div class="drinks-title">All Drinks $1</div>
+    <div class="drinks-list">Coca-Cola &nbsp;·&nbsp; Coca-Cola Cherry &nbsp;·&nbsp; Dr Pepper &nbsp;·&nbsp; Sweet Tea &nbsp;·&nbsp; Diet Coke &nbsp;·&nbsp; Powerade</div>
+  </div>
+
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCG5nhzdAHBTGg2eXXmhqH8pF8S8qFqM7o",
+  authDomain: "duncan--the-buff.firebaseapp.com",
+  databaseURL: "https://duncan--the-buff-default-rtdb.firebaseio.com",
+  projectId: "duncan--the-buff",
+  storageBucket: "duncan--the-buff.firebasestorage.app",
+  messagingSenderId: "561324530375",
+  appId: "1:561324530375:web:e6927aefd39ac790737ce2"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
+let menu = [];
+let waittimeSettings = {};
+let openOrderCount = 0;
+let doneOrderCount = 0;
+
+function escapeHtml(str) {
+  return String(str||'').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+
+// Only items currently toggled AVAILABLE (Inventory tab) are shown here — this list updates instantly.
+function renderMenuList() {
+  const el = document.getElementById('menu-list');
+  el.innerHTML = '';
+  menu.forEach(cat => {
+    const availableItems = (cat.items || []).filter(i => i.unavailable !== true);
+    if (!availableItems.length) return;
+    const catLabel = document.createElement('div');
+    catLabel.className = 'menu-cat-label';
+    catLabel.textContent = cat.label || '';
+    el.appendChild(catLabel);
+    availableItems.forEach(item => {
+      const row = document.createElement('div');
+      row.className = 'menu-row';
+      row.innerHTML = `<span class="mname">${escapeHtml(item.name)}</span><span class="mprice">$${parseFloat(item.price || 0).toFixed(2)}</span>`;
+      el.appendChild(row);
+    });
+  });
+  if (!el.children.length) {
+    el.innerHTML = '<div class="menu-empty">Menu coming soon</div>';
+  }
+}
+
+function updateWaitDisplay() {
+  const d = waittimeSettings;
+
+  const closed = d.closed === true;
+  document.getElementById('closed-overlay').className = 'closed-overlay' + (closed ? ' show' : '');
+  if (d.closedMsg) document.getElementById('closed-msg').textContent = d.closedMsg;
+
+  const defaultMpo = parseFloat(d.minsPerOrder) || 2;
+  let effectiveMpo = defaultMpo;
+  if (d.activeStaffMpo) effectiveMpo = parseFloat(d.activeStaffMpo);
+
+  const totalSecs = Math.round(openOrderCount * effectiveMpo * 60);
+  const wtEl = document.getElementById('wait-time');
+  const wuEl = document.getElementById('wait-unit');
+  if (openOrderCount === 0) {
+    wtEl.textContent = 'No Wait';
+    wuEl.textContent = 'Order now!';
+  } else if (totalSecs < 60) {
+    wtEl.textContent = totalSecs;
+    wuEl.textContent = 'seconds';
+  } else {
+    const mins = Math.floor(totalSecs / 60);
+    const secs = totalSecs % 60;
+    wtEl.textContent = mins;
+    wuEl.textContent = secs > 0 ? 'min ' + secs + ' sec' : (mins === 1 ? 'minute' : 'minutes');
+  }
+
+  document.getElementById('wait-stats').textContent =
+    `${openOrderCount} order${openOrderCount !== 1 ? 's' : ''} ahead  ·  ${doneOrderCount} completed today`;
+
+  const msgEl = document.getElementById('wait-msg');
+  if (d.message) { msgEl.textContent = d.message; msgEl.classList.add('show'); }
+  else { msgEl.classList.remove('show'); }
+}
+
+onValue(ref(db, 'menu'), snap => {
+  menu = snap.val() ? Object.values(snap.val()) : [];
+  renderMenuList();
+});
+
+onValue(ref(db, 'waittime'), snap => {
+  waittimeSettings = snap.val() || {};
+  updateWaitDisplay();
+});
+
+onValue(ref(db, 'orders'), snap => {
+  const data = snap.val() || {};
+  const all = Object.values(data);
+  openOrderCount = all.filter(o => o.status === 'pending').length;
+  doneOrderCount = all.filter(o => o.status === 'done').length;
+  updateWaitDisplay();
+});
+</script>
+</body>
+</html>
