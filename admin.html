@@ -254,10 +254,16 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
           <label style="font-size:12px;color:#aaa;display:flex;align-items:center;gap:6px;cursor:pointer;margin-left:12px">Min order: $<input type="number" id="new-cmin" placeholder="0" min="0" step="0.5" style="width:60px;background:#1a1a1a;border:1px solid #444;border-radius:5px;padding:4px 7px;font-size:12px;color:#fff;margin-left:4px"></label>
           <button class="aadd" style="margin-left:auto" onclick="addCoupon()">Create</button>
         </div>
+        <div class="arow">
+          <label style="font-size:12px;color:#aaa;display:flex;align-items:center;gap:6px;flex:1">Assign to customer (optional):
+            <input type="email" id="new-cemail" placeholder="customer@email.com — leave blank for a public code" style="flex:1;min-width:220px;background:#1a1a1a;border:1px solid #444;border-radius:5px;padding:6px 9px;font-size:12px;color:#fff">
+          </label>
+        </div>
+        <div style="font-size:11px;color:#666;margin-top:2px">Assigning a code to a customer automatically makes it single-use and reserves it — only that email can redeem it, and it won't show on the public promo list.</div>
       </div>
       <div class="asec">
         <div class="asec-title">Active Codes</div>
-        <table class="mtable"><thead><tr><th>Code</th><th>Discount</th><th>Min</th><th>Uses</th><th>Single-use</th><th></th></tr></thead>
+        <table class="mtable"><thead><tr><th>Code</th><th>Discount</th><th>Min</th><th>Assigned To</th><th>Uses</th><th>Single-use</th><th></th></tr></thead>
         <tbody id="coupon-body"></tbody></table>
       </div>
     </div></div>
@@ -1309,10 +1315,10 @@ async function setMenu(newMenu) {
 // COUPONS
 function renderCoupons() {
   const tbody=document.getElementById('coupon-body');tbody.innerHTML='';
-  if(!coupons.length){const r=document.createElement('tr');r.innerHTML='<td colspan="6" style="color:#555;text-align:center;padding:12px;font-size:12px">No codes yet</td>';tbody.appendChild(r);return;}
+  if(!coupons.length){const r=document.createElement('tr');r.innerHTML='<td colspan="7" style="color:#555;text-align:center;padding:12px;font-size:12px">No codes yet</td>';tbody.appendChild(r);return;}
   coupons.forEach(cp=>{
     const r=document.createElement('tr');
-    r.innerHTML=`<td style="font-weight:700;color:#ff6b35">${cp.code}</td><td>${cp.type==='percent'?cp.value+'%':'$'+parseFloat(cp.value).toFixed(2)} off</td><td>${cp.minOrder?'$'+parseFloat(cp.minOrder).toFixed(2):'—'}</td><td>${cp.useCount||0}</td><td>${cp.singleUse?`<span style="color:#f59e0b">Yes${cp.used?' (used)':''}</span>`:'No'}</td><td><button class="delbtn" onclick="deleteCoupon('${cp.fbKey}')">Delete</button></td>`;
+    r.innerHTML=`<td style="font-weight:700;color:#ff6b35">${cp.code}</td><td>${cp.type==='percent'?cp.value+'%':'$'+parseFloat(cp.value).toFixed(2)} off</td><td>${cp.minOrder?'$'+parseFloat(cp.minOrder).toFixed(2):'—'}</td><td>${cp.assignedEmail?`<span style="color:#f59e0b">${cp.assignedEmail}</span>`:'—'}</td><td>${cp.useCount||0}</td><td>${cp.singleUse?`<span style="color:#f59e0b">Yes${cp.used?' (used)':''}</span>`:'No'}</td><td><button class="delbtn" onclick="deleteCoupon('${cp.fbKey}')">Delete</button></td>`;
     tbody.appendChild(r);
   });
 }
@@ -1321,12 +1327,14 @@ window.addCoupon = async function() {
   const code=document.getElementById('new-ccode').value.trim().toUpperCase();
   const val=parseFloat(document.getElementById('new-cval').value);
   const type=document.getElementById('new-ctype').value;
-  const single=document.getElementById('new-csingle').checked;
   const min=parseFloat(document.getElementById('new-cmin').value)||0;
+  const assignedEmail=document.getElementById('new-cemail').value.trim().toLowerCase();
+  const single=document.getElementById('new-csingle').checked || !!assignedEmail;
   if(!code||isNaN(val)||val<=0){alert('Enter a code and value');return;}
   if(coupons.find(c=>c.code===code)){alert('Code already exists');return;}
-  await push(ref(db,'coupons'),{code,type,value:val,singleUse:single,minOrder:min,useCount:0,used:false});
-  document.getElementById('new-ccode').value='';document.getElementById('new-cval').value='';document.getElementById('new-cmin').value='';document.getElementById('new-csingle').checked=false;
+  if(assignedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(assignedEmail)){alert('Enter a valid customer email, or leave it blank');return;}
+  await push(ref(db,'coupons'),{code,type,value:val,singleUse:single,minOrder:min,useCount:0,used:false,assignedEmail:assignedEmail||null});
+  document.getElementById('new-ccode').value='';document.getElementById('new-cval').value='';document.getElementById('new-cmin').value='';document.getElementById('new-csingle').checked=false;document.getElementById('new-cemail').value='';
 }
 
 window.deleteCoupon = async function(key) { await remove(ref(db,`coupons/${key}`)); }

@@ -42,7 +42,6 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 .promo-banner-title{font-size:11px;font-weight:700;color:#f59e0b;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px}
 .promo-item{font-size:12px;color:#ccc;padding:2px 0}
 .promo-code{color:#f59e0b;font-weight:700}
-.promo-banner-note{font-size:11px;color:#999;font-style:italic;margin-top:6px;padding-top:6px;border-top:1px solid #f59e0b33}
 .disc-row input{flex:1;background:#1a1a1a;border:1px solid #333;border-radius:6px;padding:8px 10px;font-size:13px;color:#fff;text-transform:uppercase}
 .disc-row input::placeholder{text-transform:none;color:#555}
 .disc-row input:focus{outline:none;border-color:#ff6b35}
@@ -67,6 +66,8 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 .loyalty-reward{font-size:11px;font-weight:600;margin-top:4px;padding:4px 8px;border-radius:5px;display:none}
 .loyalty-reward.half{display:block;background:#2a1f0e;color:#f59e0b}
 .loyalty-reward.credit{display:block;background:#052e16;color:#22c55e}
+.credit-toggle-btn{background:none;border:1px solid currentColor;color:inherit;border-radius:5px;padding:2px 8px;font-size:10px;font-weight:700;cursor:pointer;margin-left:6px}
+.credit-toggle-btn:hover{opacity:0.8}
 .place-btn{width:100%;background:#ff6b35;color:#fff;border:none;border-radius:8px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;margin-top:10px;transition:all 0.15s}
 .place-btn:hover{background:#e55a2b}
 .place-btn:active{transform:scale(0.98)}
@@ -240,7 +241,7 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 
 let menu = [], coupons = [], cart = [], appliedCoupon = null, activeBranding = {}, openOrderCount = 0;
-let loyaltyData = null, loyaltyDiscount = 0;
+let loyaltyData = null, loyaltyDiscount = 0, useCredit = true;
 let customMilestones = {};
 let deliveryLocations = {};
 let deliveryOn = false, preorderOn = false;
@@ -311,7 +312,7 @@ onValue(ref(db, 'sauces'), snap => {
 function renderPromoBanner() {
   const el = document.getElementById('promo-banner');
   if (!el) return;
-  const active = coupons.filter(c => !c.singleUse);
+  const active = coupons.filter(c => !c.singleUse && !c.assignedEmail);
   if (!active.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
   el.style.display = 'block';
   el.innerHTML = '<div class="promo-banner-title">🎉 Active Promo Codes</div>' +
@@ -319,8 +320,7 @@ function renderPromoBanner() {
       const reward = c.type === 'percent' ? `${c.value}% off` : `$${parseFloat(c.value).toFixed(2)} off`;
       const min = c.minOrder ? ` (min $${parseFloat(c.minOrder).toFixed(2)})` : '';
       return `<div class="promo-item"><span class="promo-code">${escapeHtmlAttr(c.code)}</span> — ${reward}${min}</div>`;
-    }).join('') +
-    '<div class="promo-banner-note">You must enter the code above at checkout — it is not applied automatically.</div>';
+    }).join('');
 }
 
 // Listen to open/closed status + wait time
@@ -407,6 +407,7 @@ async function loadLoyalty(email) {
   const snap = await get(ref(db, `loyalty/${key}`));
   loyaltyData = snap.exists() ? snap.val() : { orderCount: 0, credits: 0 };
   loyaltyDiscount = 0;
+  useCredit = true;
   renderLoyaltyBanner();
   updateTotals();
 }
@@ -592,10 +593,16 @@ function renderLoyaltyBanner() {
   const rewardEl = document.getElementById('loyalty-reward');
   rewardEl.className = 'loyalty-reward';
   if (credits > 0) {
-    document.getElementById('loyalty-next').textContent = `$${credits.toFixed(2)} credit will be applied to this order!`;
     rewardEl.className = 'loyalty-reward credit';
-    rewardEl.textContent = `🎉 $${credits.toFixed(2)} credit applied automatically!`;
-    loyaltyDiscount = Math.min(credits, cart.reduce((s,c)=>s+c.price*c.qty,0));
+    if (useCredit) {
+      document.getElementById('loyalty-next').textContent = `$${credits.toFixed(2)} credit will be applied to this order.`;
+      rewardEl.innerHTML = `🎉 $${credits.toFixed(2)} credit will be used on this order. <button type="button" class="credit-toggle-btn" onclick="toggleUseCredit()">Save it for later instead</button>`;
+      loyaltyDiscount = Math.min(credits, cart.reduce((s,c)=>s+c.price*c.qty,0));
+    } else {
+      document.getElementById('loyalty-next').textContent = `You're saving your $${credits.toFixed(2)} credit for a future order.`;
+      rewardEl.innerHTML = `💾 $${credits.toFixed(2)} credit saved — not used on this order. <button type="button" class="credit-toggle-btn" onclick="toggleUseCredit()">Use it now instead</button>`;
+      loyaltyDiscount = 0;
+    }
   } else if (getPercentRewardForOrder(count + 1) > 0) {
     const p = getPercentRewardForOrder(count + 1);
     document.getElementById('loyalty-next').textContent = `🎉 Your next order is your ${count+1}${ordinalSuffix(count+1)} — you get ${p}% off!`;
@@ -613,6 +620,11 @@ function renderLoyaltyBanner() {
 
 function hideLoyaltyBanner() {
   document.getElementById('loyalty-banner').classList.remove('show');
+}
+
+window.toggleUseCredit = function() {
+  useCredit = !useCredit;
+  renderLoyaltyBanner();
 }
 
 function renderMenu() {
@@ -655,7 +667,7 @@ function renderMenu() {
       const el = document.createElement('div'); el.className = 'mi';
       const hasOptions = item.customizations && item.customizations.length > 0;
       el.innerHTML = '<div class="mi-name">' + item.name + '</div><div class="mi-price">$' + parseFloat(item.price).toFixed(2) + '</div>' + (hasOptions ? '<div class="mi-arrow">Tap to customize ›</div>' : '');
-      el.onclick = () => openCustModal({...item, _catLabel: cat.label});
+      el.onclick = () => openCustModal(item);
       g.appendChild(el);
     });
     panel.appendChild(g);
@@ -691,8 +703,7 @@ window.openCustModal = function(item) {
       });
     }
   }
-  const isDrink = (item._catLabel || '').toLowerCase().includes('drink');
-  if (sauces.length && !isDrink) {
+  if (sauces.length) {
     html += `<div class="cust-section-lbl">Add a side of sauce?</div>`;
     sauces.forEach((name, i) => {
       html += `<div class="cust-option" id="sauce-${i}" onclick="toggleSauce(${i})"><div class="cust-option-left"><div class="cust-check" id="sauce-chk-${i}">✓</div><div class="cust-option-name">${name}</div></div></div>`;
@@ -803,11 +814,13 @@ function updateTotals() {
     const credits = loyaltyData.credits || 0;
     const nextOrder = count + 1;
     const percentReward = getPercentRewardForOrder(nextOrder);
-    if (credits > 0) {
+    if (credits > 0 && useCredit) {
       loyDisc = Math.round(Math.min(credits, sub)*100)/100;
       lr.style.display = 'flex';
       document.getElementById('loyalty-label').textContent = `⭐ Loyalty Credit`;
       document.getElementById('loyalty-amt').textContent = `-$${loyDisc.toFixed(2)}`;
+    } else if (credits > 0 && !useCredit) {
+      lr.style.display = 'none';
     } else if (percentReward > 0) {
       loyDisc = Math.round(sub*(percentReward/100)*100)/100;
       lr.style.display = 'flex';
@@ -835,6 +848,11 @@ window.applyDiscount = function() {
   const cp = coupons.find(c => c.code===code);
   if (!cp) { msg.className='disc-msg err'; msg.textContent='Code not found.'; return; }
   if (cp.singleUse && cp.used) { msg.className='disc-msg err'; msg.textContent='This code has already been used.'; return; }
+  if (cp.assignedEmail) {
+    const enteredEmail = (document.getElementById('cust-email').value || '').trim().toLowerCase();
+    if (!enteredEmail) { msg.className='disc-msg err'; msg.textContent='Enter your email above first — this code is reserved for a specific customer.'; return; }
+    if (enteredEmail !== cp.assignedEmail) { msg.className='disc-msg err'; msg.textContent='This code is reserved for another customer.'; return; }
+  }
   const sub = cart.reduce((s,c)=>s+c.price*c.qty,0);
   if (cp.minOrder && sub < cp.minOrder) { msg.className='disc-msg err'; msg.textContent=`Minimum order $${cp.minOrder.toFixed(2)} required.`; return; }
   appliedCoupon = cp;
@@ -886,9 +904,9 @@ window.placeOrder = async function() {
     newCredits = currentLoyalty.credits || 0;
 
     if (!qualifiesForLoyalty) {
-      // Order doesn't meet minimum — don't count it, but still spend credits if they have any
+      // Order doesn't meet minimum — don't count it, but still spend credits if they have any and chose to use them
       newOrderCount = currentLoyalty.orderCount || 0;
-      if (newCredits > 0) {
+      if (newCredits > 0 && useCredit) {
         const used = Math.round(Math.min(newCredits, t.sub)*100)/100;
         newCredits = Math.max(0, Math.round((newCredits-used)*100)/100);
         loyaltyMsg = `$${used.toFixed(2)} loyalty credit used!`;
@@ -896,7 +914,7 @@ window.placeOrder = async function() {
     } else {
       // Qualifies — count the order and apply rewards
       newOrderCount = (currentLoyalty.orderCount || 0) + 1;
-      if (newCredits > 0) {
+      if (newCredits > 0 && useCredit) {
         const used = Math.round(Math.min(newCredits, t.sub)*100)/100;
         newCredits = Math.max(0, Math.round((newCredits-used)*100)/100);
         loyaltyMsg = `$${used.toFixed(2)} loyalty credit used!`;
@@ -945,7 +963,7 @@ window.placeOrder = async function() {
       const token = { name, email, ts: Date.now() };
       localStorage.setItem('rmbOrderToken', JSON.stringify(token));
     } catch(e) {}
-    cart = []; appliedCoupon = null; loyaltyData = null; loyaltyDiscount = 0;
+    cart = []; appliedCoupon = null; loyaltyData = null; loyaltyDiscount = 0; useCredit = true;
     deliveryOn = false; preorderOn = false;
     ['delivery-toggle','preorder-toggle'].forEach(function(id) {
       var el = document.getElementById(id); if (el) el.checked = false;
