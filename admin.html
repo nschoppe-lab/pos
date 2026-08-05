@@ -97,6 +97,25 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 .mtable tr:last-child td{border-bottom:none}
 .delbtn{background:#2a1010;border:1px solid #7f1d1d;color:#ef4444;border-radius:4px;padding:2px 9px;font-size:11px;cursor:pointer}
 .delbtn:hover{background:#3a1515}
+.menu-cat-card{background:#1a1a1a;border:1.5px solid #333;border-radius:9px;margin-bottom:10px;overflow:hidden;transition:opacity 0.15s}
+.menu-cat-card.dragging{opacity:0.4}
+.menu-cat-header{display:flex;align-items:center;gap:8px;padding:9px 12px;background:#222;cursor:grab}
+.menu-cat-header .drag-handle{color:#666;font-size:14px;cursor:grab;user-select:none}
+.menu-cat-name{flex:1;font-size:12px;font-weight:700;color:#ff6b35;text-transform:uppercase;letter-spacing:0.5px}
+.menu-items-list{padding:4px 8px;min-height:10px}
+.menu-item-row{display:flex;align-items:center;gap:8px;padding:7px 4px;border-bottom:1px solid #2a2a2a;transition:opacity 0.15s}
+.menu-item-row:last-child{border-bottom:none}
+.menu-item-row.dragging{opacity:0.4}
+.menu-item-row .drag-handle{color:#555;font-size:13px;cursor:grab;user-select:none;flex-shrink:0}
+.mi-name{flex:1;font-size:12px;color:#ccc}
+.mi-mod-count{font-size:10px;color:#888;margin-left:6px}
+.mi-price{font-size:12px;color:#fff;font-weight:600;white-space:nowrap}
+.mi-mod-btn{background:#1a2a3a;border:1px solid #2e75b6;color:#60a5fa;border-radius:4px;padding:3px 9px;font-size:11px;cursor:pointer;white-space:nowrap}
+.dp-row{display:flex;align-items:center;gap:10px;padding:8px 6px;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:8px;margin-bottom:6px;transition:opacity 0.15s}
+.dp-row.dragging{opacity:0.4}
+.dp-row .drag-handle{color:#555;font-size:13px;cursor:grab;user-select:none;flex-shrink:0}
+.dp-thumb{width:44px;height:44px;object-fit:contain;background:#111;border-radius:6px;flex-shrink:0}
+.dp-label{flex:1;font-size:12px;color:#ccc;font-weight:600}
 /* MODAL */
 .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:999}
 .modal{background:#1e1e1e;border:1px solid #333;border-radius:11px;padding:22px;width:360px;max-width:92vw}
@@ -198,8 +217,8 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
       </div>
       <div class="asec">
         <div class="asec-title">Current Menu</div>
-        <table class="mtable"><thead><tr><th>Item</th><th>Price</th><th>Category</th><th></th></tr></thead>
-        <tbody id="menu-body"></tbody></table>
+        <div style="font-size:11px;color:#666;margin-bottom:10px">Drag the ⋮⋮ handles to reorder items within a category, move items between categories, or reorder whole categories. Order here matches the customer ordering screen exactly.</div>
+        <div id="menu-body"></div>
       </div>
     </div></div>
   </div>
@@ -793,12 +812,9 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
     <div class="asec">
       <div class="asec-title">Drink Pictures</div>
       <div style="font-size:12px;color:#888;margin-bottom:12px">
-        Upload a picture for a specific drink and link it to that item in your menu. It shows up in place of that drink's name on the Lounge Display, and automatically hides itself the moment that item is toggled unavailable in the Inventory tab — no separate on/off switch needed here.
+        Upload a picture for a specific drink and link it to that item in your menu. It shows up in place of that drink's name on the Lounge Display, and automatically hides itself the moment that item is toggled unavailable in the Inventory tab — no separate on/off switch needed here. Drag the ⋮⋮ handles below to reorder how they appear on the display.
       </div>
-      <table class="mtable" style="margin-bottom:14px">
-        <thead><tr><th>Picture</th><th>Linked Item</th><th>Status</th><th>Actions</th></tr></thead>
-        <tbody id="drink-pictures-body"></tbody>
-      </table>
+      <div id="drink-pictures-body" style="margin-bottom:14px"></div>
       <div class="arow" style="flex-wrap:wrap">
         <select id="new-drink-picture-item" style="flex:2;min-width:220px"><option value="">Select a menu item...</option></select>
         <input type="file" id="new-drink-picture-file" accept="image/*" onchange="handleDrinkPictureUpload(event)">
@@ -1018,15 +1034,136 @@ window.renderHistory = function() {
 }
 
 // MENU
+function escMenuHtml(str) {
+  return String(str||'').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+
+let menuDragState = {};
+
 function renderMenuAdmin() {
-  const tbody=document.getElementById('menu-body');tbody.innerHTML='';
-  menu.forEach((cat,ci)=>{
-    const cr=document.createElement('tr');cr.innerHTML=`<td colspan="3" style="font-size:10px;font-weight:700;color:#ff6b35;text-transform:uppercase;padding-top:10px">${cat.label}</td><td><button class="delbtn" onclick="deleteCat(${ci})">Del</button></td>`;tbody.appendChild(cr);
-    (cat.items||[]).forEach((item,ii)=>{
-      const r=document.createElement('tr');r.innerHTML=`<td>${item.name}${item.customizations&&item.customizations.length?`<div style='font-size:10px;color:#888;margin-top:2px'>${item.customizations.length} modifier(s)</div>`:''}</td><td>$${parseFloat(item.price).toFixed(2)}</td><td style="color:#777">${cat.label}</td><td style="display:flex;gap:5px;flex-wrap:wrap"><button style="background:#1a2a3a;border:1px solid #2e75b6;color:#60a5fa;border-radius:4px;padding:3px 9px;font-size:11px;cursor:pointer;white-space:nowrap" onclick="openCustomizeAdmin(${ci},${ii})">Modifiers</button><button class="delbtn" onclick="deleteItem(${ci},${ii})">Remove</button></td>`;tbody.appendChild(r);
+  const container = document.getElementById('menu-body');
+  container.innerHTML = '';
+
+  menu.forEach((cat, ci) => {
+    const catDiv = document.createElement('div');
+    catDiv.className = 'menu-cat-card';
+    catDiv.draggable = true;
+
+    catDiv.ondragstart = (e) => {
+      menuDragState = { type: 'cat', catIndex: ci };
+      catDiv.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    };
+    catDiv.ondragend = () => catDiv.classList.remove('dragging');
+    catDiv.ondragover = (e) => e.preventDefault();
+    catDiv.ondrop = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      handleCatDrop(ci);
+    };
+
+    catDiv.innerHTML = `
+      <div class="menu-cat-header">
+        <span class="drag-handle">⋮⋮</span>
+        <span class="menu-cat-name">${escMenuHtml(cat.label)}</span>
+        <button class="delbtn" onclick="deleteCat(${ci})">Del</button>
+      </div>
+      <div class="menu-items-list" id="items-list-${ci}"></div>
+    `;
+    container.appendChild(catDiv);
+
+    const itemsList = catDiv.querySelector('.menu-items-list');
+    itemsList.ondragover = (e) => e.preventDefault();
+    itemsList.ondrop = (e) => {
+      // Only fires when dropped on empty space below the last row (item rows stop propagation)
+      e.preventDefault();
+      handleItemDropToEnd(ci);
+    };
+
+    (cat.items || []).forEach((item, ii) => {
+      const row = document.createElement('div');
+      row.className = 'menu-item-row';
+      row.draggable = true;
+
+      row.ondragstart = (e) => {
+        e.stopPropagation();
+        menuDragState = { type: 'item', catIndex: ci, itemIndex: ii };
+        row.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+      };
+      row.ondragend = () => row.classList.remove('dragging');
+      row.ondragover = (e) => { e.preventDefault(); e.stopPropagation(); };
+      row.ondrop = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        handleItemDrop(ci, ii);
+      };
+
+      row.innerHTML = `
+        <span class="drag-handle">⋮⋮</span>
+        <span class="mi-name">${escMenuHtml(item.name)}${item.customizations && item.customizations.length ? `<span class="mi-mod-count">${item.customizations.length} modifier(s)</span>` : ''}</span>
+        <span class="mi-price">$${parseFloat(item.price).toFixed(2)}</span>
+        <button class="mi-mod-btn" onclick="openCustomizeAdmin(${ci},${ii})">Modifiers</button>
+        <button class="delbtn" onclick="deleteItem(${ci},${ii})">Remove</button>
+      `;
+      itemsList.appendChild(row);
     });
   });
+
+  container.ondragover = (e) => e.preventDefault();
+  container.ondrop = (e) => {
+    // Only fires when dropped below the last category card
+    e.preventDefault();
+    if (menuDragState.type === 'cat') handleCatDropToEnd();
+  };
+
   const sel=document.getElementById('new-icat');sel.innerHTML=menu.map((c,i)=>`<option value="${i}">${c.label}</option>`).join('');
+}
+
+window.handleItemDrop = async function(targetCi, targetIi) {
+  if (menuDragState.type !== 'item') { menuDragState = {}; return; }
+  const { catIndex: fromCi, itemIndex: fromIi } = menuDragState;
+  menuDragState = {};
+  if (fromCi === targetCi && fromIi === targetIi) return;
+  const newMenu = JSON.parse(JSON.stringify(menu));
+  const [moved] = newMenu[fromCi].items.splice(fromIi, 1);
+  let insertAt = targetIi;
+  if (fromCi === targetCi && fromIi < targetIi) insertAt = targetIi - 1;
+  newMenu[targetCi].items.splice(insertAt, 0, moved);
+  await setMenu(newMenu);
+}
+
+window.handleItemDropToEnd = async function(targetCi) {
+  if (menuDragState.type !== 'item') { menuDragState = {}; return; }
+  const { catIndex: fromCi, itemIndex: fromIi } = menuDragState;
+  menuDragState = {};
+  const newMenu = JSON.parse(JSON.stringify(menu));
+  const [moved] = newMenu[fromCi].items.splice(fromIi, 1);
+  newMenu[targetCi].items.push(moved);
+  await setMenu(newMenu);
+}
+
+window.handleCatDrop = async function(targetCi) {
+  if (menuDragState.type !== 'cat') { menuDragState = {}; return; }
+  const fromCi = menuDragState.catIndex;
+  menuDragState = {};
+  if (fromCi === targetCi) return;
+  const newMenu = JSON.parse(JSON.stringify(menu));
+  const [moved] = newMenu.splice(fromCi, 1);
+  let insertAt = targetCi;
+  if (fromCi < targetCi) insertAt = targetCi - 1;
+  newMenu.splice(insertAt, 0, moved);
+  await setMenu(newMenu);
+}
+
+window.handleCatDropToEnd = async function() {
+  if (menuDragState.type !== 'cat') { menuDragState = {}; return; }
+  const fromCi = menuDragState.catIndex;
+  menuDragState = {};
+  const newMenu = JSON.parse(JSON.stringify(menu));
+  const [moved] = newMenu.splice(fromCi, 1);
+  newMenu.push(moved);
+  await setMenu(newMenu);
 }
 
 window.addCategory = async function() {
@@ -2206,15 +2343,16 @@ window.populateDrinkPictureItemSelect = function() {
 }
 
 window.renderDrinkPictures = function() {
-  const tbody = document.getElementById('drink-pictures-body');
-  if (!tbody) return;
+  const container = document.getElementById('drink-pictures-body');
+  if (!container) return;
   const entries = Object.entries(drinkPicturesData).map(([k,v]) => ({key:k, ...v}));
+  entries.sort((a,b) => (a.order ?? a.createdAt ?? 0) - (b.order ?? b.createdAt ?? 0));
   if (!entries.length) {
-    tbody.innerHTML = '<tr><td colspan="4" style="color:#555;text-align:center;padding:14px;font-size:12px">No drink pictures yet — add one below.</td></tr>';
+    container.innerHTML = '<div style="color:#555;text-align:center;padding:14px;font-size:12px">No drink pictures yet — add one below.</div>';
     return;
   }
-  tbody.innerHTML = '';
-  entries.forEach(dp => {
+  container.innerHTML = '';
+  entries.forEach((dp, di) => {
     let foundItem = null, foundCat = null;
     menu.forEach(cat => (cat.items || []).forEach(it => { if (it.id === dp.itemId) { foundItem = it; foundCat = cat; } }));
     const available = foundItem ? foundItem.unavailable !== true : false;
@@ -2222,14 +2360,71 @@ window.renderDrinkPictures = function() {
     const statusHtml = !foundItem
       ? '<span style="color:#666;font-size:11px">Orphaned</span>'
       : (available ? '<span style="color:#22c55e;font-size:11px;font-weight:700">Showing</span>' : '<span style="color:#666;font-size:11px">Hidden (item off)</span>');
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td><img src="${dp.image}" style="width:50px;height:50px;object-fit:contain;background:#1a1a1a;border-radius:6px"></td>
-      <td style="font-weight:600">${label}</td>
-      <td>${statusHtml}</td>
-      <td><button onclick="deleteDrinkPicture('${dp.key}')" style="background:#3a0a0a;border:1px solid #991b1b;color:#fca5a5;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">Delete</button></td>`;
-    tbody.appendChild(tr);
+
+    const row = document.createElement('div');
+    row.className = 'dp-row';
+    row.draggable = true;
+    row.ondragstart = (e) => {
+      dpDragIndex = di;
+      row.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    };
+    row.ondragend = () => row.classList.remove('dragging');
+    row.ondragover = (e) => e.preventDefault();
+    row.ondrop = (e) => {
+      e.preventDefault();
+      handleDrinkPictureDrop(di);
+    };
+
+    row.innerHTML = `
+      <span class="drag-handle">⋮⋮</span>
+      <img class="dp-thumb" src="${dp.image}">
+      <span class="dp-label">${label}</span>
+      <span>${statusHtml}</span>
+      <button onclick="deleteDrinkPicture('${dp.key}')" style="background:#3a0a0a;border:1px solid #991b1b;color:#fca5a5;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">Delete</button>`;
+    container.appendChild(row);
   });
+
+  container.ondragover = (e) => e.preventDefault();
+  container.ondrop = (e) => {
+    e.preventDefault();
+    handleDrinkPictureDropToEnd();
+  };
+
+  // Keep the current sorted key order available for the drop handlers
+  window._dpOrderedKeys = entries.map(e => e.key);
+}
+
+let dpDragIndex = null;
+
+window.handleDrinkPictureDrop = async function(targetIndex) {
+  if (dpDragIndex === null) return;
+  const keys = (window._dpOrderedKeys || []).slice();
+  const fromIndex = dpDragIndex;
+  dpDragIndex = null;
+  if (fromIndex === targetIndex) return;
+  const [moved] = keys.splice(fromIndex, 1);
+  const insertAt = fromIndex < targetIndex ? targetIndex - 1 : targetIndex;
+  keys.splice(insertAt, 0, moved);
+  await saveDrinkPictureOrder(keys);
+}
+
+window.handleDrinkPictureDropToEnd = async function() {
+  if (dpDragIndex === null) return;
+  const keys = (window._dpOrderedKeys || []).slice();
+  const fromIndex = dpDragIndex;
+  dpDragIndex = null;
+  const [moved] = keys.splice(fromIndex, 1);
+  keys.push(moved);
+  await saveDrinkPictureOrder(keys);
+}
+
+async function saveDrinkPictureOrder(orderedKeys) {
+  try {
+    const updates = {};
+    orderedKeys.forEach((key, i) => { updates[`drinkPictures/${key}/order`] = i; });
+    await update(ref(db), updates);
+  } catch(e) { alert('Error saving order: ' + e.message); }
 }
 
 window.handleDrinkPictureUpload = function(event) {
