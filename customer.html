@@ -238,6 +238,7 @@ let loyaltyData = null, loyaltyDiscount = 0;
 let customMilestones = {};
 let deliveryLocations = {};
 let deliveryOn = false, preorderOn = false;
+let deliveryTestOverride = false;
 let custItem = null, custSelections = {};
 
 // Apply branding from Firebase
@@ -434,6 +435,14 @@ onValue(ref(db, 'deliveryLocations'), snap => {
   renderDeliveryLocationOptions();
 });
 
+// Admin-only testing override — lets an admin force delivery to be selectable outside its normal window.
+// This never changes what's shown to customers (the Mon/Wed/Thu, 7–8 PM ET text stays exactly as-is).
+onValue(ref(db, 'deliverySettings'), snap => {
+  const d = snap.val() || {};
+  deliveryTestOverride = d.testOverride === true;
+  if (typeof refreshOrderOptionAvailability === 'function') refreshOrderOptionAvailability();
+});
+
 function escapeHtmlAttr(str) {
   return String(str||'').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 }
@@ -464,6 +473,7 @@ function getEasternParts(date) {
 }
 
 function isDeliveryWindowOpen() {
+  if (deliveryTestOverride) return true; // admin testing override — bypasses the schedule check only, display text is unaffected
   const p = getEasternParts();
   const validDays = ['Mon','Wed','Thu'];
   return validDays.indexOf(p.weekday) !== -1 && p.hour === 19;

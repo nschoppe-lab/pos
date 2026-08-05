@@ -752,6 +752,18 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
         <button class="aadd" onclick="addDeliveryLocation()">Add Location</button>
       </div>
     </div>
+    <div class="asec" style="border-color:#3b82f644;background:#0e1a2a">
+      <div class="asec-title" style="color:#3b82f6">🧪 Testing Override (Admin Only)</div>
+      <div style="font-size:12px;color:#888;margin-bottom:12px">
+        Forces Delivery to be selectable on the order screen regardless of day or time, so you can test the full delivery flow anytime. This does <strong style="color:#ccc">not</strong> change anything customers see — the order screen still always reads "Mon, Wed & Thu, 7–8 PM ET." Turn this off when you're done testing so the real schedule applies again.
+      </div>
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+        <span style="font-size:13px;font-weight:600" id="delivery-override-label">Off</span>
+        <div onclick="toggleDeliveryTestOverride()" id="delivery-override-switch" style="width:44px;height:24px;border-radius:12px;background:#444;position:relative;cursor:pointer;transition:background 0.2s">
+          <div id="delivery-override-knob" style="width:20px;height:20px;border-radius:50%;background:#fff;position:absolute;top:2px;left:2px;transition:left 0.2s"></div>
+        </div>
+      </label>
+    </div>
   </div></div>
 </div>
 
@@ -801,7 +813,7 @@ emailjs.init("yoxsvEb1uuAA4Ytcd");
 const auth = getAuth(app);
 const db = getDatabase(app);
 
-let orders = {}, menu = [], coupons = [], staffList = [], loyaltyRecords = {}, loyaltyMilestonesData = {}, waittimeData = {}, brandingData = {}, expensesData = {}, rewardStaffData = {}, specialsData = {}, ratingsData = {}, rmbWorkersData = {}, deliveryLocationsData = {};
+let orders = {}, menu = [], coupons = [], staffList = [], loyaltyRecords = {}, loyaltyMilestonesData = {}, waittimeData = {}, brandingData = {}, expensesData = {}, rewardStaffData = {}, specialsData = {}, ratingsData = {}, rmbWorkersData = {}, deliveryLocationsData = {}, deliverySettingsData = {};
 let tapTimers = {}, currentTab = 'orders';
 
 onAuthStateChanged(auth, async user => {
@@ -853,6 +865,7 @@ function showAdmin() {
   onValue(ref(db,'loyalty'), snap => { loyaltyRecords = snap.val()||{}; if(currentTab==='loyalty') renderLoyaltyAdmin(); });
   onValue(ref(db,'loyaltyMilestones'), snap => { loyaltyMilestonesData = snap.val()||{}; if(currentTab==='loyalty') renderLoyaltyMilestones(); });
   onValue(ref(db,'deliveryLocations'), snap => { deliveryLocationsData = snap.val()||{}; if(currentTab==='delivery') renderDeliveryLocations(); });
+  onValue(ref(db,'deliverySettings'), snap => { deliverySettingsData = snap.val()||{}; if(currentTab==='delivery') renderDeliveryOverrideUI(); });
   onValue(ref(db,'waittime'), snap => { waittimeData = snap.val()||{};
     if(currentTab==='waittime') updateWaitTimeUI(); });
   onValue(ref(db,'branding'), snap => { brandingData = snap.val()||{}; applyBrandingToPage(brandingData); if(currentTab==='branding') initBranding(); });
@@ -873,7 +886,7 @@ window.switchTab = function(t) {
   if (t==='ratings') initRmbAdmin();
   if (t==='inventory') renderInventory();
   if (t==='loyalty') { renderLoyaltyAdmin(); renderLoyaltyMilestones(); }
-  if (t==='delivery') renderDeliveryLocations();
+  if (t==='delivery') { renderDeliveryLocations(); renderDeliveryOverrideUI(); }
   if (t==='waittime') initWaitTime();
   if (t==='finance') renderFinance();
   if (t==='branding') initBranding();
@@ -1438,6 +1451,22 @@ window.toggleDeliveryLocation = async function(key, newActive) {
 window.deleteDeliveryLocation = async function(key, name) {
   if (!confirm(`Delete "${name}" from the delivery locations list? This cannot be undone.`)) return;
   try { await remove(ref(db, `deliveryLocations/${key}`)); }
+  catch(e) { alert('Error: ' + e.message); }
+}
+
+window.renderDeliveryOverrideUI = function() {
+  const on = deliverySettingsData.testOverride === true;
+  const sw = document.getElementById('delivery-override-switch');
+  const knob = document.getElementById('delivery-override-knob');
+  const label = document.getElementById('delivery-override-label');
+  if (sw) sw.style.background = on ? '#22c55e' : '#444';
+  if (knob) knob.style.left = on ? '22px' : '2px';
+  if (label) { label.textContent = on ? 'On — delivery forced available for testing' : 'Off'; label.style.color = on ? '#22c55e' : '#ccc'; }
+}
+
+window.toggleDeliveryTestOverride = async function() {
+  const newVal = !(deliverySettingsData.testOverride === true);
+  try { await update(ref(db, 'deliverySettings'), { testOverride: newVal }); }
   catch(e) { alert('Error: ' + e.message); }
 }
 
