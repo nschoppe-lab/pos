@@ -225,6 +225,15 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
         <div style="font-size:11px;color:#666;margin-bottom:10px">Drag the ⋮⋮ handles to reorder items within a category, move items between categories, or reorder whole categories. Order here matches the customer ordering screen exactly.</div>
         <div id="menu-body"></div>
       </div>
+      <div class="asec">
+        <div class="asec-title">Sauces</div>
+        <div style="font-size:12px;color:#888;margin-bottom:12px">Customers will be asked "Add a side of sauce?" with a checkbox for each of these whenever they add any food item to their order. Drag the ⋮⋮ handles to reorder.</div>
+        <div id="sauces-body" style="margin-bottom:14px"></div>
+        <div class="arow">
+          <input type="text" id="new-sauce" placeholder="Sauce name (e.g. Ranch)">
+          <button class="aadd" onclick="addSauce()">Add</button>
+        </div>
+      </div>
     </div></div>
   </div>
 
@@ -893,7 +902,7 @@ emailjs.init("yoxsvEb1uuAA4Ytcd");
 const auth = getAuth(app);
 const db = getDatabase(app);
 
-let orders = {}, menu = [], coupons = [], staffList = [], loyaltyRecords = {}, loyaltyMilestonesData = {}, waittimeData = {}, brandingData = {}, expensesData = {}, rewardStaffData = {}, specialsData = {}, ratingsData = {}, rmbWorkersData = {}, deliveryLocationsData = {}, deliverySettingsData = {}, loungeDisplayData = {}, drinkPicturesData = {};
+let orders = {}, menu = [], coupons = [], staffList = [], loyaltyRecords = {}, loyaltyMilestonesData = {}, waittimeData = {}, brandingData = {}, expensesData = {}, rewardStaffData = {}, specialsData = {}, ratingsData = {}, rmbWorkersData = {}, deliveryLocationsData = {}, deliverySettingsData = {}, loungeDisplayData = {}, drinkPicturesData = {}, saucesData = [];
 let tapTimers = {}, currentTab = 'orders';
 
 onAuthStateChanged(auth, async user => {
@@ -928,6 +937,7 @@ function showAdmin() {
   document.getElementById('admin-app').style.display = 'flex';
   onValue(ref(db,'orders'), snap => { orders = snap.val()||{}; renderOrders(); renderHistory(); updateBadge(); if(currentTab==='waittime') updateWaitTimeUI(); if(currentTab==='finance') renderFinance(); });
   onValue(ref(db,'menu'), snap => { const d = snap.val(); menu = d ? Object.values(d) : []; renderMenuAdmin(); if(currentTab==='lounge'){ populateDrinkPictureItemSelect(); renderDrinkPictures(); } });
+  onValue(ref(db,'sauces'), snap => { const d = snap.val(); saucesData = d ? Object.values(d) : []; if(currentTab==='menu') renderSauces(); });
   onValue(ref(db,'coupons'), snap => { const d = snap.val(); coupons = d ? Object.entries(d).map(([k,v])=>({fbKey:k,...v})) : []; renderCoupons(); });
   onValue(ref(db,'users'), snap => {
     const d = snap.val() || {};
@@ -963,6 +973,7 @@ window.switchTab = function(t) {
   document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
   document.getElementById('tab-'+t).classList.add('active');
   document.querySelectorAll('.tb').forEach((b,i) => b.classList.toggle('active', ['orders','history','menu','coupons','staff','inventory','loyalty','waittime','finance','branding','specials','ratings','delivery','lounge'][i]===t));
+  if (t==='menu') renderSauces();
   if (t==='specials') renderSpecialsAdmin();
   if (t==='staff') renderRewardStaff();
   if (t==='ratings') initRmbAdmin();
@@ -990,7 +1001,7 @@ function renderOrders() {
     const card = document.createElement('div');
     card.className = 'oc'+(order.status==='done'?' done':'');
     card.dataset.key = order.fbKey;
-    card.innerHTML = `<div class="oc-hdr"><span class="oc-num">#${order.fbKey.slice(-4).toUpperCase()}</span><span class="oc-name">${order.name}</span><span class="oc-time">${order.time||''}</span></div><div class="oc-body">${order.delivery?`<div style="font-size:11px;color:#3b82f6;font-weight:700;margin-bottom:4px;padding:4px 8px;background:#0e1a2a;border-radius:5px">🚚 DELIVERY → ${order.deliveryLocation||'—'}${order.deliveryPhone?' · 📞 '+order.deliveryPhone:''}</div>`:''}${order.preorder?`<div style="font-size:11px;color:#a78bfa;font-weight:700;margin-bottom:4px;padding:4px 8px;background:#1a1030;border-radius:5px">⏰ PRE-ORDER</div>`:''}${(order.items||[]).map(i=>`<div class="oc-line"><span>${i.qty}x</span> ${i.name}</div>`).join('')}${order.discount>0?`<div style="font-size:11px;color:#22c55e;margin-top:3px">Disc: -$${parseFloat(order.discount).toFixed(2)}</div>`:''}${order.comments?`<div style="font-size:11px;color:#f59e0b;margin-top:4px;padding:4px 8px;background:#2a1f0e;border-radius:5px">&#128172; ${order.comments}</div>`:''}<div class="oc-total">$${parseFloat(order.total).toFixed(2)}</div></div><div class="oc-foot"><span class="sbadge ${order.status==='done'?'done':'pending'}">${order.status==='done'?'Done':'In Progress'}</span><span class="tap-hint">${order.status==='done'?'Completed':'Double-tap to complete'}</span></div>`;
+    card.innerHTML = `<div class="oc-hdr"><span class="oc-num">#${order.fbKey.slice(-4).toUpperCase()}</span><span class="oc-name">${order.name}</span><span class="oc-time">${order.time||''}</span></div><div class="oc-body">${order.delivery?`<div style="font-size:11px;color:#3b82f6;font-weight:700;margin-bottom:4px;padding:4px 8px;background:#0e1a2a;border-radius:5px">🚚 DELIVERY → ${order.deliveryLocation||'—'}${order.deliveryPhone?' · 📞 '+order.deliveryPhone:''}</div>`:''}${order.preorder?`<div style="font-size:11px;color:#a78bfa;font-weight:700;margin-bottom:4px;padding:4px 8px;background:#1a1030;border-radius:5px">⏰ PRE-ORDER</div>`:''}${(order.items||[]).map(i=>`<div class="oc-line"><span>${i.qty}x</span> ${i.name}${i.sauces&&i.sauces.length?` <span style="color:#f59e0b">(${i.sauces.join(', ')})</span>`:''}</div>`).join('')}${order.discount>0?`<div style="font-size:11px;color:#22c55e;margin-top:3px">Disc: -$${parseFloat(order.discount).toFixed(2)}</div>`:''}${order.comments?`<div style="font-size:11px;color:#f59e0b;margin-top:4px;padding:4px 8px;background:#2a1f0e;border-radius:5px">&#128172; ${order.comments}</div>`:''}<div class="oc-total">$${parseFloat(order.total).toFixed(2)}</div></div><div class="oc-foot"><span class="sbadge ${order.status==='done'?'done':'pending'}">${order.status==='done'?'Done':'In Progress'}</span><span class="tap-hint">${order.status==='done'?'Completed':'Double-tap to complete'}</span></div>`;
     if (order.status!=='done') card.addEventListener('click',()=>handleTap(order.fbKey,order));
     grid.appendChild(card);
   });
@@ -1051,7 +1062,7 @@ window.renderHistory = function() {
     const hdr=document.createElement('div');hdr.className='hcard-hdr';
     hdr.innerHTML=`<div style="display:flex;align-items:center;gap:8px"><span style="font-size:12px;font-weight:700;color:#ff6b35">#${order.fbKey.slice(-4).toUpperCase()}</span><span style="font-size:12px;font-weight:600">${order.name}</span><span class="hbadge ${order.status==='done'?'done':'pending'}">${order.status==='done'?'Done':'Pending'}</span></div><div style="display:flex;align-items:center;gap:8px"><span style="font-size:12px;font-weight:700;color:#ff6b35">$${parseFloat(order.total||0).toFixed(2)}</span><span style="font-size:11px;color:#666">${order.date||''} ${order.time||''}</span><button onclick="event.stopPropagation();deleteOrder('${order.fbKey}','${order.name}')" style="background:#2a1010;border:1px solid #7f1d1d;color:#ef4444;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">Delete</button><span style="color:#555">&#9660;</span></div>`;
     const body=document.createElement('div');body.className='hcard-body';
-    body.innerHTML=(order.items||[]).map(i=>`<div style="font-size:12px;color:#ccc;padding:2px 0"><span style="color:#777">${i.qty}x</span> ${i.name} — $${(i.price*i.qty).toFixed(2)}</div>`).join('')+(order.discount>0?`<div style="font-size:11px;color:#22c55e;margin-top:5px">Discount (${order.coupon}): -$${parseFloat(order.discount).toFixed(2)}</div>`:'')+(order.delivery?`<div style="font-size:11px;color:#3b82f6;margin-top:5px">🚚 Delivery (+$${parseFloat(order.deliveryFee||5).toFixed(2)}) → ${order.deliveryLocation||'—'}${order.deliveryPhone?' · 📞 '+order.deliveryPhone:''}</div>`:'')+(order.preorder?`<div style="font-size:11px;color:#a78bfa;margin-top:5px">⏰ Pre-Order (+$${parseFloat(order.preorderFee||1).toFixed(2)})</div>`:'')+`<div style="font-size:11px;color:#888;margin-top:6px">${order.email?'Email: '+order.email:'No email'}${order.coupon?' | Code: '+order.coupon:''}</div>`;
+    body.innerHTML=(order.items||[]).map(i=>`<div style="font-size:12px;color:#ccc;padding:2px 0"><span style="color:#777">${i.qty}x</span> ${i.name}${i.sauces&&i.sauces.length?` <span style="color:#f59e0b">(${i.sauces.join(', ')})</span>`:''} — $${(i.price*i.qty).toFixed(2)}</div>`).join('')+(order.discount>0?`<div style="font-size:11px;color:#22c55e;margin-top:5px">Discount (${order.coupon}): -$${parseFloat(order.discount).toFixed(2)}</div>`:'')+(order.delivery?`<div style="font-size:11px;color:#3b82f6;margin-top:5px">🚚 Delivery (+$${parseFloat(order.deliveryFee||5).toFixed(2)}) → ${order.deliveryLocation||'—'}${order.deliveryPhone?' · 📞 '+order.deliveryPhone:''}</div>`:'')+(order.preorder?`<div style="font-size:11px;color:#a78bfa;margin-top:5px">⏰ Pre-Order (+$${parseFloat(order.preorderFee||1).toFixed(2)})</div>`:'')+`<div style="font-size:11px;color:#888;margin-top:6px">${order.email?'Email: '+order.email:'No email'}${order.coupon?' | Code: '+order.coupon:''}</div>`;
     hdr.onclick=()=>body.classList.toggle('open');
     card.appendChild(hdr);card.appendChild(body);el.appendChild(card);
   });
@@ -1188,6 +1199,83 @@ window.handleCatDropToEnd = async function() {
   const [moved] = newMenu.splice(fromCi, 1);
   newMenu.push(moved);
   await setMenu(newMenu);
+}
+
+// SAUCES (asked as a checkbox add-on whenever a customer adds any food item, on the customer ordering screen)
+let sauceDragIndex = null;
+
+window.renderSauces = function() {
+  const container = document.getElementById('sauces-body');
+  if (!container) return;
+  if (!saucesData.length) {
+    container.innerHTML = '<div style="color:#555;text-align:center;padding:14px;font-size:12px">No sauces yet — add one below.</div>';
+    return;
+  }
+  container.innerHTML = '';
+  saucesData.forEach((name, i) => {
+    const row = document.createElement('div');
+    row.className = 'co-row';
+    row.draggable = true;
+    row.ondragstart = (e) => {
+      sauceDragIndex = i;
+      row.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    };
+    row.ondragend = () => row.classList.remove('dragging');
+    row.ondragover = (e) => e.preventDefault();
+    row.ondrop = (e) => { e.preventDefault(); handleSauceDrop(i); };
+    row.innerHTML = `
+      <span class="drag-handle">⋮⋮</span>
+      <span class="co-name">${escMenuHtml(name)}</span>
+      <button onclick="deleteSauce(${i})" style="background:#3a0a0a;border:1px solid #991b1b;color:#fca5a5;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">Delete</button>`;
+    container.appendChild(row);
+  });
+  container.ondragover = (e) => e.preventDefault();
+  container.ondrop = (e) => { e.preventDefault(); handleSauceDropToEnd(); };
+}
+
+async function saveSauces(list) {
+  const obj = {};
+  list.forEach((v, i) => { obj[i] = v; });
+  try { await set(ref(db, 'sauces'), obj); }
+  catch(e) { alert('Error saving: ' + e.message); }
+}
+
+window.addSauce = async function() {
+  const input = document.getElementById('new-sauce');
+  const name = input.value.trim();
+  if (!name) return;
+  const list = [...saucesData, name];
+  await saveSauces(list);
+  input.value = '';
+}
+
+window.deleteSauce = async function(index) {
+  const list = [...saucesData];
+  list.splice(index, 1);
+  await saveSauces(list);
+}
+
+window.handleSauceDrop = async function(targetIndex) {
+  if (sauceDragIndex === null) return;
+  const fromIndex = sauceDragIndex;
+  sauceDragIndex = null;
+  if (fromIndex === targetIndex) return;
+  const list = [...saucesData];
+  const [moved] = list.splice(fromIndex, 1);
+  const insertAt = fromIndex < targetIndex ? targetIndex - 1 : targetIndex;
+  list.splice(insertAt, 0, moved);
+  await saveSauces(list);
+}
+
+window.handleSauceDropToEnd = async function() {
+  if (sauceDragIndex === null) return;
+  const fromIndex = sauceDragIndex;
+  sauceDragIndex = null;
+  const list = [...saucesData];
+  const [moved] = list.splice(fromIndex, 1);
+  list.push(moved);
+  await saveSauces(list);
 }
 
 window.addCategory = async function() {

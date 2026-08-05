@@ -246,6 +246,8 @@ let deliveryOn = false, preorderOn = false;
 let deliveryTestOverride = false;
 let preorderTestOverride = false;
 let custItem = null, custSelections = {};
+let sauces = [];
+let custSauceSelections = {};
 
 // Apply branding from Firebase
 function applyBranding(b) {
@@ -299,6 +301,10 @@ onValue(ref(db, 'menu'), snap => {
 onValue(ref(db, 'coupons'), snap => {
   coupons = snap.val() ? Object.entries(snap.val()).map(([k,v]) => ({fbKey:k,...v})) : [];
   renderPromoBanner();
+});
+
+onValue(ref(db, 'sauces'), snap => {
+  sauces = snap.val() ? Object.values(snap.val()) : [];
 });
 
 function renderPromoBanner() {
@@ -658,17 +664,17 @@ function renderMenu() {
 }
 
 window.openCustModal = function(item) {
-  custItem = item; custSelections = {};
+  custItem = item; custSelections = {}; custSauceSelections = {};
   document.getElementById('cust-modal-name').textContent = item.name;
   document.getElementById('cust-modal-price').textContent = `$${parseFloat(item.price).toFixed(2)}`;
   const body = document.getElementById('cust-modal-body');
   const options = item.customizations || [];
+  let html = '';
   if (!options.length) {
-    body.innerHTML = '<div class="cust-no-options">No customization options for this item.</div>';
+    html += '<div class="cust-no-options">No customization options for this item.</div>';
   } else {
     const removes = options.filter(o => o.type === 'remove');
     const adds = options.filter(o => o.type === 'add');
-    let html = '';
     if (removes.length) {
       html += `<div class="cust-section-lbl">Remove / Leave out</div>`;
       removes.forEach(opt => {
@@ -682,10 +688,22 @@ window.openCustModal = function(item) {
         html += `<div class="cust-option" id="opt-${opt.id}" onclick="toggleOption('${opt.id}')"><div class="cust-option-left"><div class="cust-check" id="chk-${opt.id}">✓</div><div class="cust-option-name">${opt.name}</div></div><div style="display:flex;align-items:center;gap:8px"><span class="cust-option-badge add">Add</span><span class="cust-option-price">${priceStr}</span></div></div>`;
       });
     }
-    body.innerHTML = html;
   }
+  if (sauces.length) {
+    html += `<div class="cust-section-lbl">Add a side of sauce?</div>`;
+    sauces.forEach((name, i) => {
+      html += `<div class="cust-option" id="sauce-${i}" onclick="toggleSauce(${i})"><div class="cust-option-left"><div class="cust-check" id="sauce-chk-${i}">✓</div><div class="cust-option-name">${name}</div></div></div>`;
+    });
+  }
+  body.innerHTML = html;
   updateCustAddBtn();
   document.getElementById('cust-modal-bg').classList.add('open');
+}
+
+window.toggleSauce = function(i) {
+  custSauceSelections[i] = !custSauceSelections[i];
+  const el = document.getElementById(`sauce-${i}`);
+  el.classList.toggle('selected', custSauceSelections[i]);
 }
 
 window.toggleOption = function(id) {
@@ -706,7 +724,7 @@ function updateCustAddBtn() {
 
 window.closeCustModal = function() {
   document.getElementById('cust-modal-bg').classList.remove('open');
-  custItem = null; custSelections = {};
+  custItem = null; custSelections = {}; custSauceSelections = {};
 }
 
 window.confirmAddToCart = function() {
@@ -720,11 +738,13 @@ window.confirmAddToCart = function() {
       selectedOpts.push(opt);
     }
   });
+  const selectedSauces = sauces.filter((name, i) => custSauceSelections[i]);
   const finalPrice = parseFloat(custItem.price) + extraPrice;
   const optKey = selectedOpts.map(o=>o.id).sort().join(',');
-  const cartKey = custItem.id + '|' + optKey;
+  const sauceKey = selectedSauces.slice().sort().join(',');
+  const cartKey = custItem.id + '|' + optKey + '|' + sauceKey;
   const ex = cart.find(c => c.cartKey === cartKey);
-  if (ex) { ex.qty++; } else { cart.push({...custItem, cartKey, price: finalPrice, qty: 1, customizations: selectedOpts}); }
+  if (ex) { ex.qty++; } else { cart.push({...custItem, cartKey, price: finalPrice, qty: 1, customizations: selectedOpts, sauces: selectedSauces}); }
   closeCustModal(); renderCart();
 }
 
@@ -751,8 +771,11 @@ function renderCart() {
     const customNote = c.customizations && c.customizations.length
       ? `<div style="font-size:10px;color:#888;margin-top:2px">${c.customizations.map(o=>(o.type==='remove'?'No ':'+')+o.name).join(', ')}</div>`
       : '';
+    const sauceNote = c.sauces && c.sauces.length
+      ? `<div style="font-size:10px;color:#f59e0b;margin-top:2px">🥫 ${c.sauces.join(', ')}</div>`
+      : '';
     const row = document.createElement('div'); row.className = 'ci';
-    row.innerHTML = `<div class="ci-name">${c.name}${customNote}</div><div style="display:flex;align-items:center;gap:6px"><button class="qb" onclick="changeQty('${c.cartKey}',-1)">&#8722;</button><span style="font-size:13px;min-width:16px;text-align:center">${c.qty}</span><button class="qb" onclick="changeQty('${c.cartKey}',1)">+</button></div><div class="ci-price">$${(c.price*c.qty).toFixed(2)}</div>`;
+    row.innerHTML = `<div class="ci-name">${c.name}${customNote}${sauceNote}</div><div style="display:flex;align-items:center;gap:6px"><button class="qb" onclick="changeQty('${c.cartKey}',-1)">&#8722;</button><span style="font-size:13px;min-width:16px;text-align:center">${c.qty}</span><button class="qb" onclick="changeQty('${c.cartKey}',1)">+</button></div><div class="ci-price">$${(c.price*c.qty).toFixed(2)}</div>`;
     el.appendChild(row);
   });
   updateTotals();
@@ -890,7 +913,7 @@ window.placeOrder = async function() {
 
   const order = {
     name, email, comments,
-    items: cart.map(c => ({ id: c.id, name: c.name, price: c.price, qty: c.qty, customizations: c.customizations || [] })),
+    items: cart.map(c => ({ id: c.id, name: c.name, price: c.price, qty: c.qty, customizations: c.customizations || [], sauces: c.sauces || [] })),
     subtotal: t.sub, discount: t.disc, loyaltyDiscount: t.loyDisc,
     delivery: !!deliveryOn,
     deliveryLocation: deliveryOn ? deliveryLocationVal : null,

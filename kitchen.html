@@ -250,7 +250,7 @@ function renderOrders() {
       <div class="oc-body">
         ${order.delivery?`<div style="font-size:11px;color:#3b82f6;font-weight:700;margin-bottom:5px;padding:5px 8px;background:#0e1a2a;border-radius:5px">🚚 DELIVERY → ${order.deliveryLocation||'—'}${order.deliveryPhone?' · 📞 '+order.deliveryPhone:''}</div>`:''}
         ${order.preorder?`<div style="font-size:11px;color:#a78bfa;font-weight:700;margin-bottom:5px;padding:5px 8px;background:#1a1030;border-radius:5px">⏰ PRE-ORDER</div>`:''}
-        ${(order.items||[]).map(i=>`<div class="oc-line"><span>${i.qty}x</span> ${i.name}</div>`).join('')}
+        ${(order.items||[]).map(i=>`<div class="oc-line"><span>${i.qty}x</span> ${i.name}${i.sauces&&i.sauces.length?` <span style="color:#f59e0b">(${i.sauces.join(', ')})</span>`:''}</div>`).join('')}
         ${order.discount>0?`<div style="font-size:11px;color:#22c55e;margin-top:4px">Disc: -$${parseFloat(order.discount).toFixed(2)}</div>`:''}
         ${order.comments?`<div style="font-size:11px;color:#f59e0b;margin-top:5px;padding:5px 8px;background:#2a1f0e;border-radius:5px">&#128172; ${order.comments}</div>`:''}
         <div class="oc-total">$${parseFloat(order.total).toFixed(2)}</div>
