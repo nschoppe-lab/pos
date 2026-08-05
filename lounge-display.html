@@ -209,14 +209,15 @@ body{
 }
 .customize-list{
   list-style:none;
-  display:inline-flex;
-  flex-direction:column;
-  align-items:flex-start;
-  gap:calc(var(--vh) * 0.35);
+  display:grid;
+  grid-template-columns:repeat(2, auto);
+  justify-content:center;
+  column-gap:calc(var(--vw) * 3.5);
+  row-gap:calc(var(--vh) * 0.5);
   font-size:clamp(22px,calc(var(--vh) * 3.6),40px);
   color:var(--cream);
 }
-.customize-list li{position:relative;padding-left:1.15em}
+.customize-list li{position:relative;padding-left:1.15em;text-align:left}
 .customize-list li::before{content:'•';position:absolute;left:0;color:var(--cream)}
 
 /* DRINKS */
