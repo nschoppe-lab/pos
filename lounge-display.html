@@ -99,14 +99,6 @@ body{
   margin-top:1.2vh;
   letter-spacing:0.5px;
 }
-.wait-msg{
-  font-size:clamp(11px,1.7vh,15px);
-  color:var(--gold-bright);
-  font-style:italic;
-  margin-top:1vh;
-  display:none;
-}
-.wait-msg.show{display:block}
 
 /* MENU */
 .menu-section{width:100%}
@@ -175,7 +167,7 @@ body{
   flex-wrap:wrap;
   align-items:flex-start;
   justify-content:center;
-  gap:1.6vh 3vw;
+  gap:0.6vh 1vw;
   margin-top:1.2vh;
   width:100%;
 }
@@ -183,7 +175,7 @@ body{
   display:flex;
   flex-direction:column;
   align-items:center;
-  width:16vh;
+  width:12vh;
 }
 .drink-pic-card img{
   width:100%;
@@ -246,7 +238,6 @@ body{
     <div class="wait-time" id="wait-time">—</div>
     <div class="wait-unit" id="wait-unit">minutes</div>
     <div class="wait-stats" id="wait-stats"></div>
-    <div class="wait-msg" id="wait-msg"></div>
   </div>
 
   <div class="divider"></div>
@@ -341,20 +332,28 @@ function computeHoursSummary(d) {
   }).join('<br>');
 }
 
-// ── Drink pictures — each is linked to a real menu item's id and follows that item's own availability toggle ──
+// ── Drink pictures — each is linked to a real menu item's id and follows that item's own availability toggle.
+// Display order always matches that item's actual position in the Menu tab (category order, then item order within it).
 function renderDrinkPictures() {
   const el = document.getElementById('drinks-pictures');
   if (!el) return;
   el.innerHTML = '';
-  const entries = Object.values(drinkPictures);
-  entries.sort((a, b) => (a.order ?? a.createdAt ?? 0) - (b.order ?? b.createdAt ?? 0));
-  entries.forEach(dp => {
-    let foundItem = null;
-    menu.forEach(cat => (cat.items || []).forEach(it => { if (it.id === dp.itemId) foundItem = it; }));
+  const entries = [];
+  Object.values(drinkPictures).forEach(dp => {
+    let foundItem = null, catIndex = -1, itemIndex = -1;
+    menu.forEach((cat, ci) => {
+      (cat.items || []).forEach((it, ii) => {
+        if (it.id === dp.itemId) { foundItem = it; catIndex = ci; itemIndex = ii; }
+      });
+    });
     if (!foundItem || foundItem.unavailable === true) return; // hidden if item was deleted or toggled off
+    entries.push({ dp, item: foundItem, sortKey: catIndex * 100000 + itemIndex });
+  });
+  entries.sort((a, b) => a.sortKey - b.sortKey);
+  entries.forEach(({ dp, item }) => {
     const card = document.createElement('div');
     card.className = 'drink-pic-card';
-    card.innerHTML = `<img src="${dp.image}" alt="${escapeHtml(foundItem.name)}"><div class="drink-pic-name">${escapeHtml(foundItem.name)}</div>`;
+    card.innerHTML = `<img src="${dp.image}" alt="${escapeHtml(item.name)}"><div class="drink-pic-name">${escapeHtml(item.name)}</div>`;
     el.appendChild(card);
   });
 }
@@ -414,10 +413,6 @@ function updateWaitDisplay() {
 
   document.getElementById('wait-stats').textContent =
     `${openOrderCount} order${openOrderCount !== 1 ? 's' : ''} ahead  ·  ${doneOrderCount} completed today`;
-
-  const msgEl = document.getElementById('wait-msg');
-  if (d.message) { msgEl.textContent = d.message; msgEl.classList.add('show'); }
-  else { msgEl.classList.remove('show'); }
 }
 
 onValue(ref(db, 'menu'), snap => {

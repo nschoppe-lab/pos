@@ -111,9 +111,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 .mi-mod-count{font-size:10px;color:#888;margin-left:6px}
 .mi-price{font-size:12px;color:#fff;font-weight:600;white-space:nowrap}
 .mi-mod-btn{background:#1a2a3a;border:1px solid #2e75b6;color:#60a5fa;border-radius:4px;padding:3px 9px;font-size:11px;cursor:pointer;white-space:nowrap}
-.dp-row{display:flex;align-items:center;gap:10px;padding:8px 6px;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:8px;margin-bottom:6px;transition:opacity 0.15s}
-.dp-row.dragging{opacity:0.4}
-.dp-row .drag-handle{color:#555;font-size:13px;cursor:grab;user-select:none;flex-shrink:0}
+.dp-row{display:flex;align-items:center;gap:10px;padding:8px 6px;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:8px;margin-bottom:6px}
 .dp-thumb{width:44px;height:44px;object-fit:contain;background:#111;border-radius:6px;flex-shrink:0}
 .dp-label{flex:1;font-size:12px;color:#ccc;font-weight:600}
 /* MODAL */
@@ -812,7 +810,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
     <div class="asec">
       <div class="asec-title">Drink Pictures</div>
       <div style="font-size:12px;color:#888;margin-bottom:12px">
-        Upload a picture for a specific drink and link it to that item in your menu. It shows up in place of that drink's name on the Lounge Display, and automatically hides itself the moment that item is toggled unavailable in the Inventory tab — no separate on/off switch needed here. Drag the ⋮⋮ handles below to reorder how they appear on the display.
+        Upload a picture for a specific drink and link it to that item in your menu. It shows up in place of that drink's name on the Lounge Display, and automatically hides itself the moment that item is toggled unavailable in the Inventory tab — no separate on/off switch needed here. The order they appear in always matches that item's position in the Menu tab, so drag items around there to reorder these too.
       </div>
       <div id="drink-pictures-body" style="margin-bottom:14px"></div>
       <div class="arow" style="flex-wrap:wrap">
@@ -2346,13 +2344,18 @@ window.renderDrinkPictures = function() {
   const container = document.getElementById('drink-pictures-body');
   if (!container) return;
   const entries = Object.entries(drinkPicturesData).map(([k,v]) => ({key:k, ...v}));
-  entries.sort((a,b) => (a.order ?? a.createdAt ?? 0) - (b.order ?? b.createdAt ?? 0));
+  // Order always follows the linked item's real position in the Menu tab
+  entries.forEach(dp => {
+    dp._catIndex = -1; dp._itemIndex = -1;
+    menu.forEach((cat, ci) => (cat.items || []).forEach((it, ii) => { if (it.id === dp.itemId) { dp._catIndex = ci; dp._itemIndex = ii; } }));
+  });
+  entries.sort((a,b) => (a._catIndex*100000+a._itemIndex) - (b._catIndex*100000+b._itemIndex));
   if (!entries.length) {
     container.innerHTML = '<div style="color:#555;text-align:center;padding:14px;font-size:12px">No drink pictures yet — add one below.</div>';
     return;
   }
   container.innerHTML = '';
-  entries.forEach((dp, di) => {
+  entries.forEach(dp => {
     let foundItem = null, foundCat = null;
     menu.forEach(cat => (cat.items || []).forEach(it => { if (it.id === dp.itemId) { foundItem = it; foundCat = cat; } }));
     const available = foundItem ? foundItem.unavailable !== true : false;
@@ -2363,68 +2366,13 @@ window.renderDrinkPictures = function() {
 
     const row = document.createElement('div');
     row.className = 'dp-row';
-    row.draggable = true;
-    row.ondragstart = (e) => {
-      dpDragIndex = di;
-      row.classList.add('dragging');
-      e.dataTransfer.effectAllowed = 'move';
-    };
-    row.ondragend = () => row.classList.remove('dragging');
-    row.ondragover = (e) => e.preventDefault();
-    row.ondrop = (e) => {
-      e.preventDefault();
-      handleDrinkPictureDrop(di);
-    };
-
     row.innerHTML = `
-      <span class="drag-handle">⋮⋮</span>
       <img class="dp-thumb" src="${dp.image}">
       <span class="dp-label">${label}</span>
       <span>${statusHtml}</span>
       <button onclick="deleteDrinkPicture('${dp.key}')" style="background:#3a0a0a;border:1px solid #991b1b;color:#fca5a5;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">Delete</button>`;
     container.appendChild(row);
   });
-
-  container.ondragover = (e) => e.preventDefault();
-  container.ondrop = (e) => {
-    e.preventDefault();
-    handleDrinkPictureDropToEnd();
-  };
-
-  // Keep the current sorted key order available for the drop handlers
-  window._dpOrderedKeys = entries.map(e => e.key);
-}
-
-let dpDragIndex = null;
-
-window.handleDrinkPictureDrop = async function(targetIndex) {
-  if (dpDragIndex === null) return;
-  const keys = (window._dpOrderedKeys || []).slice();
-  const fromIndex = dpDragIndex;
-  dpDragIndex = null;
-  if (fromIndex === targetIndex) return;
-  const [moved] = keys.splice(fromIndex, 1);
-  const insertAt = fromIndex < targetIndex ? targetIndex - 1 : targetIndex;
-  keys.splice(insertAt, 0, moved);
-  await saveDrinkPictureOrder(keys);
-}
-
-window.handleDrinkPictureDropToEnd = async function() {
-  if (dpDragIndex === null) return;
-  const keys = (window._dpOrderedKeys || []).slice();
-  const fromIndex = dpDragIndex;
-  dpDragIndex = null;
-  const [moved] = keys.splice(fromIndex, 1);
-  keys.push(moved);
-  await saveDrinkPictureOrder(keys);
-}
-
-async function saveDrinkPictureOrder(orderedKeys) {
-  try {
-    const updates = {};
-    orderedKeys.forEach((key, i) => { updates[`drinkPictures/${key}/order`] = i; });
-    await update(ref(db), updates);
-  } catch(e) { alert('Error saving order: ' + e.message); }
 }
 
 window.handleDrinkPictureUpload = function(event) {
