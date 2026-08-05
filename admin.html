@@ -790,6 +790,20 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
         </div>
       </div>
     </div>
+    <div class="asec">
+      <div class="asec-title">Drink Pictures</div>
+      <div style="font-size:12px;color:#888;margin-bottom:12px">
+        Upload a picture for a specific drink and link it to that item in your menu. It shows up in place of that drink's name on the Lounge Display, and automatically hides itself the moment that item is toggled unavailable in the Inventory tab — no separate on/off switch needed here.
+      </div>
+      <table class="mtable" style="margin-bottom:14px">
+        <thead><tr><th>Picture</th><th>Linked Item</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody id="drink-pictures-body"></tbody>
+      </table>
+      <div class="arow" style="flex-wrap:wrap">
+        <select id="new-drink-picture-item" style="flex:2;min-width:220px"><option value="">Select a menu item...</option></select>
+        <input type="file" id="new-drink-picture-file" accept="image/*" onchange="handleDrinkPictureUpload(event)">
+      </div>
+    </div>
   </div></div>
 </div>
 
@@ -839,7 +853,7 @@ emailjs.init("yoxsvEb1uuAA4Ytcd");
 const auth = getAuth(app);
 const db = getDatabase(app);
 
-let orders = {}, menu = [], coupons = [], staffList = [], loyaltyRecords = {}, loyaltyMilestonesData = {}, waittimeData = {}, brandingData = {}, expensesData = {}, rewardStaffData = {}, specialsData = {}, ratingsData = {}, rmbWorkersData = {}, deliveryLocationsData = {}, deliverySettingsData = {}, loungeDisplayData = {};
+let orders = {}, menu = [], coupons = [], staffList = [], loyaltyRecords = {}, loyaltyMilestonesData = {}, waittimeData = {}, brandingData = {}, expensesData = {}, rewardStaffData = {}, specialsData = {}, ratingsData = {}, rmbWorkersData = {}, deliveryLocationsData = {}, deliverySettingsData = {}, loungeDisplayData = {}, drinkPicturesData = {};
 let tapTimers = {}, currentTab = 'orders';
 
 onAuthStateChanged(auth, async user => {
@@ -873,7 +887,7 @@ function showAdmin() {
   document.getElementById('login-wrap').style.display = 'none';
   document.getElementById('admin-app').style.display = 'flex';
   onValue(ref(db,'orders'), snap => { orders = snap.val()||{}; renderOrders(); renderHistory(); updateBadge(); if(currentTab==='waittime') updateWaitTimeUI(); if(currentTab==='finance') renderFinance(); });
-  onValue(ref(db,'menu'), snap => { const d = snap.val(); menu = d ? Object.values(d) : []; renderMenuAdmin(); });
+  onValue(ref(db,'menu'), snap => { const d = snap.val(); menu = d ? Object.values(d) : []; renderMenuAdmin(); if(currentTab==='lounge'){ populateDrinkPictureItemSelect(); renderDrinkPictures(); } });
   onValue(ref(db,'coupons'), snap => { const d = snap.val(); coupons = d ? Object.entries(d).map(([k,v])=>({fbKey:k,...v})) : []; renderCoupons(); });
   onValue(ref(db,'users'), snap => {
     const d = snap.val() || {};
@@ -893,6 +907,7 @@ function showAdmin() {
   onValue(ref(db,'deliveryLocations'), snap => { deliveryLocationsData = snap.val()||{}; if(currentTab==='delivery') renderDeliveryLocations(); });
   onValue(ref(db,'deliverySettings'), snap => { deliverySettingsData = snap.val()||{}; if(currentTab==='delivery') renderDeliveryOverrideUI(); });
   onValue(ref(db,'loungeDisplay'), snap => { loungeDisplayData = snap.val()||{}; if(currentTab==='lounge') renderLoungeLogoPreview(); });
+  onValue(ref(db,'drinkPictures'), snap => { drinkPicturesData = snap.val()||{}; if(currentTab==='lounge') renderDrinkPictures(); });
   onValue(ref(db,'waittime'), snap => { waittimeData = snap.val()||{};
     if(currentTab==='waittime') updateWaitTimeUI(); });
   onValue(ref(db,'branding'), snap => { brandingData = snap.val()||{}; applyBrandingToPage(brandingData); if(currentTab==='branding') initBranding(); });
@@ -914,7 +929,7 @@ window.switchTab = function(t) {
   if (t==='inventory') renderInventory();
   if (t==='loyalty') { renderLoyaltyAdmin(); renderLoyaltyMilestones(); }
   if (t==='delivery') { renderDeliveryLocations(); renderDeliveryOverrideUI(); }
-  if (t==='lounge') renderLoungeLogoPreview();
+  if (t==='lounge') { renderLoungeLogoPreview(); populateDrinkPictureItemSelect(); renderDrinkPictures(); }
   if (t==='waittime') initWaitTime();
   if (t==='finance') renderFinance();
   if (t==='branding') initBranding();
@@ -2171,6 +2186,73 @@ window.removeLoungeLogo = async function() {
   loungeDisplayData.logo = '';
   renderLoungeLogoPreview();
   try { await update(ref(db, 'loungeDisplay'), { logo: '' }); alert('Lounge Display logo removed — back to the script text logo.'); }
+  catch(e) { alert('Error: ' + e.message); }
+}
+
+// DRINK PICTURES (linked to a real menu item; visibility follows that item's availability toggle)
+window.populateDrinkPictureItemSelect = function() {
+  const sel = document.getElementById('new-drink-picture-item');
+  if (!sel) return;
+  const esc = (s) => String(s||'').replace(/"/g,'&quot;');
+  const current = sel.value;
+  let html = '<option value="">Select a menu item...</option>';
+  menu.forEach(cat => {
+    (cat.items || []).forEach(item => {
+      html += `<option value="${item.id}">${esc(cat.label)} — ${esc(item.name)}</option>`;
+    });
+  });
+  sel.innerHTML = html;
+  if (current) sel.value = current;
+}
+
+window.renderDrinkPictures = function() {
+  const tbody = document.getElementById('drink-pictures-body');
+  if (!tbody) return;
+  const entries = Object.entries(drinkPicturesData).map(([k,v]) => ({key:k, ...v}));
+  if (!entries.length) {
+    tbody.innerHTML = '<tr><td colspan="4" style="color:#555;text-align:center;padding:14px;font-size:12px">No drink pictures yet — add one below.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = '';
+  entries.forEach(dp => {
+    let foundItem = null, foundCat = null;
+    menu.forEach(cat => (cat.items || []).forEach(it => { if (it.id === dp.itemId) { foundItem = it; foundCat = cat; } }));
+    const available = foundItem ? foundItem.unavailable !== true : false;
+    const label = foundItem ? `${foundCat.label} — ${foundItem.name}` : '(item no longer in menu)';
+    const statusHtml = !foundItem
+      ? '<span style="color:#666;font-size:11px">Orphaned</span>'
+      : (available ? '<span style="color:#22c55e;font-size:11px;font-weight:700">Showing</span>' : '<span style="color:#666;font-size:11px">Hidden (item off)</span>');
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><img src="${dp.image}" style="width:50px;height:50px;object-fit:contain;background:#1a1a1a;border-radius:6px"></td>
+      <td style="font-weight:600">${label}</td>
+      <td>${statusHtml}</td>
+      <td><button onclick="deleteDrinkPicture('${dp.key}')" style="background:#3a0a0a;border:1px solid #991b1b;color:#fca5a5;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">Delete</button></td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+window.handleDrinkPictureUpload = function(event) {
+  const file = event.target.files[0];
+  const itemId = document.getElementById('new-drink-picture-item').value;
+  if (!itemId) { alert('Select a menu item to link this picture to first.'); event.target.value = ''; return; }
+  if (!file) return;
+  if (file.size > 500000) { alert('Image too large — please use an image under 500KB.'); event.target.value = ''; return; }
+  const reader = new FileReader();
+  reader.onload = async function(e) {
+    try {
+      await push(ref(db, 'drinkPictures'), { itemId: parseInt(itemId, 10), image: e.target.result, createdAt: Date.now() });
+      event.target.value = '';
+      document.getElementById('new-drink-picture-item').value = '';
+      alert('✅ Drink picture added!');
+    } catch(err) { alert('Error: ' + err.message); }
+  };
+  reader.readAsDataURL(file);
+}
+
+window.deleteDrinkPicture = async function(key) {
+  if (!confirm('Delete this drink picture? This cannot be undone.')) return;
+  try { await remove(ref(db, `drinkPictures/${key}`)); }
   catch(e) { alert('Error: ' + e.message); }
 }
 

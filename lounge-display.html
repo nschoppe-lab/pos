@@ -169,13 +169,31 @@ body{
   font-size:clamp(20px,3.8vh,34px);
   color:var(--gold-bright);
 }
-.drinks-list{
-  font-size:clamp(13px,1.9vh,18px);
+.drinks-pictures{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:flex-start;
+  justify-content:center;
+  gap:1.6vh 3vw;
+  margin-top:1.2vh;
+  width:100%;
+}
+.drink-pic-card{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  width:16vh;
+}
+.drink-pic-card img{
+  width:100%;
+  height:12vh;
+  object-fit:contain;
+}
+.drink-pic-name{
+  font-size:clamp(11px,1.6vh,15px);
   color:var(--cream);
-  opacity:0.9;
-  margin-top:0.8vh;
-  line-height:1.7;
-  max-width:90%;
+  margin-top:0.4vh;
+  text-align:center;
 }
 
 /* CLOSED OVERLAY */
@@ -218,7 +236,7 @@ body{
   <div class="logo" id="logo-text">The Buff</div>
   <img class="logo-img" id="logo-img" alt="The Buff logo">
   <div class="hours-label">Hours of Operation</div>
-  <div class="hours-value">Sunday – Thursday, 10:00 – 11:30 PM</div>
+  <div class="hours-value" id="hours-value">—</div>
 
   <div class="divider"></div>
 
@@ -253,7 +271,7 @@ body{
 
   <div class="drinks-section">
     <div class="drinks-title">All Drinks $1</div>
-    <div class="drinks-list">Coca-Cola &nbsp;·&nbsp; Coca-Cola Cherry &nbsp;·&nbsp; Dr Pepper &nbsp;·&nbsp; Sweet Tea &nbsp;·&nbsp; Diet Coke &nbsp;·&nbsp; Powerade</div>
+    <div class="drinks-pictures" id="drinks-pictures"></div>
   </div>
 
 </div>
@@ -279,9 +297,63 @@ let menu = [];
 let waittimeSettings = {};
 let openOrderCount = 0;
 let doneOrderCount = 0;
+let drinkPictures = {};
 
 function escapeHtml(str) {
   return String(str||'').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+
+// ── Hours of Operation — pulled live from the same per-day schedule set in admin.html's Wait Time tab ──
+const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+const DAY_ABBR = {Sunday:'Sun',Monday:'Mon',Tuesday:'Tue',Wednesday:'Wed',Thursday:'Thu',Friday:'Fri',Saturday:'Sat'};
+
+function formatTime12(hhmm) {
+  const parts = (hhmm || '00:00').split(':').map(Number);
+  const h = parts[0] || 0, m = parts[1] || 0;
+  const period = h >= 12 ? 'PM' : 'AM';
+  let h12 = h % 12; if (h12 === 0) h12 = 12;
+  return `${h12}:${String(m).padStart(2,'0')} ${period}`;
+}
+
+function computeHoursSummary(d) {
+  const days = DAYS.map(day => {
+    const h = (d && d['hours_' + day]) || {};
+    return { day, enabled: h.enabled === true, open: h.open || '10:00', close: h.close || '22:00' };
+  });
+
+  const groups = [];
+  days.forEach(entry => {
+    const sig = entry.enabled ? `${entry.open}-${entry.close}` : 'closed';
+    const last = groups[groups.length - 1];
+    if (last && last.sig === sig) last.days.push(entry.day);
+    else groups.push({ sig, enabled: entry.enabled, open: entry.open, close: entry.close, days: [entry.day] });
+  });
+
+  const openGroups = groups.filter(g => g.enabled);
+  if (!openGroups.length) return 'Closed';
+
+  return openGroups.map(g => {
+    const dayLabel = g.days.length > 1
+      ? `${DAY_ABBR[g.days[0]]}–${DAY_ABBR[g.days[g.days.length - 1]]}`
+      : DAY_ABBR[g.days[0]];
+    return `${dayLabel}: ${formatTime12(g.open)} – ${formatTime12(g.close)}`;
+  }).join('<br>');
+}
+
+// ── Drink pictures — each is linked to a real menu item's id and follows that item's own availability toggle ──
+function renderDrinkPictures() {
+  const el = document.getElementById('drinks-pictures');
+  if (!el) return;
+  el.innerHTML = '';
+  Object.values(drinkPictures).forEach(dp => {
+    let foundItem = null;
+    menu.forEach(cat => (cat.items || []).forEach(it => { if (it.id === dp.itemId) foundItem = it; }));
+    if (!foundItem || foundItem.unavailable === true) return; // hidden if item was deleted or toggled off
+    const card = document.createElement('div');
+    card.className = 'drink-pic-card';
+    card.innerHTML = `<img src="${dp.image}" alt="${escapeHtml(foundItem.name)}"><div class="drink-pic-name">${escapeHtml(foundItem.name)}</div>`;
+    el.appendChild(card);
+  });
 }
 
 // Only items currently toggled AVAILABLE (Inventory tab) are shown here — this list updates instantly.
@@ -314,6 +386,9 @@ function updateWaitDisplay() {
   document.getElementById('closed-overlay').className = 'closed-overlay' + (closed ? ' show' : '');
   if (d.closedMsg) document.getElementById('closed-msg').textContent = d.closedMsg;
 
+  const hoursEl = document.getElementById('hours-value');
+  if (hoursEl) hoursEl.innerHTML = computeHoursSummary(d);
+
   const defaultMpo = parseFloat(d.minsPerOrder) || 2;
   let effectiveMpo = defaultMpo;
   if (d.activeStaffMpo) effectiveMpo = parseFloat(d.activeStaffMpo);
@@ -345,6 +420,12 @@ function updateWaitDisplay() {
 onValue(ref(db, 'menu'), snap => {
   menu = snap.val() ? Object.values(snap.val()) : [];
   renderMenuList();
+  renderDrinkPictures();
+});
+
+onValue(ref(db, 'drinkPictures'), snap => {
+  drinkPictures = snap.val() || {};
+  renderDrinkPictures();
 });
 
 // Custom uploaded logo (admin's Lounge Display tab) — falls back to the script text logo if none is set
