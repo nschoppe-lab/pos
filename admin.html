@@ -753,14 +753,20 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
       </div>
     </div>
     <div class="asec" style="border-color:#3b82f644;background:#0e1a2a">
-      <div class="asec-title" style="color:#3b82f6">🧪 Testing Override (Admin Only)</div>
+      <div class="asec-title" style="color:#3b82f6">🧪 Testing Overrides (Admin Only)</div>
       <div style="font-size:12px;color:#888;margin-bottom:12px">
-        Forces Delivery to be selectable on the order screen regardless of day or time, so you can test the full delivery flow anytime. This does <strong style="color:#ccc">not</strong> change anything customers see — the order screen still always reads "Mon, Wed & Thu, 7–8 PM ET." Turn this off when you're done testing so the real schedule applies again.
+        Forces Delivery and/or Pre-Order to be selectable on the order screen regardless of day or time, so you can test either flow anytime. Neither changes anything customers see — the order screen still always reads the same normal availability text. Turn these off when you're done testing so the real schedules apply again.
       </div>
-      <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
-        <span style="font-size:13px;font-weight:600" id="delivery-override-label">Off</span>
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:12px">
+        <span style="font-size:13px;font-weight:600;min-width:230px" id="delivery-override-label">Delivery override: Off</span>
         <div onclick="toggleDeliveryTestOverride()" id="delivery-override-switch" style="width:44px;height:24px;border-radius:12px;background:#444;position:relative;cursor:pointer;transition:background 0.2s">
           <div id="delivery-override-knob" style="width:20px;height:20px;border-radius:50%;background:#fff;position:absolute;top:2px;left:2px;transition:left 0.2s"></div>
+        </div>
+      </label>
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+        <span style="font-size:13px;font-weight:600;min-width:230px" id="preorder-override-label">Pre-Order override: Off</span>
+        <div onclick="togglePreorderTestOverride()" id="preorder-override-switch" style="width:44px;height:24px;border-radius:12px;background:#444;position:relative;cursor:pointer;transition:background 0.2s">
+          <div id="preorder-override-knob" style="width:20px;height:20px;border-radius:50%;background:#fff;position:absolute;top:2px;left:2px;transition:left 0.2s"></div>
         </div>
       </label>
     </div>
@@ -1461,12 +1467,26 @@ window.renderDeliveryOverrideUI = function() {
   const label = document.getElementById('delivery-override-label');
   if (sw) sw.style.background = on ? '#22c55e' : '#444';
   if (knob) knob.style.left = on ? '22px' : '2px';
-  if (label) { label.textContent = on ? 'On — delivery forced available for testing' : 'Off'; label.style.color = on ? '#22c55e' : '#ccc'; }
+  if (label) { label.textContent = 'Delivery override: ' + (on ? 'On — forced available' : 'Off'); label.style.color = on ? '#22c55e' : '#ccc'; }
+
+  const preOn = deliverySettingsData.preorderTestOverride === true;
+  const preSw = document.getElementById('preorder-override-switch');
+  const preKnob = document.getElementById('preorder-override-knob');
+  const preLabel = document.getElementById('preorder-override-label');
+  if (preSw) preSw.style.background = preOn ? '#22c55e' : '#444';
+  if (preKnob) preKnob.style.left = preOn ? '22px' : '2px';
+  if (preLabel) { preLabel.textContent = 'Pre-Order override: ' + (preOn ? 'On — forced available' : 'Off'); preLabel.style.color = preOn ? '#22c55e' : '#ccc'; }
 }
 
 window.toggleDeliveryTestOverride = async function() {
   const newVal = !(deliverySettingsData.testOverride === true);
   try { await update(ref(db, 'deliverySettings'), { testOverride: newVal }); }
+  catch(e) { alert('Error: ' + e.message); }
+}
+
+window.togglePreorderTestOverride = async function() {
+  const newVal = !(deliverySettingsData.preorderTestOverride === true);
+  try { await update(ref(db, 'deliverySettings'), { preorderTestOverride: newVal }); }
   catch(e) { alert('Error: ' + e.message); }
 }
 

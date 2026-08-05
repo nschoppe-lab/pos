@@ -239,6 +239,7 @@ let customMilestones = {};
 let deliveryLocations = {};
 let deliveryOn = false, preorderOn = false;
 let deliveryTestOverride = false;
+let preorderTestOverride = false;
 let custItem = null, custSelections = {};
 
 // Apply branding from Firebase
@@ -440,6 +441,7 @@ onValue(ref(db, 'deliveryLocations'), snap => {
 onValue(ref(db, 'deliverySettings'), snap => {
   const d = snap.val() || {};
   deliveryTestOverride = d.testOverride === true;
+  preorderTestOverride = d.preorderTestOverride === true;
   if (typeof refreshOrderOptionAvailability === 'function') refreshOrderOptionAvailability();
 });
 
@@ -480,6 +482,7 @@ function isDeliveryWindowOpen() {
 }
 
 function isPreorderWindowOpen() {
+  if (preorderTestOverride) return true; // admin testing override — bypasses the schedule/open-store check only, display text is unaffected
   const p = getEasternParts();
   const storeOpen = !(waittimeSnap && waittimeSnap.closed === true);
   return storeOpen && p.hour === 19;
