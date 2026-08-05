@@ -184,6 +184,21 @@ body{
   margin-top:calc(var(--vh) * 0.2);
 }
 
+/* ACTIVE PROMO CODES (only rendered when at least one non-single-use coupon exists) */
+.promo-title{
+  font-family:'Baloo 2',sans-serif;
+  font-weight:800;
+  font-size:clamp(20px,calc(var(--vh) * 3.6),34px);
+  color:var(--gold-bright);
+  margin-bottom:calc(var(--vh) * 0.6);
+}
+.promo-item{
+  font-size:clamp(16px,calc(var(--vh) * 2.6),26px);
+  color:var(--cream);
+  margin-bottom:calc(var(--vh) * 0.3);
+}
+.promo-code{color:var(--gold-bright);font-weight:700}
+
 /* CUSTOMIZE */
 .customize-title{
   font-family:'Baloo 2',sans-serif;
@@ -284,6 +299,11 @@ body{
     <div class="wait-stats" id="wait-stats"></div>
   </div>
 
+  <div id="promo-wrap" style="display:none;width:100%">
+    <div class="divider"></div>
+    <div class="promo-section" id="promo-section"></div>
+  </div>
+
   <div class="divider"></div>
 
   <div class="menu-section" id="menu-list"></div>
@@ -343,6 +363,7 @@ let drinkPictures = {};
 const DEFAULT_CUSTOMIZE_OPTIONS = ['Buffalo Sauce','Ranch','Hot Honey','BBQ Sauce','Bacon','Extra Cheese'];
 const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 let specials = {};
+let coupons = {};
 
 function renderCustomizeOptions(options) {
   const el = document.getElementById('customize-list');
@@ -374,6 +395,26 @@ function renderSpecials() {
         </div>
         ${s.desc ? `<div class="special-desc">${escapeHtml(s.desc)}</div>` : ''}
       </div>`).join('');
+}
+
+// Only shows up if at least one active, non-single-use coupon exists
+function renderPromos() {
+  const wrap = document.getElementById('promo-wrap');
+  const container = document.getElementById('promo-section');
+  if (!wrap || !container) return;
+  const active = Object.values(coupons).filter(c => c && !c.singleUse);
+  if (!active.length) {
+    wrap.style.display = 'none';
+    container.innerHTML = '';
+    return;
+  }
+  wrap.style.display = 'block';
+  container.innerHTML = `<div class="promo-title">🎉 Active Promo Codes</div>` +
+    active.map(c => {
+      const reward = c.type === 'percent' ? `${c.value}% off` : `$${parseFloat(c.value).toFixed(2)} off`;
+      const min = c.minOrder ? ` (min $${parseFloat(c.minOrder).toFixed(2)})` : '';
+      return `<div class="promo-item"><span class="promo-code">${escapeHtml(c.code)}</span> — ${reward}${min}</div>`;
+    }).join('');
 }
 
 function escapeHtml(str) {
@@ -469,6 +510,11 @@ onValue(ref(db, 'specials'), snap => {
   renderSpecials();
 });
 setInterval(renderSpecials, 60000); // catches the day rolling over past midnight
+
+onValue(ref(db, 'coupons'), snap => {
+  coupons = snap.val() || {};
+  renderPromos();
+});
 
 onValue(ref(db, 'menu'), snap => {
   menu = snap.val() ? Object.values(snap.val()) : [];

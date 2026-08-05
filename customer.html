@@ -38,6 +38,10 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 .cust-form textarea:focus{outline:none;border-color:#ff6b35}
 .cust-form textarea::placeholder{color:#555}
 .disc-row{display:flex;gap:6px;margin-top:8px}
+.promo-banner{background:#1f1a0e;border:1px solid #f59e0b44;border-radius:8px;padding:10px 12px;margin-top:8px}
+.promo-banner-title{font-size:11px;font-weight:700;color:#f59e0b;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px}
+.promo-item{font-size:12px;color:#ccc;padding:2px 0}
+.promo-code{color:#f59e0b;font-weight:700}
 .disc-row input{flex:1;background:#1a1a1a;border:1px solid #333;border-radius:6px;padding:8px 10px;font-size:13px;color:#fff;text-transform:uppercase}
 .disc-row input::placeholder{text-transform:none;color:#555}
 .disc-row input:focus{outline:none;border-color:#ff6b35}
@@ -146,6 +150,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
       <input type="email" id="cust-email" placeholder="e.g. youremail@gmail.com">
       <label>Comments / Special Requests (optional)</label>
       <textarea id="cust-comments" placeholder="e.g. No onions, extra sauce, allergy info..."></textarea>
+      <div class="promo-banner" id="promo-banner" style="display:none"></div>
       <label>Discount Code (optional)</label>
       <div class="disc-row">
         <input type="text" id="disc-code" placeholder="Enter code" oninput="this.value=this.value.toUpperCase()">
@@ -293,7 +298,22 @@ onValue(ref(db, 'menu'), snap => {
 
 onValue(ref(db, 'coupons'), snap => {
   coupons = snap.val() ? Object.entries(snap.val()).map(([k,v]) => ({fbKey:k,...v})) : [];
+  renderPromoBanner();
 });
+
+function renderPromoBanner() {
+  const el = document.getElementById('promo-banner');
+  if (!el) return;
+  const active = coupons.filter(c => !c.singleUse);
+  if (!active.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = 'block';
+  el.innerHTML = '<div class="promo-banner-title">🎉 Active Promo Codes</div>' +
+    active.map(c => {
+      const reward = c.type === 'percent' ? `${c.value}% off` : `$${parseFloat(c.value).toFixed(2)} off`;
+      const min = c.minOrder ? ` (min $${parseFloat(c.minOrder).toFixed(2)})` : '';
+      return `<div class="promo-item"><span class="promo-code">${escapeHtmlAttr(c.code)}</span> — ${reward}${min}</div>`;
+    }).join('');
+}
 
 // Listen to open/closed status + wait time
 let currentWaitTime = '';
