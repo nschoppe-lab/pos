@@ -64,7 +64,7 @@ body{
   align-items:center;
   justify-content:flex-start;
   text-align:center;
-  padding:calc(var(--vh) * 3) calc(var(--vw) * 5) calc(var(--vh) * 2.5);
+  padding:calc(var(--vh) * 1.5) calc(var(--vw) * 2) calc(var(--vh) * 1.5);
   overflow-y:auto;
 }
 
@@ -100,7 +100,7 @@ body{
   width:64%;
   height:1px;
   background:linear-gradient(90deg,transparent,var(--gold),transparent);
-  margin:calc(var(--vh) * 2.2) 0;
+  margin:calc(var(--vh) * 0.9) 0;
   flex-shrink:0;
 }
 
@@ -148,12 +148,12 @@ body{
 .menu-cat-label:first-child{margin-top:0}
 .menu-row{
   display:flex;
-  justify-content:center;
+  justify-content:space-between;
   align-items:baseline;
-  gap:0.6em;
-  width:100%;
-  font-size:clamp(17px,calc(var(--vh) * 2.7),27px);
-  margin:calc(var(--vh) * 0.15) 0;
+  width:96%;
+  max-width:1850px;
+  font-size:clamp(22px,calc(var(--vh) * 3.6),40px);
+  margin:calc(var(--vh) * 0.3) auto;
 }
 .menu-row .mname{color:var(--cream)}
 .menu-row .mprice{color:var(--cream);font-weight:600}
@@ -171,12 +171,6 @@ body{
   font-size:clamp(22px,calc(var(--vh) * 4),38px);
   color:var(--gold-bright);
   line-height:1.05;
-}
-.customize-brace{
-  font-size:clamp(20px,calc(var(--vh) * 3.4),32px);
-  color:var(--gold);
-  margin:calc(var(--vh) * 0.6) 0;
-  line-height:1;
 }
 .customize-list{
   list-style:none;
@@ -199,26 +193,28 @@ body{
 }
 .drinks-pictures{
   display:flex;
-  flex-wrap:wrap;
+  flex-wrap:nowrap;
   align-items:flex-start;
-  justify-content:center;
-  gap:calc(var(--vh) * 0.6) calc(var(--vw) * 1);
+  justify-content:space-between;
+  gap:calc(var(--vw) * 0.6);
   margin-top:calc(var(--vh) * 1.2);
-  width:100%;
+  width:97%;
+  max-width:1870px;
 }
 .drink-pic-card{
   display:flex;
   flex-direction:column;
   align-items:center;
-  width:calc(var(--vh) * 12);
+  flex:1 1 0;
+  min-width:0;
 }
 .drink-pic-card img{
   width:100%;
-  height:calc(var(--vh) * 12);
+  height:calc(var(--vh) * 15);
   object-fit:contain;
 }
 .drink-pic-name{
-  font-size:clamp(11px,calc(var(--vh) * 1.6),15px);
+  font-size:clamp(14px,calc(var(--vh) * 2.2),22px);
   color:var(--cream);
   margin-top:calc(var(--vh) * 0.4);
   text-align:center;
@@ -285,7 +281,6 @@ body{
 
   <div class="customize-section">
     <div class="customize-title">Customize<br>your food!</div>
-    <div class="customize-brace">⏝</div>
     <ul class="customize-list" id="customize-list">
       <li>Buffalo Sauce</li>
       <li>Ranch</li>
