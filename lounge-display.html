@@ -40,6 +40,12 @@ body{
   color:var(--gold-bright);
   line-height:1;
 }
+.logo-img{
+  max-width:70vw;
+  max-height:12vh;
+  object-fit:contain;
+  display:none;
+}
 .hours-label{
   font-size:clamp(10px,1.5vh,14px);
   letter-spacing:3px;
@@ -209,7 +215,8 @@ body{
 
 <div class="display">
 
-  <div class="logo">The Buff</div>
+  <div class="logo" id="logo-text">The Buff</div>
+  <img class="logo-img" id="logo-img" alt="The Buff logo">
   <div class="hours-label">Hours of Operation</div>
   <div class="hours-value">Sunday – Thursday, 10:00 – 11:30 PM</div>
 
@@ -338,6 +345,21 @@ function updateWaitDisplay() {
 onValue(ref(db, 'menu'), snap => {
   menu = snap.val() ? Object.values(snap.val()) : [];
   renderMenuList();
+});
+
+// Custom uploaded logo (admin's Lounge Display tab) — falls back to the script text logo if none is set
+onValue(ref(db, 'loungeDisplay'), snap => {
+  const d = snap.val() || {};
+  const textEl = document.getElementById('logo-text');
+  const imgEl = document.getElementById('logo-img');
+  if (d.logo) {
+    imgEl.src = d.logo;
+    imgEl.style.display = 'block';
+    textEl.style.display = 'none';
+  } else {
+    imgEl.style.display = 'none';
+    textEl.style.display = 'block';
+  }
 });
 
 onValue(ref(db, 'waittime'), snap => {

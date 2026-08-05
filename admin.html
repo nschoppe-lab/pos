@@ -145,6 +145,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
       <button class="tb" onclick="switchTab('specials')">Specials</button>
       <button class="tb" onclick="switchTab('ratings')" style="border:1px solid #f59e0b44;color:#f59e0b">⭐ Rate My Buff</button>
       <button class="tb" onclick="switchTab('delivery')">🚚 Delivery</button>
+      <button class="tb" onclick="switchTab('lounge')">🖥️ Lounge Display</button>
     </div>
     <button class="logout-btn" onclick="doLogout()">Sign out</button>
   </div>
@@ -773,6 +774,25 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
   </div></div>
 </div>
 
+<!-- LOUNGE DISPLAY TAB -->
+<div class="tab-content" id="tab-lounge">
+  <div class="admin-scroll"><div class="admin-wrap">
+    <div class="admin-title">🖥️ Lounge Display</div>
+    <div class="admin-sub">Controls for the vertical lounge-display.html screen (menu, wait time, and customize/drinks info update there automatically — this tab is just for the logo at the top).</div>
+    <div class="asec">
+      <div class="asec-title">Logo</div>
+      <div style="font-size:12px;color:#888;margin-bottom:12px">Upload an image to replace the script "The Buff" text at the top of the Lounge Display screen. Leave empty to keep the default script logo. Recommended: a wide, transparent-background image under 500KB.</div>
+      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+        <div id="lounge-logo-preview" style="width:160px;height:90px;background:#1a1a1a;border:1.5px dashed #444;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#555;font-size:12px;overflow:hidden">No logo</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <input type="file" id="lounge-logo-file" accept="image/*" onchange="handleLoungeLogoUpload(event)">
+          <button onclick="removeLoungeLogo()" style="background:#2a1010;border:1px solid #7f1d1d;color:#ef4444;border-radius:6px;padding:6px 14px;font-size:12px;cursor:pointer;width:fit-content">Remove Logo</button>
+        </div>
+      </div>
+    </div>
+  </div></div>
+</div>
+
 <div class="modal-bg" id="custom-admin-modal" style="display:none" onclick="if(event.target===this)closeCustomizeAdmin()">
   <div class="modal" style="width:460px;max-width:95vw">
     <h3 id="ca-title" style="margin-bottom:4px"></h3>
@@ -819,7 +839,7 @@ emailjs.init("yoxsvEb1uuAA4Ytcd");
 const auth = getAuth(app);
 const db = getDatabase(app);
 
-let orders = {}, menu = [], coupons = [], staffList = [], loyaltyRecords = {}, loyaltyMilestonesData = {}, waittimeData = {}, brandingData = {}, expensesData = {}, rewardStaffData = {}, specialsData = {}, ratingsData = {}, rmbWorkersData = {}, deliveryLocationsData = {}, deliverySettingsData = {};
+let orders = {}, menu = [], coupons = [], staffList = [], loyaltyRecords = {}, loyaltyMilestonesData = {}, waittimeData = {}, brandingData = {}, expensesData = {}, rewardStaffData = {}, specialsData = {}, ratingsData = {}, rmbWorkersData = {}, deliveryLocationsData = {}, deliverySettingsData = {}, loungeDisplayData = {};
 let tapTimers = {}, currentTab = 'orders';
 
 onAuthStateChanged(auth, async user => {
@@ -872,6 +892,7 @@ function showAdmin() {
   onValue(ref(db,'loyaltyMilestones'), snap => { loyaltyMilestonesData = snap.val()||{}; if(currentTab==='loyalty') renderLoyaltyMilestones(); });
   onValue(ref(db,'deliveryLocations'), snap => { deliveryLocationsData = snap.val()||{}; if(currentTab==='delivery') renderDeliveryLocations(); });
   onValue(ref(db,'deliverySettings'), snap => { deliverySettingsData = snap.val()||{}; if(currentTab==='delivery') renderDeliveryOverrideUI(); });
+  onValue(ref(db,'loungeDisplay'), snap => { loungeDisplayData = snap.val()||{}; if(currentTab==='lounge') renderLoungeLogoPreview(); });
   onValue(ref(db,'waittime'), snap => { waittimeData = snap.val()||{};
     if(currentTab==='waittime') updateWaitTimeUI(); });
   onValue(ref(db,'branding'), snap => { brandingData = snap.val()||{}; applyBrandingToPage(brandingData); if(currentTab==='branding') initBranding(); });
@@ -886,13 +907,14 @@ window.switchTab = function(t) {
   currentTab = t;
   document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
   document.getElementById('tab-'+t).classList.add('active');
-  document.querySelectorAll('.tb').forEach((b,i) => b.classList.toggle('active', ['orders','history','menu','coupons','staff','inventory','loyalty','waittime','finance','branding','specials','ratings','delivery'][i]===t));
+  document.querySelectorAll('.tb').forEach((b,i) => b.classList.toggle('active', ['orders','history','menu','coupons','staff','inventory','loyalty','waittime','finance','branding','specials','ratings','delivery','lounge'][i]===t));
   if (t==='specials') renderSpecialsAdmin();
   if (t==='staff') renderRewardStaff();
   if (t==='ratings') initRmbAdmin();
   if (t==='inventory') renderInventory();
   if (t==='loyalty') { renderLoyaltyAdmin(); renderLoyaltyMilestones(); }
   if (t==='delivery') { renderDeliveryLocations(); renderDeliveryOverrideUI(); }
+  if (t==='lounge') renderLoungeLogoPreview();
   if (t==='waittime') initWaitTime();
   if (t==='finance') renderFinance();
   if (t==='branding') initBranding();
@@ -2115,6 +2137,41 @@ window.removeLogo = async function() {
   if (prevLogo) prevLogo.style.display = 'none';
   await update(ref(db,'branding'), { logo: '' });
   alert('Logo removed.');
+}
+
+// LOUNGE DISPLAY LOGO
+window.renderLoungeLogoPreview = function() {
+  const preview = document.getElementById('lounge-logo-preview');
+  if (!preview) return;
+  if (loungeDisplayData.logo) {
+    preview.innerHTML = `<img src="${loungeDisplayData.logo}" style="width:100%;height:100%;object-fit:contain">`;
+  } else {
+    preview.innerHTML = 'No logo';
+  }
+}
+
+window.handleLoungeLogoUpload = function(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  if (file.size > 500000) { alert('Image too large — please use an image under 500KB.'); event.target.value = ''; return; }
+  const reader = new FileReader();
+  reader.onload = async function(e) {
+    const dataUrl = e.target.result;
+    loungeDisplayData.logo = dataUrl;
+    renderLoungeLogoPreview();
+    try {
+      await update(ref(db, 'loungeDisplay'), { logo: dataUrl });
+      alert('✅ Lounge Display logo saved!');
+    } catch(err) { alert('Error saving logo: ' + err.message); }
+  };
+  reader.readAsDataURL(file);
+}
+
+window.removeLoungeLogo = async function() {
+  loungeDisplayData.logo = '';
+  renderLoungeLogoPreview();
+  try { await update(ref(db, 'loungeDisplay'), { logo: '' }); alert('Lounge Display logo removed — back to the script text logo.'); }
+  catch(e) { alert('Error: ' + e.message); }
 }
 
 
