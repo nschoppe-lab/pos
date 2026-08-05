@@ -164,6 +164,40 @@ body{
   font-style:italic;
 }
 
+/* TODAY'S SPECIAL (only rendered when at least one is active for today) */
+.special-title{
+  font-family:'Baloo 2',sans-serif;
+  font-weight:800;
+  font-size:clamp(20px,calc(var(--vh) * 3.6),34px);
+  color:var(--gold-bright);
+  margin-bottom:calc(var(--vh) * 0.6);
+}
+.special-item{margin-bottom:calc(var(--vh) * 0.8)}
+.special-item:last-child{margin-bottom:0}
+.special-name-row{
+  display:flex;
+  justify-content:center;
+  align-items:baseline;
+  gap:0.6em;
+  font-size:clamp(18px,calc(var(--vh) * 3),30px);
+}
+.special-name{color:var(--cream);font-weight:600}
+.special-price{color:var(--cream);font-weight:700}
+.special-tag{
+  font-size:clamp(10px,calc(var(--vh) * 1.4),14px);
+  font-weight:700;
+  background:#2a1f0e;
+  color:var(--gold);
+  padding:2px 10px;
+  border-radius:12px;
+}
+.special-desc{
+  font-size:clamp(12px,calc(var(--vh) * 1.8),18px);
+  color:var(--cream);
+  opacity:0.75;
+  margin-top:calc(var(--vh) * 0.2);
+}
+
 /* CUSTOMIZE */
 .customize-title{
   font-family:'Baloo 2',sans-serif;
@@ -185,12 +219,6 @@ body{
 .customize-list li::before{content:'•';position:absolute;left:0;color:var(--cream)}
 
 /* DRINKS */
-.drinks-title{
-  font-family:'Baloo 2',sans-serif;
-  font-weight:800;
-  font-size:clamp(20px,calc(var(--vh) * 3.8),34px);
-  color:var(--gold-bright);
-}
 .drinks-pictures{
   display:flex;
   flex-wrap:nowrap;
@@ -277,6 +305,11 @@ body{
 
   <div class="menu-section" id="menu-list"></div>
 
+  <div id="special-wrap" style="display:none;width:100%">
+    <div class="divider"></div>
+    <div class="special-section" id="special-section"></div>
+  </div>
+
   <div class="divider"></div>
 
   <div class="customize-section">
@@ -294,7 +327,6 @@ body{
   <div class="divider"></div>
 
   <div class="drinks-section">
-    <div class="drinks-title">All Drinks $1</div>
     <div class="drinks-pictures" id="drinks-pictures"></div>
   </div>
 
@@ -326,12 +358,39 @@ let doneOrderCount = 0;
 let drinkPictures = {};
 
 const DEFAULT_CUSTOMIZE_OPTIONS = ['Buffalo Sauce','Ranch','Hot Honey','BBQ Sauce','Bacon','Extra Cheese'];
+const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+let specials = {};
 
 function renderCustomizeOptions(options) {
   const el = document.getElementById('customize-list');
   if (!el) return;
   const list = (options && options.length) ? options : DEFAULT_CUSTOMIZE_OPTIONS;
   el.innerHTML = list.map(name => `<li>${escapeHtml(name)}</li>`).join('');
+}
+
+// Only shows up at all if at least one special is active for today (specific day match or "Daily")
+function renderSpecials() {
+  const wrap = document.getElementById('special-wrap');
+  const container = document.getElementById('special-section');
+  if (!wrap || !container) return;
+  const today = DAY_NAMES[new Date().getDay()];
+  const active = Object.values(specials).filter(s => s && s.active !== false && (s.day === today || s.day === 'Daily'));
+  if (!active.length) {
+    wrap.style.display = 'none';
+    container.innerHTML = '';
+    return;
+  }
+  wrap.style.display = 'block';
+  container.innerHTML = `<div class="special-title">⭐ Today's Special${active.length > 1 ? 's' : ''}</div>` +
+    active.map(s => `
+      <div class="special-item">
+        <div class="special-name-row">
+          <span class="special-name">${escapeHtml(s.name)}</span>
+          ${s.tag ? `<span class="special-tag">${escapeHtml(s.tag)}</span>` : ''}
+          <span class="special-price">$${parseFloat(s.price || 0).toFixed(2)}</span>
+        </div>
+        ${s.desc ? `<div class="special-desc">${escapeHtml(s.desc)}</div>` : ''}
+      </div>`).join('');
 }
 
 function escapeHtml(str) {
@@ -457,6 +516,12 @@ function updateWaitDisplay() {
   document.getElementById('wait-stats').textContent =
     `${openOrderCount} order${openOrderCount !== 1 ? 's' : ''} ahead  ·  ${doneOrderCount} completed today`;
 }
+
+onValue(ref(db, 'specials'), snap => {
+  specials = snap.val() || {};
+  renderSpecials();
+});
+setInterval(renderSpecials, 60000); // catches the day rolling over past midnight
 
 onValue(ref(db, 'menu'), snap => {
   menu = snap.val() ? Object.values(snap.val()) : [];
