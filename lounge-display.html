@@ -81,20 +81,6 @@ body{
   object-fit:contain;
   display:none;
 }
-.hours-label{
-  font-size:clamp(10px,calc(var(--vh) * 1.5),14px);
-  letter-spacing:3px;
-  text-transform:uppercase;
-  color:var(--cream);
-  opacity:0.75;
-  margin-top:calc(var(--vh) * 1.4);
-}
-.hours-value{
-  font-weight:600;
-  font-size:clamp(14px,calc(var(--vh) * 2.1),20px);
-  color:var(--cream);
-  margin-top:calc(var(--vh) * 0.3);
-}
 
 .divider{
   width:64%;
@@ -212,7 +198,7 @@ body{
   flex-direction:column;
   align-items:flex-start;
   gap:calc(var(--vh) * 0.35);
-  font-size:clamp(14px,calc(var(--vh) * 2.1),19px);
+  font-size:clamp(22px,calc(var(--vh) * 3.6),40px);
   color:var(--cream);
 }
 .customize-list li{position:relative;padding-left:1.15em}
@@ -289,9 +275,6 @@ body{
 
   <div class="logo" id="logo-text">The Buff</div>
   <img class="logo-img" id="logo-img" alt="The Buff logo">
-  <div class="hours-label">Hours of Operation</div>
-  <div class="hours-value" id="hours-value">—</div>
-
   <div class="divider"></div>
 
   <div class="wait-section">
@@ -397,43 +380,6 @@ function escapeHtml(str) {
   return String(str||'').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 }
 
-// ── Hours of Operation — pulled live from the same per-day schedule set in admin.html's Wait Time tab ──
-const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-const DAY_ABBR = {Sunday:'Sun',Monday:'Mon',Tuesday:'Tue',Wednesday:'Wed',Thursday:'Thu',Friday:'Fri',Saturday:'Sat'};
-
-function formatTime12(hhmm) {
-  const parts = (hhmm || '00:00').split(':').map(Number);
-  const h = parts[0] || 0, m = parts[1] || 0;
-  const period = h >= 12 ? 'PM' : 'AM';
-  let h12 = h % 12; if (h12 === 0) h12 = 12;
-  return `${h12}:${String(m).padStart(2,'0')} ${period}`;
-}
-
-function computeHoursSummary(d) {
-  const days = DAYS.map(day => {
-    const h = (d && d['hours_' + day]) || {};
-    return { day, enabled: h.enabled === true, open: h.open || '10:00', close: h.close || '22:00' };
-  });
-
-  const groups = [];
-  days.forEach(entry => {
-    const sig = entry.enabled ? `${entry.open}-${entry.close}` : 'closed';
-    const last = groups[groups.length - 1];
-    if (last && last.sig === sig) last.days.push(entry.day);
-    else groups.push({ sig, enabled: entry.enabled, open: entry.open, close: entry.close, days: [entry.day] });
-  });
-
-  const openGroups = groups.filter(g => g.enabled);
-  if (!openGroups.length) return 'Closed';
-
-  return openGroups.map(g => {
-    const dayLabel = g.days.length > 1
-      ? `${DAY_ABBR[g.days[0]]}–${DAY_ABBR[g.days[g.days.length - 1]]}`
-      : DAY_ABBR[g.days[0]];
-    return `${dayLabel}: ${formatTime12(g.open)} – ${formatTime12(g.close)}`;
-  }).join('<br>');
-}
-
 // ── Drink pictures — each is linked to a real menu item's id and follows that item's own availability toggle.
 // Display order always matches that item's actual position in the Menu tab (category order, then item order within it).
 function renderDrinkPictures() {
@@ -493,9 +439,6 @@ function updateWaitDisplay() {
   const closed = d.closed === true;
   document.getElementById('closed-overlay').className = 'closed-overlay' + (closed ? ' show' : '');
   if (d.closedMsg) document.getElementById('closed-msg').textContent = d.closedMsg;
-
-  const hoursEl = document.getElementById('hours-value');
-  if (hoursEl) hoursEl.innerHTML = computeHoursSummary(d);
 
   const defaultMpo = parseFloat(d.minsPerOrder) || 2;
   let effectiveMpo = defaultMpo;
