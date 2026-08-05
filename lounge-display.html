@@ -286,7 +286,7 @@ body{
   <div class="customize-section">
     <div class="customize-title">Customize<br>your food!</div>
     <div class="customize-brace">⏝</div>
-    <ul class="customize-list">
+    <ul class="customize-list" id="customize-list">
       <li>Buffalo Sauce</li>
       <li>Ranch</li>
       <li>Hot Honey</li>
@@ -329,6 +329,15 @@ let waittimeSettings = {};
 let openOrderCount = 0;
 let doneOrderCount = 0;
 let drinkPictures = {};
+
+const DEFAULT_CUSTOMIZE_OPTIONS = ['Buffalo Sauce','Ranch','Hot Honey','BBQ Sauce','Bacon','Extra Cheese'];
+
+function renderCustomizeOptions(options) {
+  const el = document.getElementById('customize-list');
+  if (!el) return;
+  const list = (options && options.length) ? options : DEFAULT_CUSTOMIZE_OPTIONS;
+  el.innerHTML = list.map(name => `<li>${escapeHtml(name)}</li>`).join('');
+}
 
 function escapeHtml(str) {
   return String(str||'').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
@@ -501,6 +510,7 @@ onValue(ref(db, 'loungeDisplay'), snap => {
     textEl.style.display = 'block';
   }
   applyRotation(parseInt(d.rotation, 10) || 0);
+  renderCustomizeOptions(d.customizeOptions ? Object.values(d.customizeOptions) : null);
 });
 
 onValue(ref(db, 'waittime'), snap => {
