@@ -72,6 +72,9 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
   .pt-items{font-size:13px;margin-bottom:3mm;text-align:left;width:100%}
   .pt-line{padding:1mm 0;border-bottom:1px dashed #000}
   .pt-line:last-child{border-bottom:none}
+  .pt-tag{font-size:10px;font-weight:900}
+  .pt-sauce{font-size:11px;padding:0 0 1mm 3mm;text-align:left}
+  .pt-coupon{font-size:12px;font-weight:700;text-align:left;margin-bottom:2mm}
   .pt-msg-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-top:3mm;margin-bottom:1mm;text-align:left}
   .pt-msg{font-size:12px;text-align:left;padding:2mm;border:1px dashed #000;margin-bottom:3mm;word-break:break-word}
   .pt-paid{font-size:20px;font-weight:900;letter-spacing:2px;border:2px solid #000;display:inline-block;padding:4px 16px;margin-top:2mm}
@@ -333,18 +336,26 @@ function escapeHtml(str) {
 function printPaidTicket(order) {
   const ticket = document.getElementById('print-ticket');
   if (!ticket) return;
-  const itemsHtml = (order.items||[]).map(i => `<div class="pt-line">${escapeHtml(i.qty)}x ${escapeHtml(i.name)}</div>`).join('');
+  const itemsHtml = (order.items||[]).map(i => {
+    const specialTag = i.isSpecial ? ' <span class="pt-tag">★ SPECIAL</span>' : '';
+    const sauceNote = (i.sauces && i.sauces.length) ? `<div class="pt-sauce">🥫 ${escapeHtml(i.sauces.join(', '))}</div>` : '';
+    return `<div class="pt-line">${escapeHtml(i.qty)}x ${escapeHtml(i.name)}${specialTag}</div>${sauceNote}`;
+  }).join('');
   const msgHtml = order.comments
     ? `<div class="pt-msg-label">Message</div><div class="pt-msg">${escapeHtml(order.comments)}</div>`
     : '';
   const deliveryHtml = order.delivery
     ? `<div class="pt-msg-label">🚚 Delivery</div><div class="pt-msg">${escapeHtml(order.deliveryLocation || '—')}${order.deliveryPhone ? '<br>Phone: ' + escapeHtml(order.deliveryPhone) : ''}</div>`
     : '';
+  const couponHtml = order.coupon
+    ? `<div class="pt-coupon">Coupon used: ${escapeHtml(order.coupon)}</div>`
+    : '';
   ticket.innerHTML = `
     <div class="pt-wrap">
       <div class="pt-name">${escapeHtml(order.name)}</div>
       <div class="pt-items">${itemsHtml}</div>
       ${deliveryHtml}
+      ${couponHtml}
       ${msgHtml}
       <div class="pt-paid">PAID</div>
     </div>`;

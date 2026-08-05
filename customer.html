@@ -638,7 +638,7 @@ function renderMenu() {
         '<div class="mi-price">$' + parseFloat(item.price||0).toFixed(2) + '</div>' +
         (item.desc ? '<div style="font-size:10px;color:#888;margin-top:3px">' + item.desc + '</div>' : '') +
         (hasOptions ? '<div class="mi-arrow">Tap to customize ›</div>' : '');
-      el.onclick = () => openCustModal(item);
+      el.onclick = () => openCustModal({...item, isSpecial: true});
       sg.appendChild(el);
     });
     panel.appendChild(sg);
@@ -913,7 +913,7 @@ window.placeOrder = async function() {
 
   const order = {
     name, email, comments,
-    items: cart.map(c => ({ id: c.id, name: c.name, price: c.price, qty: c.qty, customizations: c.customizations || [], sauces: c.sauces || [] })),
+    items: cart.map(c => ({ id: c.id, name: c.name, price: c.price, qty: c.qty, customizations: c.customizations || [], sauces: c.sauces || [], isSpecial: !!c.isSpecial })),
     subtotal: t.sub, discount: t.disc, loyaltyDiscount: t.loyDisc,
     delivery: !!deliveryOn,
     deliveryLocation: deliveryOn ? deliveryLocationVal : null,
