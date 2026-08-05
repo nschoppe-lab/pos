@@ -348,7 +348,7 @@ function printPaidTicket(order) {
     ? `<div class="pt-msg-label">🚚 Delivery</div><div class="pt-msg">${escapeHtml(order.deliveryLocation || '—')}${order.deliveryPhone ? '<br>Phone: ' + escapeHtml(order.deliveryPhone) : ''}</div>`
     : '';
   const couponHtml = order.coupon
-    ? `<div class="pt-coupon">Coupon used: ${escapeHtml(order.coupon)}</div>`
+    ? `<div class="pt-coupon">Coupon used: ${escapeHtml(order.coupon)}${order.discount ? ' (-$' + parseFloat(order.discount).toFixed(2) + ')' : ''}</div>`
     : '';
   ticket.innerHTML = `
     <div class="pt-wrap">
