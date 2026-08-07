@@ -170,6 +170,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
       <button class="tb" onclick="switchTab('ratings')" style="border:1px solid #f59e0b44;color:#f59e0b">⭐ Rate My Buff</button>
       <button class="tb" onclick="switchTab('delivery')">🚚 Delivery</button>
       <button class="tb" onclick="switchTab('lounge')">🖥️ Lounge Display</button>
+      <button class="tb" onclick="switchTab('reports')">📊 Reports</button>
     </div>
     <button class="logout-btn" onclick="doLogout()">Sign out</button>
   </div>
@@ -860,6 +861,37 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
     </div>
   </div></div>
 </div>
+
+<!-- REPORTS TAB -->
+<div class="tab-content" id="tab-reports">
+  <div class="admin-scroll"><div class="admin-wrap">
+    <div class="admin-title">📊 Nightly Reports</div>
+    <div class="admin-sub">A sales summary is generated and emailed automatically 10 minutes after closing time on every night you're scheduled open (per the hours set in the Wait Time tab). This needs either the Kitchen screen or this Admin screen to be open on a device around that time to actually fire — there's no server running in the background, so if nothing is open near closing, the report sends the next time either screen is opened.</div>
+    <div class="asec">
+      <div class="asec-title">Settings</div>
+      <div class="arow">
+        <input type="email" id="report-email-input" placeholder="Send reports to this email">
+        <button class="aadd" onclick="saveReportEmail()">Save</button>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:12px;color:#ccc;cursor:pointer">
+        <input type="checkbox" id="report-enabled-input" onchange="toggleReportsEnabled(this.checked)">
+        Enable automatic nightly reports
+      </label>
+      <button onclick="sendTestReport()" style="margin-top:14px;background:#1a2a3a;border:1px solid #2e75b6;color:#60a5fa;border-radius:6px;padding:8px 16px;font-size:12px;cursor:pointer">Send Test Report Now</button>
+      <div style="font-size:11px;color:#666;margin-top:12px;line-height:1.5">
+        Uses the same EmailJS account as your order-ready emails. You'll need to create a new template in your EmailJS dashboard named exactly <code>template_nightly_report</code>, using these variables:
+        <code>to_email, report_date, total_orders, total_revenue, avg_order, delivery_count, preorder_count, coupons_used, top_items</code>.
+      </div>
+    </div>
+    <div class="asec">
+      <div class="asec-title">Report History</div>
+      <table class="mtable">
+        <thead><tr><th>Date</th><th>Orders</th><th>Revenue</th><th>Status</th><th></th></tr></thead>
+        <tbody id="reports-history-body"></tbody>
+      </table>
+    </div>
+  </div></div>
+</div>
 </div>
 
 <div class="modal-bg" id="custom-admin-modal" style="display:none" onclick="if(event.target===this)closeCustomizeAdmin()">
@@ -908,7 +940,7 @@ emailjs.init("yoxsvEb1uuAA4Ytcd");
 const auth = getAuth(app);
 const db = getDatabase(app);
 
-let orders = {}, menu = [], coupons = [], staffList = [], loyaltyRecords = {}, loyaltyMilestonesData = {}, waittimeData = {}, brandingData = {}, expensesData = {}, rewardStaffData = {}, specialsData = {}, ratingsData = {}, rmbWorkersData = {}, deliveryLocationsData = {}, deliverySettingsData = {}, loungeDisplayData = {}, drinkPicturesData = {}, saucesData = [];
+let orders = {}, menu = [], coupons = [], staffList = [], loyaltyRecords = {}, loyaltyMilestonesData = {}, waittimeData = {}, brandingData = {}, expensesData = {}, rewardStaffData = {}, specialsData = {}, ratingsData = {}, rmbWorkersData = {}, deliveryLocationsData = {}, deliverySettingsData = {}, loungeDisplayData = {}, drinkPicturesData = {}, saucesData = [], reportsConfigData = {}, nightlyReportsData = {};
 let tapTimers = {}, currentTab = 'orders';
 
 onAuthStateChanged(auth, async user => {
@@ -972,13 +1004,19 @@ function showAdmin() {
   onValue(ref(db,'specials'), snap => { specialsData = snap.val()||{}; if(currentTab==='specials') renderSpecialsAdmin(); });
   onValue(ref(db,'ratings'), snap => { ratingsData = snap.val()||{}; if(currentTab==='ratings') renderRmbAdmin(); });
   onValue(ref(db,'rmbWorkers'), snap => { rmbWorkersData = snap.val()||{}; if(currentTab==='ratings') renderRmbAdmin(); });
+  onValue(ref(db,'reportsConfig'), snap => { reportsConfigData = snap.val()||{}; if(currentTab==='reports') renderReportsSettings(); });
+  onValue(ref(db,'nightlyReports'), snap => { nightlyReportsData = snap.val()||{}; if(currentTab==='reports') renderReportsHistory(); });
+  if (!window._reportsInterval) {
+    window._reportsInterval = setInterval(checkNightlyReportTrigger, 30000);
+  }
+  checkNightlyReportTrigger();
 }
 
 window.switchTab = function(t) {
   currentTab = t;
   document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
   document.getElementById('tab-'+t).classList.add('active');
-  document.querySelectorAll('.tb').forEach((b,i) => b.classList.toggle('active', ['orders','history','menu','coupons','staff','inventory','loyalty','waittime','finance','branding','specials','ratings','delivery','lounge'][i]===t));
+  document.querySelectorAll('.tb').forEach((b,i) => b.classList.toggle('active', ['orders','history','menu','coupons','staff','inventory','loyalty','waittime','finance','branding','specials','ratings','delivery','lounge','reports'][i]===t));
   if (t==='menu') renderSauces();
   if (t==='specials') renderSpecialsAdmin();
   if (t==='staff') renderRewardStaff();
@@ -991,6 +1029,7 @@ window.switchTab = function(t) {
   if (t==='finance') renderFinance();
   if (t==='branding') initBranding();
   if (t==='history') renderHistory();
+  if (t==='reports') { renderReportsSettings(); renderReportsHistory(); }
 }
 
 // ORDERS
@@ -2114,6 +2153,11 @@ window.clearCustomMsg = async function() {
 }
 
 function checkAutoOpenClose() {
+  // Redundant safety net: if a kitchen-side "reopen 5 more minutes" has expired and nobody
+  // else caught it, close things back up here too.
+  if (waittimeData.tempReopenUntil && waittimeData.closed === false && waittimeData.tempReopenUntil <= Date.now()) {
+    update(ref(db,'waittime'), { closed:true, manualOverride:false, tempReopenUntil:null }).catch(()=>{});
+  }
   const dayName = DAYS[new Date().getDay()];
   const h       = (waittimeData && waittimeData['hours_' + dayName]) || null;
   const nextEl  = document.getElementById('next-check');
@@ -2135,6 +2179,155 @@ function checkAutoOpenClose() {
     else if (nowM < sh*60+sm) nextEl.textContent = `Auto-opens at ${String(sh).padStart(2,'0')}:${String(sm).padStart(2,'0')}`;
     else nextEl.textContent = 'Closed for today';
   }
+}
+
+// ── NIGHTLY REPORTS ──────────────────────────────────────────────
+function localDateKey(d) {
+  d = d || new Date();
+  const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), day = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
+
+function dayBoundsMs(dateKey) {
+  const [y,m,d] = dateKey.split('-').map(Number);
+  return { start: new Date(y, m-1, d, 0,0,0,0).getTime(), end: new Date(y, m-1, d, 23,59,59,999).getTime() };
+}
+
+async function buildNightlyReportData(dateKey) {
+  const { start, end } = dayBoundsMs(dateKey);
+  const snap = await get(ref(db, 'orders'));
+  const all = snap.val() ? Object.values(snap.val()) : [];
+  const todays = all.filter(o => typeof o.createdAt === 'number' && o.createdAt >= start && o.createdAt <= end);
+  const totalOrders = todays.length;
+  const totalRevenue = Math.round(todays.reduce((s,o) => s + (parseFloat(o.total)||0), 0) * 100) / 100;
+  const avgOrder = totalOrders ? Math.round((totalRevenue / totalOrders) * 100) / 100 : 0;
+  const deliveryCount = todays.filter(o => o.delivery).length;
+  const preorderCount = todays.filter(o => o.preorder).length;
+  const couponsUsedCount = todays.filter(o => o.coupon).length;
+  const itemCounts = {};
+  todays.forEach(o => (o.items||[]).forEach(i => { itemCounts[i.name] = (itemCounts[i.name]||0) + (parseInt(i.qty)||1); }));
+  const topItems = Object.entries(itemCounts).sort((a,b) => b[1]-a[1]).slice(0,10).map(([name,qty]) => ({name,qty}));
+  return { date: dateKey, totalOrders, totalRevenue, avgOrder, deliveryCount, preorderCount, couponsUsedCount, topItems };
+}
+
+async function sendNightlyReport(dateKey) {
+  const existingSnap = await get(ref(db, `nightlyReports/${dateKey}`));
+  if (existingSnap.exists() && existingSnap.val().sent) return; // already sent from elsewhere
+
+  const data = await buildNightlyReportData(dateKey);
+  const cfgSnap = await get(ref(db, 'reportsConfig'));
+  const cfg = cfgSnap.val() || {};
+  const topItemsText = data.topItems.length ? data.topItems.map((it,i) => `${i+1}. ${it.name} — ${it.qty} sold`).join('\n') : 'No items sold';
+
+  let sent = false, errorMsg = null;
+  if (cfg.email && cfg.enabled !== false) {
+    try {
+      await emailjs.send("service_imhcg7n", "template_nightly_report", {
+        to_email: cfg.email,
+        report_date: data.date,
+        total_orders: data.totalOrders,
+        total_revenue: '$' + data.totalRevenue.toFixed(2),
+        avg_order: '$' + data.avgOrder.toFixed(2),
+        delivery_count: data.deliveryCount,
+        preorder_count: data.preorderCount,
+        coupons_used: data.couponsUsedCount,
+        top_items: topItemsText
+      });
+      sent = true;
+    } catch(e) { errorMsg = (e && e.text) || (e && e.message) || 'Email send failed'; console.error('Nightly report email error:', e); }
+  } else {
+    errorMsg = cfg.enabled === false ? 'Nightly reports are disabled' : 'No report email configured';
+  }
+
+  await set(ref(db, `nightlyReports/${dateKey}`), { ...data, sent, emailedTo: cfg.email || null, error: errorMsg, generatedAt: Date.now() });
+}
+
+window.checkNightlyReportTrigger = async function() {
+  try {
+    const dateKey = localDateKey();
+    const dayName = DAYS[new Date().getDay()];
+    const wSnap = await get(ref(db, 'waittime'));
+    const w = wSnap.val() || {};
+    const h = w['hours_' + dayName];
+    if (!h || h.enabled !== true) return; // not scheduled open today
+    const [eh, em] = (h.close || '22:00').split(':').map(Number);
+    const nowM = new Date().getHours()*60 + new Date().getMinutes();
+    if (nowM < eh*60 + em + 10) return; // not 10 minutes past close yet
+    const existingSnap = await get(ref(db, `nightlyReports/${dateKey}`));
+    if (existingSnap.exists() && existingSnap.val().sent) return;
+    await sendNightlyReport(dateKey);
+    if (currentTab === 'reports') renderReportsHistory();
+  } catch(e) { console.error('Nightly report trigger error:', e); }
+}
+
+window.saveReportEmail = async function() {
+  const email = (document.getElementById('report-email-input') || {}).value.trim();
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { alert('Enter a valid email address'); return; }
+  try { await update(ref(db, 'reportsConfig'), { email }); alert('✅ Report email saved!'); }
+  catch(e) { alert('Error: ' + e.message); }
+}
+
+window.toggleReportsEnabled = async function(checked) {
+  try { await update(ref(db, 'reportsConfig'), { enabled: checked }); }
+  catch(e) { alert('Error: ' + e.message); }
+}
+
+window.sendTestReport = async function() {
+  const cfg = reportsConfigData || {};
+  if (!cfg.email) { alert('Save a report email first.'); return; }
+  const dateKey = localDateKey();
+  const data = await buildNightlyReportData(dateKey);
+  const topItemsText = data.topItems.length ? data.topItems.map((it,i) => `${i+1}. ${it.name} — ${it.qty} sold`).join('\n') : 'No items sold';
+  try {
+    await emailjs.send("service_imhcg7n", "template_nightly_report", {
+      to_email: cfg.email,
+      report_date: data.date + ' (TEST)',
+      total_orders: data.totalOrders,
+      total_revenue: '$' + data.totalRevenue.toFixed(2),
+      avg_order: '$' + data.avgOrder.toFixed(2),
+      delivery_count: data.deliveryCount,
+      preorder_count: data.preorderCount,
+      coupons_used: data.couponsUsedCount,
+      top_items: topItemsText
+    });
+    alert('✅ Test report sent to ' + cfg.email + '!');
+  } catch(e) { alert('Error sending test report — check that your EmailJS template exists and is named exactly "template_nightly_report". ' + ((e&&e.text)||(e&&e.message)||'')); }
+}
+
+window.resendReport = async function(dateKey) {
+  try { await update(ref(db, `nightlyReports/${dateKey}`), { sent: false }); await sendNightlyReport(dateKey); renderReportsHistory(); alert('Resend attempted — check history for status.'); }
+  catch(e) { alert('Error: ' + e.message); }
+}
+
+window.renderReportsSettings = function() {
+  const emailInput = document.getElementById('report-email-input');
+  const enabledInput = document.getElementById('report-enabled-input');
+  if (emailInput) emailInput.value = reportsConfigData.email || '';
+  if (enabledInput) enabledInput.checked = reportsConfigData.enabled !== false;
+}
+
+window.renderReportsHistory = function() {
+  const tbody = document.getElementById('reports-history-body');
+  if (!tbody) return;
+  const entries = Object.entries(nightlyReportsData).sort((a,b) => b[0].localeCompare(a[0]));
+  if (!entries.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="color:#555;text-align:center;padding:14px;font-size:12px">No reports yet — the first one generates automatically after your next closing time.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = '';
+  entries.forEach(([dateKey, r]) => {
+    const statusHtml = r.sent
+      ? '<span style="color:#22c55e;font-size:11px;font-weight:700">Sent</span>'
+      : `<span style="color:#ef4444;font-size:11px;font-weight:700" title="${(r.error||'').replace(/"/g,'&quot;')}">Failed</span>`;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td style="font-weight:600">${dateKey}</td>
+      <td>${r.totalOrders||0}</td>
+      <td>$${parseFloat(r.totalRevenue||0).toFixed(2)}</td>
+      <td>${statusHtml}</td>
+      <td>${r.sent ? '' : `<button onclick="resendReport('${dateKey}')" style="background:#1a2a3a;border:1px solid #2e75b6;color:#60a5fa;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">Retry</button>`}</td>`;
+    tbody.appendChild(tr);
+  });
 }
 
 

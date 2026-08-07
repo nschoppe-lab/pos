@@ -107,7 +107,11 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
       <div class="open-pill" id="open-pill">0 open</div>
       <div class="hint">Double-tap to complete</div>
     </div>
-    <button class="logout-btn" onclick="doLogout()" style="background:#2a1010;border-color:#7f1d1d;color:#ef4444">🔴 Clock Out</button>
+    <div style="display:flex;align-items:center;gap:8px">
+      <span class="logout-btn" id="reopen-status" style="display:none;background:#0e2a1a;border-color:#22c55e44;color:#22c55e;cursor:default"></span>
+      <button class="logout-btn" id="reopen-btn" onclick="reopenTemporarily()" style="display:none;background:#0e2a1a;border-color:#22c55e44;color:#22c55e">🔓 Reopen 5 Min</button>
+      <button class="logout-btn" onclick="doLogout()" style="background:#2a1010;border-color:#7f1d1d;color:#ef4444">🔴 Clock Out</button>
+    </div>
   </div>
   <div class="orders-grid" id="orders-grid"><div class="empty">No open orders</div></div>
 </div>
@@ -142,6 +146,8 @@ const db = getDatabase(app);
 
 let orders = {};
 let tapTimers = {};
+let waittimeSettings = {};
+const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 
 let currentUID = null;
 
@@ -228,6 +234,18 @@ function showKitchen(userData) {
     orders = snap.val() || {};
     renderOrders();
   });
+  // Listen to wait time / schedule settings (drives the reopen button + auto close enforcement)
+  onValue(ref(db, 'waittime'), snap => {
+    waittimeSettings = snap.val() || {};
+    updateReopenUI();
+  });
+  if (!window._scheduleInterval) {
+    window._scheduleInterval = setInterval(checkScheduleAndReport, 15000);
+  }
+  checkScheduleAndReport();
+  if (!window._reopenTickInterval) {
+    window._reopenTickInterval = setInterval(updateReopenUI, 1000);
+  }
 }
 
 function renderOrders() {
@@ -367,6 +385,140 @@ function printPaidTicket(order) {
 
 window.showModal = function(html) { document.getElementById('modal-content').innerHTML=html; document.getElementById('modal').style.display='flex'; }
 window.closeModal = function() { document.getElementById('modal').style.display='none'; }
+
+// ── REOPEN FOR 5 MORE MINUTES ────────────────────────────────────
+window.reopenTemporarily = async function() {
+  const until = Date.now() + 5*60*1000;
+  try { await update(ref(db, 'waittime'), { closed: false, manualOverride: true, tempReopenUntil: until }); }
+  catch(e) { alert('Error: ' + e.message); }
+}
+
+function updateReopenUI() {
+  const btn = document.getElementById('reopen-btn');
+  const status = document.getElementById('reopen-status');
+  if (!btn || !status) return;
+  const w = waittimeSettings;
+  const now = Date.now();
+  const activeReopen = w.tempReopenUntil && w.closed === false && w.tempReopenUntil > now;
+  if (activeReopen) {
+    btn.style.display = 'none';
+    status.style.display = 'inline-flex';
+    const secsLeft = Math.max(0, Math.round((w.tempReopenUntil - now) / 1000));
+    const m = Math.floor(secsLeft / 60), s = secsLeft % 60;
+    status.textContent = `⏳ Reopened — closes in ${m}:${String(s).padStart(2,'0')}`;
+  } else {
+    status.style.display = 'none';
+    btn.style.display = (w.closed === true) ? 'inline-flex' : 'none';
+  }
+}
+
+// ── SCHEDULE ENFORCEMENT + NIGHTLY REPORT TRIGGER ────────────────
+// Runs every 15s so the ordering page reliably closes/reopens on schedule (not just on
+// staff login/logout), the "reopen 5 more minutes" grace period expires on time, and the
+// nightly report fires 10 minutes after closing.
+async function checkScheduleAndReport() {
+  try {
+    const w = waittimeSettings;
+
+    // Expire an active temp reopen
+    if (w.tempReopenUntil && w.closed === false && w.tempReopenUntil <= Date.now()) {
+      await update(ref(db, 'waittime'), { closed: true, manualOverride: false, tempReopenUntil: null });
+      return; // let the next tick re-evaluate with fresh data
+    }
+
+    // Enforce the normal schedule (skipped while a manual override / temp reopen is active)
+    const dayName = DAYS[new Date().getDay()];
+    const h = w['hours_' + dayName];
+    if (!w.manualOverride) {
+      if (!h || h.enabled !== true) {
+        if (!w.closed) await update(ref(db, 'waittime'), { closed: true });
+      } else {
+        const [sh,sm] = (h.open||'10:00').split(':').map(Number);
+        const [eh,em] = (h.close||'22:00').split(':').map(Number);
+        const nowM = new Date().getHours()*60 + new Date().getMinutes();
+        const shouldBeOpen = nowM >= sh*60+sm && nowM < eh*60+em;
+        if (shouldBeOpen && w.closed) await update(ref(db, 'waittime'), { closed: false });
+        if (!shouldBeOpen && !w.closed) await update(ref(db, 'waittime'), { closed: true });
+      }
+    }
+
+    await checkNightlyReportTrigger();
+  } catch(e) { console.error('Schedule check error:', e); }
+}
+
+function localDateKey(d) {
+  d = d || new Date();
+  const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), day = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
+
+function dayBoundsMs(dateKey) {
+  const [y,m,d] = dateKey.split('-').map(Number);
+  return { start: new Date(y, m-1, d, 0,0,0,0).getTime(), end: new Date(y, m-1, d, 23,59,59,999).getTime() };
+}
+
+async function buildNightlyReportData(dateKey) {
+  const { start, end } = dayBoundsMs(dateKey);
+  const snap = await get(ref(db, 'orders'));
+  const all = snap.val() ? Object.values(snap.val()) : [];
+  const todays = all.filter(o => typeof o.createdAt === 'number' && o.createdAt >= start && o.createdAt <= end);
+  const totalOrders = todays.length;
+  const totalRevenue = Math.round(todays.reduce((s,o) => s + (parseFloat(o.total)||0), 0) * 100) / 100;
+  const avgOrder = totalOrders ? Math.round((totalRevenue / totalOrders) * 100) / 100 : 0;
+  const deliveryCount = todays.filter(o => o.delivery).length;
+  const preorderCount = todays.filter(o => o.preorder).length;
+  const couponsUsedCount = todays.filter(o => o.coupon).length;
+  const itemCounts = {};
+  todays.forEach(o => (o.items||[]).forEach(i => { itemCounts[i.name] = (itemCounts[i.name]||0) + (parseInt(i.qty)||1); }));
+  const topItems = Object.entries(itemCounts).sort((a,b) => b[1]-a[1]).slice(0,10).map(([name,qty]) => ({name,qty}));
+  return { date: dateKey, totalOrders, totalRevenue, avgOrder, deliveryCount, preorderCount, couponsUsedCount, topItems };
+}
+
+async function sendNightlyReport(dateKey) {
+  const existingSnap = await get(ref(db, `nightlyReports/${dateKey}`));
+  if (existingSnap.exists() && existingSnap.val().sent) return; // already sent from elsewhere
+
+  const data = await buildNightlyReportData(dateKey);
+  const cfgSnap = await get(ref(db, 'reportsConfig'));
+  const cfg = cfgSnap.val() || {};
+  const topItemsText = data.topItems.length ? data.topItems.map((it,i) => `${i+1}. ${it.name} — ${it.qty} sold`).join('\n') : 'No items sold';
+
+  let sent = false, errorMsg = null;
+  if (cfg.email && cfg.enabled !== false) {
+    try {
+      await emailjs.send("service_imhcg7n", "template_nightly_report", {
+        to_email: cfg.email,
+        report_date: data.date,
+        total_orders: data.totalOrders,
+        total_revenue: '$' + data.totalRevenue.toFixed(2),
+        avg_order: '$' + data.avgOrder.toFixed(2),
+        delivery_count: data.deliveryCount,
+        preorder_count: data.preorderCount,
+        coupons_used: data.couponsUsedCount,
+        top_items: topItemsText
+      });
+      sent = true;
+    } catch(e) { errorMsg = (e && e.text) || (e && e.message) || 'Email send failed'; console.error('Nightly report email error:', e); }
+  } else {
+    errorMsg = cfg.enabled === false ? 'Nightly reports are disabled' : 'No report email configured';
+  }
+
+  await set(ref(db, `nightlyReports/${dateKey}`), { ...data, sent, emailedTo: cfg.email || null, error: errorMsg, generatedAt: Date.now() });
+}
+
+async function checkNightlyReportTrigger() {
+  const dateKey = localDateKey();
+  const dayName = DAYS[new Date().getDay()];
+  const w = waittimeSettings;
+  const h = w['hours_' + dayName];
+  if (!h || h.enabled !== true) return; // not scheduled open today
+  const [eh, em] = (h.close || '22:00').split(':').map(Number);
+  const nowM = new Date().getHours()*60 + new Date().getMinutes();
+  if (nowM < eh*60 + em + 10) return; // not 10 minutes past close yet
+  const existingSnap = await get(ref(db, `nightlyReports/${dateKey}`));
+  if (existingSnap.exists() && existingSnap.val().sent) return;
+  await sendNightlyReport(dateKey);
+}
 </script>
 </body>
 </html>
