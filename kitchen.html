@@ -128,7 +128,7 @@ emailjs.init("yoxsvEb1uuAA4Ytcd");
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getDatabase, ref, onValue, update, get, set } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+import { getDatabase, ref, onValue, update, get, set, push } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCG5nhzdAHBTGg2eXXmhqH8pF8S8qFqM7o",
@@ -150,6 +150,7 @@ let waittimeSettings = {};
 const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 
 let currentUID = null;
+let currentUserName = '';
 
 onAuthStateChanged(auth, async user => {
   if (user) {
@@ -158,11 +159,15 @@ onAuthStateChanged(auth, async user => {
     const userData = snap.val();
     if (!userData) { await signOut(auth); showError('Account not found.'); return; }
     if (userData.role === 'kitchen' || userData.role === 'admin') {
+      currentUserName = userData.name || '';
       // Mark staff as online
       await update(ref(db, `users/${user.uid}`), { online: true, lastLogin: new Date().toISOString() });
       try {
         await update(ref(db, 'waittime'), { closed: false, manualOverride: false });
       } catch(e) { console.warn('Could not update waittime on login:', e); }
+      try {
+        await push(ref(db, 'shiftLog'), { uid: user.uid, name: currentUserName, action: 'in', timestamp: Date.now() });
+      } catch(e) { console.warn('Could not log shift sign-on:', e); }
       showKitchen(userData);
     } else {
       await signOut(auth);
@@ -199,6 +204,9 @@ window.doLogin = async function() {
 
 window.doLogout = async function() {
   if (currentUID) {
+    try {
+      await push(ref(db, 'shiftLog'), { uid: currentUID, name: currentUserName, action: 'out', timestamp: Date.now() });
+    } catch(e) { console.warn('Could not log shift sign-off:', e); }
     // Mark this staff member offline
     await update(ref(db, `users/${currentUID}`), { online: false });
     // Check if any other kitchen staff are still online
@@ -457,31 +465,162 @@ function dayBoundsMs(dateKey) {
   return { start: new Date(y, m-1, d, 0,0,0,0).getTime(), end: new Date(y, m-1, d, 23,59,59,999).getTime() };
 }
 
-async function buildNightlyReportData(dateKey) {
-  const { start, end } = dayBoundsMs(dateKey);
-  const snap = await get(ref(db, 'orders'));
+function round2(n) { return Math.round(n*100)/100; }
+
+function safeFirebaseKey(str) { return String(str).replace(/[.#$\[\]\/]/g, '_'); }
+
+function fmtTime(ts) {
+  if (!ts) return '—';
+  return new Date(ts).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' });
+}
+
+async function buildWorkerSummary(start, end) {
+  const snap = await get(ref(db, 'shiftLog'));
   const all = snap.val() ? Object.values(snap.val()) : [];
-  const todays = all.filter(o => typeof o.createdAt === 'number' && o.createdAt >= start && o.createdAt <= end);
+  const todays = all.filter(e => typeof e.timestamp === 'number' && e.timestamp >= start && e.timestamp <= end);
+  const byUid = {};
+  todays.forEach(e => {
+    if (!byUid[e.uid]) byUid[e.uid] = { name: e.name || 'Unknown', signOn: null, signOff: null };
+    if (e.action === 'in'  && (byUid[e.uid].signOn  === null || e.timestamp < byUid[e.uid].signOn))  byUid[e.uid].signOn  = e.timestamp;
+    if (e.action === 'out' && (byUid[e.uid].signOff === null || e.timestamp > byUid[e.uid].signOff)) byUid[e.uid].signOff = e.timestamp;
+  });
+  return Object.values(byUid);
+}
+
+// Pure — reads only, never writes.
+async function computeNightlyStats(dateKey) {
+  const { start, end } = dayBoundsMs(dateKey);
+
+  const ordersSnap = await get(ref(db, 'orders'));
+  const allOrders = ordersSnap.val() ? Object.values(ordersSnap.val()) : [];
+  const todays = allOrders.filter(o => typeof o.createdAt === 'number' && o.createdAt >= start && o.createdAt <= end);
+
   const totalOrders = todays.length;
-  const totalRevenue = Math.round(todays.reduce((s,o) => s + (parseFloat(o.total)||0), 0) * 100) / 100;
-  const avgOrder = totalOrders ? Math.round((totalRevenue / totalOrders) * 100) / 100 : 0;
+  const totalRevenue = round2(todays.reduce((s,o) => s + (parseFloat(o.total)||0), 0));
+  const avgOrder = totalOrders ? round2(totalRevenue/totalOrders) : 0;
   const deliveryCount = todays.filter(o => o.delivery).length;
   const preorderCount = todays.filter(o => o.preorder).length;
-  const couponsUsedCount = todays.filter(o => o.coupon).length;
-  const itemCounts = {};
-  todays.forEach(o => (o.items||[]).forEach(i => { itemCounts[i.name] = (itemCounts[i.name]||0) + (parseInt(i.qty)||1); }));
-  const topItems = Object.entries(itemCounts).sort((a,b) => b[1]-a[1]).slice(0,10).map(([name,qty]) => ({name,qty}));
-  return { date: dateKey, totalOrders, totalRevenue, avgOrder, deliveryCount, preorderCount, couponsUsedCount, topItems };
+  const couponOrders = todays.filter(o => o.coupon);
+  const couponsUsedCount = couponOrders.length;
+  const couponsTotalDiscount = round2(couponOrders.reduce((s,o) => s + (parseFloat(o.discount)||0), 0));
+  const loyaltyDiscountTotal = round2(todays.reduce((s,o) => s + (parseFloat(o.loyaltyDiscount)||0), 0));
+
+  const itemStats = {};
+  let specialItemsSold = 0, sauceRequests = 0;
+  todays.forEach(o => (o.items||[]).forEach(i => {
+    const qty = parseInt(i.qty) || 1;
+    const price = parseFloat(i.price) || 0;
+    if (!itemStats[i.name]) itemStats[i.name] = { qty: 0, revenue: 0 };
+    itemStats[i.name].qty += qty;
+    itemStats[i.name].revenue += qty * price;
+    if (i.isSpecial) specialItemsSold += qty;
+    if (i.sauces && i.sauces.length) sauceRequests += qty;
+  }));
+  const itemBreakdown = Object.entries(itemStats)
+    .map(([name,v]) => ({ name, qty: v.qty, revenue: round2(v.revenue) }))
+    .sort((a,b) => b.qty - a.qty);
+
+  const runningSnap = await get(ref(db, 'itemRunningTotals'));
+  const runningCurrent = runningSnap.val() || {};
+  const merged = {...runningCurrent};
+  itemBreakdown.forEach(it => {
+    const key = safeFirebaseKey(it.name);
+    const prevQty = (merged[key] && merged[key].qty) || 0;
+    merged[key] = { name: it.name, qty: prevQty + it.qty };
+  });
+  const allTimeTop = Object.values(merged).sort((a,b) => b.qty - a.qty).slice(0,10);
+
+  const workers = await buildWorkerSummary(start, end);
+
+  return {
+    date: dateKey, totalOrders, totalRevenue, avgOrder,
+    deliveryCount, preorderCount, couponsUsedCount, couponsTotalDiscount,
+    loyaltyDiscountTotal, specialItemsSold, sauceRequests,
+    itemBreakdown, allTimeTop, workers
+  };
+}
+
+// Only ever called once per date (guarded in sendNightlyReport).
+async function commitRunningItemTotals(itemBreakdown) {
+  if (!itemBreakdown.length) return;
+  const runningSnap = await get(ref(db, 'itemRunningTotals'));
+  const runningCurrent = runningSnap.val() || {};
+  const updates = {};
+  itemBreakdown.forEach(it => {
+    const key = safeFirebaseKey(it.name);
+    const prevQty = (runningCurrent[key] && runningCurrent[key].qty) || 0;
+    updates[`itemRunningTotals/${key}`] = { name: it.name, qty: prevQty + it.qty };
+  });
+  await update(ref(db), updates);
+}
+
+function buildReportBodyText(data, isTest) {
+  const dateObj = new Date(data.date + 'T00:00:00');
+  const dateLabel = dateObj.toLocaleDateString('en-US', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+
+  const workersText = data.workers.length
+    ? data.workers.map(w => `• ${w.name} — signed on ${fmtTime(w.signOn)}, signed off ${fmtTime(w.signOff)}`).join('\n')
+    : 'No sign-ins recorded';
+
+  const itemsText = data.itemBreakdown.length
+    ? data.itemBreakdown.map((it,i) => `${i+1}. ${it.name} — ${it.qty} sold — $${it.revenue.toFixed(2)}`).join('\n')
+    : 'No items sold';
+
+  const allTimeText = data.allTimeTop.length
+    ? data.allTimeTop.map((it,i) => `${i+1}. ${it.name} — ${it.qty} sold (all-time)`).join('\n')
+    : 'No data yet';
+
+  return `THE BUFF — NIGHTLY REPORT${isTest ? ' (TEST)' : ''}
+${dateLabel}
+
+STAFF TONIGHT
+${workersText}
+
+SALES SUMMARY
+Total Orders: ${data.totalOrders}
+Total Revenue: $${data.totalRevenue.toFixed(2)}
+Average Order: $${data.avgOrder.toFixed(2)}
+
+DELIVERY & PRE-ORDERS
+Deliveries: ${data.deliveryCount}
+Pre-Orders: ${data.preorderCount}
+
+COUPONS
+Used: ${data.couponsUsedCount}
+Total Discount Given: $${data.couponsTotalDiscount.toFixed(2)}
+
+LOYALTY
+Total Loyalty Credit Used: $${data.loyaltyDiscountTotal.toFixed(2)}
+
+ITEMS SOLD TONIGHT
+${itemsText}
+
+ALL-TIME TOP ITEMS (running total across every night)
+${allTimeText}
+
+OTHER
+Special Items Sold: ${data.specialItemsSold}
+Sauce Add-Ons Requested: ${data.sauceRequests}`;
 }
 
 async function sendNightlyReport(dateKey) {
   const existingSnap = await get(ref(db, `nightlyReports/${dateKey}`));
-  if (existingSnap.exists() && existingSnap.val().sent) return; // already sent from elsewhere
+  const existing = existingSnap.val();
+  if (existing && existing.sent) return; // already fully sent from elsewhere
 
-  const data = await buildNightlyReportData(dateKey);
+  let data;
+  if (existing && existing.dataGenerated) {
+    data = existing;
+  } else {
+    data = await computeNightlyStats(dateKey);
+    await commitRunningItemTotals(data.itemBreakdown);
+    data.dataGenerated = true;
+    data.reportBody = buildReportBodyText(data, false);
+    await set(ref(db, `nightlyReports/${dateKey}`), { ...data, sent: false, generatedAt: Date.now() });
+  }
+
   const cfgSnap = await get(ref(db, 'reportsConfig'));
   const cfg = cfgSnap.val() || {};
-  const topItemsText = data.topItems.length ? data.topItems.map((it,i) => `${i+1}. ${it.name} — ${it.qty} sold`).join('\n') : 'No items sold';
 
   let sent = false, errorMsg = null;
   if (cfg.email && cfg.enabled !== false) {
@@ -489,13 +628,7 @@ async function sendNightlyReport(dateKey) {
       await emailjs.send("service_imhcg7n", "template_nightly_report", {
         to_email: cfg.email,
         report_date: data.date,
-        total_orders: data.totalOrders,
-        total_revenue: '$' + data.totalRevenue.toFixed(2),
-        avg_order: '$' + data.avgOrder.toFixed(2),
-        delivery_count: data.deliveryCount,
-        preorder_count: data.preorderCount,
-        coupons_used: data.couponsUsedCount,
-        top_items: topItemsText
+        report_body: data.reportBody
       });
       sent = true;
     } catch(e) { errorMsg = (e && e.text) || (e && e.message) || 'Email send failed'; console.error('Nightly report email error:', e); }
@@ -503,7 +636,7 @@ async function sendNightlyReport(dateKey) {
     errorMsg = cfg.enabled === false ? 'Nightly reports are disabled' : 'No report email configured';
   }
 
-  await set(ref(db, `nightlyReports/${dateKey}`), { ...data, sent, emailedTo: cfg.email || null, error: errorMsg, generatedAt: Date.now() });
+  await update(ref(db, `nightlyReports/${dateKey}`), { sent, emailedTo: cfg.email || null, error: errorMsg, sentAttemptAt: Date.now() });
 }
 
 async function checkNightlyReportTrigger() {
