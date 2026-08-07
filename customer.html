@@ -1226,7 +1226,16 @@ window.doAccountSignup = async function() {
   if (pass !== pass2) { errEl.textContent = 'Passwords do not match'; errEl.style.display = 'block'; return; }
   try {
     const cred = await createUserWithEmailAndPassword(auth, email, pass);
-    await set(ref(db, `customers/${cred.user.uid}`), { name, email, phone, createdAt: Date.now() });
+    const profile = { name, email, phone, createdAt: Date.now() };
+    await set(ref(db, `customers/${cred.user.uid}`), profile);
+    // Set immediately rather than waiting on onAuthStateChanged — that listener can fire
+    // before this write finishes and read back an empty profile.
+    accountUser = cred.user;
+    accountProfile = profile;
+    accountView = 'account';
+    updateAccountNavBtn();
+    prefillCheckoutFromAccount();
+    loadAccountOrderHistory();
     closeAccountModal();
     showToast('Account created! Welcome, ' + name.split(' ')[0] + '!');
   } catch(e) {
