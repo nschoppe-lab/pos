@@ -1062,11 +1062,11 @@ function updateAccountNavBtn() {
   }
 }
 
-function prefillCheckoutFromAccount() {
+function prefillCheckoutFromAccount(force) {
   const nameEl = document.getElementById('cust-name');
   const emailEl = document.getElementById('cust-email');
-  if (nameEl && accountProfile) { nameEl.value = accountProfile.name || ''; nameEl.readOnly = true; nameEl.style.opacity = '0.7'; }
-  if (emailEl && accountUser) { emailEl.value = accountUser.email || ''; emailEl.readOnly = true; emailEl.style.opacity = '0.7'; }
+  if (nameEl && accountProfile && (force || !nameEl.value)) { nameEl.value = accountProfile.name || ''; }
+  if (emailEl && accountUser && (force || !emailEl.value)) { emailEl.value = accountUser.email || ''; }
   let note = document.getElementById('acct-checkout-note');
   if (!note && emailEl) {
     note = document.createElement('div');
@@ -1074,14 +1074,10 @@ function prefillCheckoutFromAccount() {
     note.style.cssText = 'font-size:11px;color:#22c55e;margin-top:6px';
     emailEl.insertAdjacentElement('afterend', note);
   }
-  if (note) note.textContent = '✓ Using your account info — sign out to order as a guest instead';
+  if (note) note.textContent = '✓ Prefilled from your account — feel free to edit for this order';
 }
 
 function unlockCheckoutFields() {
-  const nameEl = document.getElementById('cust-name');
-  const emailEl = document.getElementById('cust-email');
-  if (nameEl) { nameEl.readOnly = false; nameEl.style.opacity = '1'; }
-  if (emailEl) { emailEl.readOnly = false; emailEl.style.opacity = '1'; }
   const note = document.getElementById('acct-checkout-note');
   if (note) note.remove();
 }
@@ -1253,7 +1249,7 @@ window.saveProfileEdit = async function() {
     accountProfile = { ...accountProfile, name, phone };
     editingProfile = false;
     updateAccountNavBtn();
-    prefillCheckoutFromAccount();
+    prefillCheckoutFromAccount(true);
     renderAccountModal();
     showToast('Profile updated!');
   } catch(e) { alert('Error: ' + e.message); }
