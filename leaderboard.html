@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Buff — Leaderboard</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+body{background:#1a1a1a;color:#fff;min-height:100vh}
+.topnav{background:#111;padding:0 16px;height:52px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #333}
+.brand{font-size:18px;font-weight:700;color:#ff6b35}
+.back-link{display:flex;align-items:center;gap:6px;background:#1a1a1a;border:1.5px solid #444;color:#ccc;text-decoration:none;border-radius:20px;padding:6px 14px;font-size:12px;font-weight:700;transition:all 0.15s}
+.back-link:hover{border-color:#666}
+.wrap{max-width:640px;margin:0 auto;padding:28px 20px 60px}
+.hero{text-align:center;margin-bottom:28px}
+.hero-title{font-size:26px;font-weight:800;color:#f59e0b}
+.hero-sub{font-size:13px;color:#888;margin-top:6px}
+.loading{text-align:center;color:#666;padding:60px 0;font-size:14px}
+.podium{display:flex;align-items:flex-end;justify-content:center;gap:10px;margin-bottom:32px}
+.podium-slot{display:flex;flex-direction:column;align-items:center;width:120px}
+.podium-medal{font-size:32px;margin-bottom:6px}
+.podium-block{width:100%;border-radius:10px 10px 0 0;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:12px}
+.podium-block.first{background:linear-gradient(180deg,#3a2f0e,#241d08);height:120px;border:1.5px solid #f59e0b66}
+.podium-block.second{background:linear-gradient(180deg,#2a2a2a,#1c1c1c);height:92px;border:1.5px solid #66666666}
+.podium-block.third{background:linear-gradient(180deg,#2e2013,#1e150c);height:74px;border:1.5px solid #92400e66}
+.podium-name{font-size:13px;font-weight:700;color:#fff;text-align:center;padding:0 6px}
+.podium-count{font-size:11px;color:#f59e0b;font-weight:700;margin-top:2px}
+.list{display:flex;flex-direction:column;gap:8px}
+.row{display:flex;align-items:center;gap:14px;background:#111;border:1px solid #2a2a2a;border-radius:10px;padding:12px 16px}
+.rank{font-size:15px;font-weight:800;color:#666;width:28px;text-align:center;flex-shrink:0}
+.rank.top{color:#f59e0b}
+.row-name{flex:1;font-size:14px;font-weight:600;color:#fff}
+.row-count{font-size:14px;font-weight:800;color:#f59e0b}
+.row-count-label{font-size:10px;color:#666;text-transform:uppercase;letter-spacing:0.5px;margin-left:4px;font-weight:600}
+.empty{text-align:center;color:#555;padding:60px 0;font-size:14px}
+.footnote{text-align:center;font-size:11px;color:#555;margin-top:28px}
+</style>
+</head>
+<body>
+
+<div class="topnav">
+  <div class="brand">&#9654; The Buff</div>
+  <a href="customer.html" class="back-link">← Back to Ordering</a>
+</div>
+
+<div class="wrap">
+  <div class="hero">
+    <div class="hero-title">🏆 Leaderboard</div>
+    <div class="hero-sub">Our most loyal regulars, ranked by total orders</div>
+  </div>
+
+  <div id="board-content" class="loading">Loading leaderboard...</div>
+  <div class="footnote">Rankings update live. Dollar amounts are never shown here.</div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCG5nhzdAHBTGg2eXXmhqH8pF8S8qFqM7o",
+  authDomain: "duncan--the-buff.firebaseapp.com",
+  databaseURL: "https://duncan--the-buff-default-rtdb.firebaseio.com",
+  projectId: "duncan--the-buff",
+  storageBucket: "duncan--the-buff.firebasestorage.app",
+  messagingSenderId: "561324530375",
+  appId: "1:561324530375:web:e6927aefd39ac790737ce2"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
+function escapeHtml(str) {
+  return String(str||'').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+
+// First name + last initial only — keeps this fun without publishing full identities.
+function displayName(fullName) {
+  const parts = String(fullName||'').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return 'A Buff Regular';
+  if (parts.length === 1) return parts[0];
+  return parts[0] + ' ' + parts[parts.length-1].charAt(0).toUpperCase() + '.';
+}
+
+function buildLeaderboard(ordersObj) {
+  const all = ordersObj ? Object.values(ordersObj) : [];
+  const byEmail = {};
+  all.forEach(o => {
+    if (!o.email) return;
+    const key = o.email.toLowerCase();
+    if (!byEmail[key]) byEmail[key] = { name: o.name || '', orderCount: 0 };
+    byEmail[key].orderCount += 1;
+    if (o.name) byEmail[key].name = o.name; // keep the most recent name used
+  });
+  return Object.values(byEmail).sort((a,b) => b.orderCount - a.orderCount);
+}
+
+function renderLeaderboard(entries) {
+  const el = document.getElementById('board-content');
+  if (!entries.length) {
+    el.innerHTML = '<div class="empty">No orders yet — be the first!</div>';
+    return;
+  }
+
+  const top20 = entries.slice(0, 20);
+  const top3 = top20.slice(0, 3);
+  const rest = top20.slice(3);
+
+  let html = '';
+
+  if (top3.length) {
+    // Podium order: 2nd, 1st, 3rd (classic layout)
+    const order = [top3[1], top3[0], top3[2]].filter(Boolean);
+    html += '<div class="podium">';
+    order.forEach(entry => {
+      const rank = top3.indexOf(entry) + 1;
+      const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : '🥉';
+      const cls = rank === 1 ? 'first' : rank === 2 ? 'second' : 'third';
+      html += `
+        <div class="podium-slot">
+          <div class="podium-medal">${medal}</div>
+          <div class="podium-block ${cls}">
+            <div class="podium-name">${escapeHtml(displayName(entry.name))}</div>
+            <div class="podium-count">${entry.orderCount} orders</div>
+          </div>
+        </div>`;
+    });
+    html += '</div>';
+  }
+
+  if (rest.length) {
+    html += '<div class="list">';
+    rest.forEach((entry, i) => {
+      const rank = i + 4;
+      html += `
+        <div class="row">
+          <div class="rank">#${rank}</div>
+          <div class="row-name">${escapeHtml(displayName(entry.name))}</div>
+          <div><span class="row-count">${entry.orderCount}</span><span class="row-count-label">orders</span></div>
+        </div>`;
+    });
+    html += '</div>';
+  }
+
+  el.innerHTML = html;
+}
+
+onValue(ref(db, 'orders'), snap => {
+  const entries = buildLeaderboard(snap.val());
+  renderLeaderboard(entries);
+});
+</script>
+</body>
+</html>
