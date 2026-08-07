@@ -112,6 +112,25 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 .cust-option-badge.add{background:#0a2a0a;color:#22c55e}
 .cust-option-price{font-size:12px;color:#888}
 .cust-modal-footer{display:flex;gap:8px;margin-top:18px}
+.acct-nav-btn{background:none;border:1.5px solid #f59e0b55;color:#f59e0b;border-radius:20px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer}
+.acct-nav-btn:hover{background:#1f1a0e}
+.acct-label{font-size:11px;color:#888;font-weight:600;display:block;margin-top:8px}
+.acct-label:first-of-type{margin-top:0}
+.acct-input{width:100%;background:#1a1a1a;border:1px solid #333;border-radius:6px;padding:9px 11px;font-size:13px;color:#fff;margin-top:4px;box-sizing:border-box}
+.acct-input:focus{outline:none;border-color:#ff6b35}
+.acct-input::placeholder{color:#555}
+.acct-link{color:#ff6b35;cursor:pointer;text-decoration:underline}
+.acct-err{background:#2a1010;color:#ef4444;border-radius:6px;padding:8px 12px;font-size:12px;margin-top:10px;display:none}
+.acct-btn{width:100%;background:#ff6b35;color:#fff;border:none;border-radius:8px;padding:11px;font-size:14px;font-weight:700;cursor:pointer;margin-top:14px}
+.acct-btn.secondary{background:#333;color:#ccc}
+.acct-profile-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid #2a2a2a}
+.acct-profile-row:last-of-type{border-bottom:none}
+.acct-profile-label{font-size:11px;color:#888}
+.acct-profile-value{font-size:13px;color:#fff;font-weight:600;text-align:right}
+.order-hist-item{background:#252525;border:1px solid #333;border-radius:8px;padding:10px 12px;margin-bottom:8px}
+.order-hist-date{font-size:11px;color:#888}
+.order-hist-items{font-size:12px;color:#ccc;margin-top:4px}
+.order-hist-total{font-size:13px;font-weight:700;color:#ff6b35;margin-top:4px}
 .cust-cancel-btn{flex:1;background:#2a2a2a;border:1px solid #444;color:#ccc;border-radius:8px;padding:13px;font-size:14px;font-weight:600;cursor:pointer}
 .cust-cancel-btn:hover{background:#333}
 .cust-add-btn{flex:2;background:#ff6b35;color:#fff;border:none;border-radius:8px;padding:13px;font-size:15px;font-weight:700;cursor:pointer;transition:all 0.15s}
@@ -131,7 +150,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
   <div id="closed-msg-display" style="font-size:16px;color:#888">Check back soon!</div>
 </div>
 
-<div class="topnav" style="justify-content:space-between"><div class="brand">&#9654; Order Here</div><a href="ratemybuff.html" style="display:flex;align-items:center;gap:6px;background:#1f1a0e;border:1.5px solid #f59e0b55;color:#f59e0b;text-decoration:none;border-radius:20px;padding:6px 14px;font-size:12px;font-weight:700;transition:all 0.15s" onmouseover="this.style.background='#2a2010'" onmouseout="this.style.background='#1f1a0e'">⭐ Rate My Buff</a></div>
+<div class="topnav" style="justify-content:space-between"><div class="brand">&#9654; Order Here</div><div style="display:flex;gap:8px;align-items:center"><button class="acct-nav-btn" id="account-nav-btn" onclick="openAccountModal()">👤 Sign In</button><a href="ratemybuff.html" style="display:flex;align-items:center;gap:6px;background:#1f1a0e;border:1.5px solid #f59e0b55;color:#f59e0b;text-decoration:none;border-radius:20px;padding:6px 14px;font-size:12px;font-weight:700;transition:all 0.15s" onmouseover="this.style.background='#2a2010'" onmouseout="this.style.background='#1f1a0e'">⭐ Rate My Buff</a></div></div>
 <div class="content">
   <div class="menu-panel" id="menu-panel"><div class="loading">Loading menu...</div></div>
   <div class="cart-panel">
@@ -220,13 +239,20 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
   </div>
 </div>
 
+<div class="cust-modal-bg" id="account-modal-bg" onclick="if(event.target===this)closeAccountModal()">
+  <div class="cust-modal" id="account-modal">
+    <div id="account-modal-body"></div>
+  </div>
+</div>
+
 <!-- EmailJS -->
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <script>emailjs.init("yoxsvEb1uuAA4Ytcd");</script>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getDatabase, ref, push, onValue, serverTimestamp, get, update } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+import { getDatabase, ref, push, onValue, serverTimestamp, get, update, set } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, reauthenticateWithCredential, EmailAuthProvider, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCG5nhzdAHBTGg2eXXmhqH8pF8S8qFqM7o",
@@ -240,6 +266,10 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
+const auth = getAuth(app);
+
+let accountUser = null, accountProfile = null, accountView = 'login';
+let editingProfile = false, changingPassword = false, accountOrderHistory = [];
 
 let menu = [], coupons = [], cart = [], appliedCoupon = null, activeBranding = {}, openOrderCount = 0;
 let loyaltyData = null, loyaltyDiscount = 0, useCredit = true;
@@ -950,6 +980,7 @@ window.placeOrder = async function() {
     waitTime: currentWaitTime || '',
     time: new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),
     date: new Date().toLocaleDateString(),
+    customerId: accountUser ? accountUser.uid : null,
     status: 'pending', paid: false, createdAt: serverTimestamp()
   };
 
@@ -980,15 +1011,306 @@ window.placeOrder = async function() {
     if (delivCard) delivCard.classList.remove('active');
     var preCard = document.getElementById('preorder-card');
     if (preCard) preCard.classList.remove('active');
-    ['cust-name','cust-email','cust-comments','disc-code'].forEach(function(id) {
-      var el = document.getElementById(id); if (el) el.value = '';
-    });
+    if (accountUser) {
+      var commentsEl = document.getElementById('cust-comments'); if (commentsEl) commentsEl.value = '';
+      var discCodeEl = document.getElementById('disc-code'); if (discCodeEl) discCodeEl.value = '';
+      prefillCheckoutFromAccount();
+      loadAccountOrderHistory();
+    } else {
+      ['cust-name','cust-email','cust-comments','disc-code'].forEach(function(id) {
+        var el = document.getElementById(id); if (el) el.value = '';
+      });
+    }
     var discMsg = document.getElementById('disc-msg');
     if (discMsg) discMsg.className = 'disc-msg';
     hideLoyaltyBanner(); renderCart();
     var toastMsg = loyaltyMsg ? 'Order placed! ' + loyaltyMsg : "Order placed! We'll email you when it's ready.";
     showToast(toastMsg, loyaltyMsg ? 6000 : 4000);
   } catch(e) { alert('Error placing order. Please try again.'); console.error(e); }
+}
+
+// ── CUSTOMER ACCOUNTS (optional — guest checkout still works without one) ──
+onAuthStateChanged(auth, async user => {
+  if (user) {
+    accountUser = user;
+    try {
+      const snap = await get(ref(db, `customers/${user.uid}`));
+      accountProfile = snap.val() || { name: user.displayName || '', email: user.email, phone: '' };
+    } catch(e) { accountProfile = { name: '', email: user.email, phone: '' }; }
+    accountView = 'account';
+    editingProfile = false; changingPassword = false;
+    prefillCheckoutFromAccount();
+    loadAccountOrderHistory();
+  } else {
+    accountUser = null;
+    accountProfile = null;
+    accountView = 'login';
+    unlockCheckoutFields();
+  }
+  updateAccountNavBtn();
+  renderAccountModal();
+});
+
+function updateAccountNavBtn() {
+  const btn = document.getElementById('account-nav-btn');
+  if (!btn) return;
+  if (accountUser) {
+    const first = (accountProfile && accountProfile.name) ? accountProfile.name.split(' ')[0] : 'Account';
+    btn.textContent = '👤 ' + first;
+  } else {
+    btn.textContent = '👤 Sign In';
+  }
+}
+
+function prefillCheckoutFromAccount() {
+  const nameEl = document.getElementById('cust-name');
+  const emailEl = document.getElementById('cust-email');
+  if (nameEl && accountProfile) { nameEl.value = accountProfile.name || ''; nameEl.readOnly = true; nameEl.style.opacity = '0.7'; }
+  if (emailEl && accountUser) { emailEl.value = accountUser.email || ''; emailEl.readOnly = true; emailEl.style.opacity = '0.7'; }
+  let note = document.getElementById('acct-checkout-note');
+  if (!note && emailEl) {
+    note = document.createElement('div');
+    note.id = 'acct-checkout-note';
+    note.style.cssText = 'font-size:11px;color:#22c55e;margin-top:6px';
+    emailEl.insertAdjacentElement('afterend', note);
+  }
+  if (note) note.textContent = '✓ Using your account info — sign out to order as a guest instead';
+}
+
+function unlockCheckoutFields() {
+  const nameEl = document.getElementById('cust-name');
+  const emailEl = document.getElementById('cust-email');
+  if (nameEl) { nameEl.readOnly = false; nameEl.style.opacity = '1'; }
+  if (emailEl) { emailEl.readOnly = false; emailEl.style.opacity = '1'; }
+  const note = document.getElementById('acct-checkout-note');
+  if (note) note.remove();
+}
+
+window.openAccountModal = function() {
+  accountView = accountUser ? 'account' : 'login';
+  document.getElementById('account-modal-bg').classList.add('open');
+  renderAccountModal();
+}
+window.closeAccountModal = function() {
+  document.getElementById('account-modal-bg').classList.remove('open');
+  editingProfile = false; changingPassword = false;
+}
+window.showLoginView = function() { accountView = 'login'; renderAccountModal(); }
+window.showSignupView = function() { accountView = 'signup'; renderAccountModal(); }
+
+function renderAccountModal() {
+  const body = document.getElementById('account-modal-body');
+  if (!body) return;
+
+  if (accountView === 'login') {
+    body.innerHTML = `
+      <div class="cust-modal-title">Sign In</div>
+      <div class="acct-err" id="acct-err"></div>
+      <label class="acct-label">Email</label>
+      <input type="email" class="acct-input" id="login-email" placeholder="you@email.com">
+      <label class="acct-label">Password</label>
+      <input type="password" class="acct-input" id="login-password" placeholder="Password">
+      <button class="acct-btn" onclick="doAccountLogin()">Sign In</button>
+      <div style="text-align:center;margin-top:12px;font-size:12px;color:#888">
+        <span class="acct-link" onclick="sendResetEmail()">Forgot password?</span>
+      </div>
+      <div style="text-align:center;margin-top:8px;font-size:12px;color:#888">
+        Don't have an account? <span class="acct-link" onclick="showSignupView()">Create one</span>
+      </div>
+      <button class="acct-btn secondary" onclick="closeAccountModal()">Continue as Guest</button>
+    `;
+  } else if (accountView === 'signup') {
+    body.innerHTML = `
+      <div class="cust-modal-title">Create Account</div>
+      <div class="acct-err" id="acct-err"></div>
+      <label class="acct-label">Name</label>
+      <input type="text" class="acct-input" id="signup-name" placeholder="Your name">
+      <label class="acct-label">Email</label>
+      <input type="email" class="acct-input" id="signup-email" placeholder="you@email.com">
+      <label class="acct-label">Phone (optional)</label>
+      <input type="tel" class="acct-input" id="signup-phone" placeholder="(555) 123-4567">
+      <label class="acct-label">Password</label>
+      <input type="password" class="acct-input" id="signup-password" placeholder="At least 6 characters">
+      <label class="acct-label">Confirm Password</label>
+      <input type="password" class="acct-input" id="signup-password2" placeholder="Repeat password">
+      <button class="acct-btn" onclick="doAccountSignup()">Create Account</button>
+      <div style="text-align:center;margin-top:12px;font-size:12px;color:#888">
+        Already have an account? <span class="acct-link" onclick="showLoginView()">Sign in</span>
+      </div>
+      <button class="acct-btn secondary" onclick="closeAccountModal()">Cancel</button>
+    `;
+  } else if (accountView === 'account' && accountUser) {
+    const p = accountProfile || {};
+    let html = `<div class="cust-modal-title">My Account</div><div class="acct-err" id="acct-err"></div>`;
+
+    if (editingProfile) {
+      html += `
+        <label class="acct-label">Name</label>
+        <input type="text" class="acct-input" id="edit-name" value="${escapeHtmlAttr(p.name||'')}">
+        <label class="acct-label">Phone</label>
+        <input type="tel" class="acct-input" id="edit-phone" value="${escapeHtmlAttr(p.phone||'')}" placeholder="(555) 123-4567">
+        <div style="display:flex;gap:8px">
+          <button class="acct-btn secondary" style="flex:1" onclick="editingProfile=false;renderAccountModal();">Cancel</button>
+          <button class="acct-btn" style="flex:1" onclick="saveProfileEdit()">Save</button>
+        </div>
+      `;
+    } else {
+      html += `
+        <div class="acct-profile-row"><span class="acct-profile-label">Name</span><span class="acct-profile-value">${escapeHtmlAttr(p.name||'—')}</span></div>
+        <div class="acct-profile-row"><span class="acct-profile-label">Email</span><span class="acct-profile-value">${escapeHtmlAttr(accountUser.email||'')}</span></div>
+        <div class="acct-profile-row"><span class="acct-profile-label">Phone</span><span class="acct-profile-value">${escapeHtmlAttr(p.phone||'—')}</span></div>
+        <button class="acct-btn secondary" onclick="editingProfile=true;renderAccountModal();">Edit Info</button>
+      `;
+    }
+
+    if (changingPassword) {
+      html += `
+        <div style="margin-top:16px;padding-top:16px;border-top:1px solid #333">
+          <div style="font-size:13px;font-weight:700;margin-bottom:4px">Change Password</div>
+          <label class="acct-label">Current Password</label>
+          <input type="password" class="acct-input" id="cur-password">
+          <label class="acct-label">New Password</label>
+          <input type="password" class="acct-input" id="new-password" placeholder="At least 6 characters">
+          <label class="acct-label">Confirm New Password</label>
+          <input type="password" class="acct-input" id="new-password2">
+          <div style="display:flex;gap:8px">
+            <button class="acct-btn secondary" style="flex:1" onclick="changingPassword=false;renderAccountModal();">Cancel</button>
+            <button class="acct-btn" style="flex:1" onclick="savePasswordChange()">Update Password</button>
+          </div>
+        </div>
+      `;
+    } else {
+      html += `<button class="acct-btn secondary" onclick="changingPassword=true;renderAccountModal();">Change Password</button>`;
+    }
+
+    html += `
+      <div style="margin-top:16px;padding-top:16px;border-top:1px solid #333">
+        <div style="font-size:13px;font-weight:700;margin-bottom:8px">Order History</div>
+        <div id="order-history-list">Loading...</div>
+      </div>
+      <button class="acct-btn secondary" style="background:#2a1010;color:#ef4444" onclick="doAccountSignout()">Sign Out</button>
+    `;
+    body.innerHTML = html;
+    renderOrderHistoryList();
+    return;
+  }
+}
+
+window.doAccountLogin = async function() {
+  const email = (document.getElementById('login-email')||{}).value.trim();
+  const pass = (document.getElementById('login-password')||{}).value;
+  const errEl = document.getElementById('acct-err');
+  errEl.style.display = 'none';
+  if (!email || !pass) { errEl.textContent = 'Enter your email and password'; errEl.style.display = 'block'; return; }
+  try {
+    await signInWithEmailAndPassword(auth, email, pass);
+    closeAccountModal();
+    showToast('Welcome back!');
+  } catch(e) {
+    errEl.textContent = 'Incorrect email or password.';
+    errEl.style.display = 'block';
+  }
+}
+
+window.doAccountSignup = async function() {
+  const name = (document.getElementById('signup-name')||{}).value.trim();
+  const email = (document.getElementById('signup-email')||{}).value.trim().toLowerCase();
+  const phone = (document.getElementById('signup-phone')||{}).value.trim();
+  const pass = (document.getElementById('signup-password')||{}).value;
+  const pass2 = (document.getElementById('signup-password2')||{}).value;
+  const errEl = document.getElementById('acct-err');
+  errEl.style.display = 'none';
+  if (!name) { errEl.textContent = 'Enter your name'; errEl.style.display = 'block'; return; }
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { errEl.textContent = 'Enter a valid email'; errEl.style.display = 'block'; return; }
+  if (pass.length < 6) { errEl.textContent = 'Password must be at least 6 characters'; errEl.style.display = 'block'; return; }
+  if (pass !== pass2) { errEl.textContent = 'Passwords do not match'; errEl.style.display = 'block'; return; }
+  try {
+    const cred = await createUserWithEmailAndPassword(auth, email, pass);
+    await set(ref(db, `customers/${cred.user.uid}`), { name, email, phone, createdAt: Date.now() });
+    closeAccountModal();
+    showToast('Account created! Welcome, ' + name.split(' ')[0] + '!');
+  } catch(e) {
+    errEl.textContent = e.code === 'auth/email-already-in-use' ? 'An account with that email already exists.' : (e.message || 'Error creating account');
+    errEl.style.display = 'block';
+  }
+}
+
+window.saveProfileEdit = async function() {
+  const name = (document.getElementById('edit-name')||{}).value.trim();
+  const phone = (document.getElementById('edit-phone')||{}).value.trim();
+  if (!name) { alert('Name cannot be empty'); return; }
+  try {
+    await update(ref(db, `customers/${accountUser.uid}`), { name, phone });
+    accountProfile = { ...accountProfile, name, phone };
+    editingProfile = false;
+    updateAccountNavBtn();
+    prefillCheckoutFromAccount();
+    renderAccountModal();
+    showToast('Profile updated!');
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+window.savePasswordChange = async function() {
+  const curPass = (document.getElementById('cur-password')||{}).value;
+  const newPass = (document.getElementById('new-password')||{}).value;
+  const newPass2 = (document.getElementById('new-password2')||{}).value;
+  const errEl = document.getElementById('acct-err');
+  errEl.style.display = 'none';
+  if (newPass.length < 6) { errEl.textContent = 'New password must be at least 6 characters'; errEl.style.display = 'block'; return; }
+  if (newPass !== newPass2) { errEl.textContent = 'New passwords do not match'; errEl.style.display = 'block'; return; }
+  try {
+    const cred = EmailAuthProvider.credential(accountUser.email, curPass);
+    await reauthenticateWithCredential(accountUser, cred);
+    await updatePassword(accountUser, newPass);
+    changingPassword = false;
+    renderAccountModal();
+    showToast('Password updated!');
+  } catch(e) {
+    errEl.textContent = e.code === 'auth/wrong-password' ? 'Current password is incorrect.' : (e.message || 'Error updating password');
+    errEl.style.display = 'block';
+  }
+}
+
+window.sendResetEmail = async function() {
+  const email = (document.getElementById('login-email')||{}).value.trim();
+  if (!email) { alert('Enter your email above first, then click "Forgot password?"'); return; }
+  try { await sendPasswordResetEmail(auth, email); alert('Password reset email sent to ' + email + '.'); }
+  catch(e) { alert('Error: ' + (e.message || 'Could not send reset email')); }
+}
+
+window.doAccountSignout = async function() {
+  await signOut(auth);
+  closeAccountModal();
+  showToast('Signed out');
+}
+
+async function loadAccountOrderHistory() {
+  if (!accountUser) return;
+  try {
+    const snap = await get(ref(db, 'orders'));
+    const all = snap.val() ? Object.entries(snap.val()) : [];
+    const email = (accountUser.email || '').toLowerCase();
+    accountOrderHistory = all
+      .filter(([k,o]) => (o.email||'').toLowerCase() === email)
+      .map(([k,o]) => ({...o, fbKey:k}))
+      .sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
+  } catch(e) { console.error(e); accountOrderHistory = []; }
+  renderOrderHistoryList();
+}
+
+function renderOrderHistoryList() {
+  const el = document.getElementById('order-history-list');
+  if (!el) return;
+  if (!accountOrderHistory.length) { el.innerHTML = '<div style="font-size:12px;color:#666">No past orders yet.</div>'; return; }
+  el.innerHTML = accountOrderHistory.slice(0,20).map(o => {
+    const itemsText = (o.items||[]).map(i => `${i.qty}x ${escapeHtmlAttr(i.name)}`).join(', ');
+    const dateLabel = o.date || (o.createdAt ? new Date(o.createdAt).toLocaleDateString() : '');
+    return `<div class="order-hist-item">
+      <div class="order-hist-date">${escapeHtmlAttr(dateLabel)}${o.time ? ' · ' + escapeHtmlAttr(o.time) : ''}</div>
+      <div class="order-hist-items">${itemsText}</div>
+      <div class="order-hist-total">$${parseFloat(o.total||0).toFixed(2)}</div>
+    </div>`;
+  }).join('');
 }
 
 function showToast(msg, duration = 4000) {
