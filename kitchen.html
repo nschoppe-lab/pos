@@ -109,6 +109,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
     </div>
     <div style="display:flex;align-items:center;gap:8px">
       <span class="logout-btn" id="reopen-status" style="display:none;background:#0e2a1a;border-color:#22c55e44;color:#22c55e;cursor:default"></span>
+      <button class="logout-btn" onclick="showStaffLeaderboard()" style="background:#1a1a1a;border-color:#f59e0b44;color:#f59e0b">🏆 Leaderboard</button>
       <button class="logout-btn" id="reopen-btn" onclick="reopenTemporarily()" style="display:none;background:#0e2a1a;border-color:#22c55e44;color:#22c55e">🔓 Reopen 5 Min</button>
       <button class="logout-btn" onclick="doLogout()" style="background:#2a1010;border-color:#7f1d1d;color:#ef4444">🔴 Clock Out</button>
     </div>
@@ -319,7 +320,7 @@ function handleTap(key, order) {
 }
 
 async function markDone(key, order) {
-  await update(ref(db, `orders/${key}`), { status: 'done' });
+  await update(ref(db, `orders/${key}`), { status: 'done', completedBy: currentUID, completedByName: currentUserName || 'Unknown' });
   // Only send email if not already sent (prevents duplicate with admin screen)
   if (order.email && !order.emailSent) {
     await update(ref(db, `orders/${key}`), { emailSent: true });
@@ -392,6 +393,31 @@ function printPaidTicket(order) {
 }
 
 window.showModal = function(html) { document.getElementById('modal-content').innerHTML=html; document.getElementById('modal').style.display='flex'; }
+
+window.showStaffLeaderboard = function() {
+  const byStaff = {};
+  Object.values(orders).forEach(o => {
+    if (o.status !== 'done' || !o.completedBy) return;
+    if (!byStaff[o.completedBy]) byStaff[o.completedBy] = { name: o.completedByName || 'Unknown', count: 0 };
+    byStaff[o.completedBy].count += 1;
+    if (o.completedByName) byStaff[o.completedBy].name = o.completedByName;
+  });
+  const ranked = Object.values(byStaff).sort((a,b) => b.count - a.count);
+  const rowsHtml = ranked.length
+    ? ranked.map((r,i) => `
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #2a2a2a">
+          <span style="font-weight:800;color:${i<3?'#f59e0b':'#666'};width:24px">${i+1}</span>
+          <span style="flex:1;font-size:13px;font-weight:600">${r.name}</span>
+          <span style="font-weight:700;color:#f59e0b;font-size:13px">${r.count} orders</span>
+        </div>`).join('')
+    : '<div style="color:#666;font-size:12px;text-align:center;padding:16px">No completed orders tracked yet</div>';
+  showModal(`
+    <h3 style="margin-bottom:4px">🏆 Staff Leaderboard</h3>
+    <p style="font-size:12px;color:#aaa;margin-bottom:14px">Ranked by orders marked complete.</p>
+    ${rowsHtml}
+    <div class="mbtns"><button class="mbtn cancel" onclick="closeModal()">Close</button></div>
+  `);
+}
 window.closeModal = function() { document.getElementById('modal').style.display='none'; }
 
 // ── REOPEN FOR 5 MORE MINUTES ────────────────────────────────────
@@ -451,6 +477,7 @@ async function checkScheduleAndReport() {
     }
 
     await checkNightlyReportTrigger();
+    await checkWeeklyMonthlyTrigger();
   } catch(e) { console.error('Schedule check error:', e); }
 }
 
@@ -651,6 +678,160 @@ async function checkNightlyReportTrigger() {
   const existingSnap = await get(ref(db, `nightlyReports/${dateKey}`));
   if (existingSnap.exists() && existingSnap.val().sent) return;
   await sendNightlyReport(dateKey);
+}
+
+// ── WEEKLY / MONTHLY ROLLUPS — aggregated from already-computed nightlyReports entries ──
+async function buildRollupStats(dateKeys, label) {
+  const snap = await get(ref(db, 'nightlyReports'));
+  const allReports = snap.val() || {};
+  const relevant = dateKeys.map(dk => allReports[dk]).filter(Boolean);
+
+  let totalOrders=0, totalRevenue=0, deliveryCount=0, preorderCount=0, couponsUsedCount=0, couponsTotalDiscount=0, loyaltyDiscountTotal=0, specialItemsSold=0, sauceRequests=0;
+  const itemMap = {};
+  const workerShiftCounts = {};
+
+  relevant.forEach(r => {
+    totalOrders += r.totalOrders||0;
+    totalRevenue += r.totalRevenue||0;
+    deliveryCount += r.deliveryCount||0;
+    preorderCount += r.preorderCount||0;
+    couponsUsedCount += r.couponsUsedCount||0;
+    couponsTotalDiscount += r.couponsTotalDiscount||0;
+    loyaltyDiscountTotal += r.loyaltyDiscountTotal||0;
+    specialItemsSold += r.specialItemsSold||0;
+    sauceRequests += r.sauceRequests||0;
+    (r.itemBreakdown||[]).forEach(it => {
+      if (!itemMap[it.name]) itemMap[it.name] = { qty: 0, revenue: 0 };
+      itemMap[it.name].qty += it.qty;
+      itemMap[it.name].revenue += it.revenue;
+    });
+    (r.workers||[]).forEach(w => { workerShiftCounts[w.name] = (workerShiftCounts[w.name]||0) + 1; });
+  });
+
+  const itemBreakdown = Object.entries(itemMap).map(([name,v]) => ({ name, qty: v.qty, revenue: round2(v.revenue) })).sort((a,b) => b.qty - a.qty);
+  const workerShifts = Object.entries(workerShiftCounts).map(([name,shifts]) => ({ name, shifts })).sort((a,b) => b.shifts - a.shifts);
+  const nightsWithData = relevant.length;
+  const avgOrder = totalOrders ? round2(totalRevenue/totalOrders) : 0;
+  const avgNightlyRevenue = nightsWithData ? round2(totalRevenue/nightsWithData) : 0;
+
+  return {
+    label, nightsWithData, totalOrders, totalRevenue: round2(totalRevenue), avgOrder, avgNightlyRevenue,
+    deliveryCount, preorderCount, couponsUsedCount, couponsTotalDiscount: round2(couponsTotalDiscount),
+    loyaltyDiscountTotal: round2(loyaltyDiscountTotal), specialItemsSold, sauceRequests,
+    itemBreakdown, workerShifts
+  };
+}
+
+function buildRollupBodyText(stats, title) {
+  const workersText = stats.workerShifts.length
+    ? stats.workerShifts.map(w => `• ${w.name} — ${w.shifts} shift${w.shifts!==1?'s':''}`).join('\n')
+    : 'No shifts recorded';
+  const itemsText = stats.itemBreakdown.length
+    ? stats.itemBreakdown.slice(0,15).map((it,i) => `${i+1}. ${it.name} — ${it.qty} sold — $${it.revenue.toFixed(2)}`).join('\n')
+    : 'No items sold';
+
+  return `THE BUFF — ${title}
+${stats.label}
+
+Nights With Data: ${stats.nightsWithData}
+
+SALES SUMMARY
+Total Orders: ${stats.totalOrders}
+Total Revenue: $${stats.totalRevenue.toFixed(2)}
+Average Order: $${stats.avgOrder.toFixed(2)}
+Average Nightly Revenue: $${stats.avgNightlyRevenue.toFixed(2)}
+
+DELIVERY & PRE-ORDERS
+Deliveries: ${stats.deliveryCount}
+Pre-Orders: ${stats.preorderCount}
+
+COUPONS
+Used: ${stats.couponsUsedCount}
+Total Discount Given: $${stats.couponsTotalDiscount.toFixed(2)}
+
+LOYALTY
+Total Loyalty Credit Used: $${stats.loyaltyDiscountTotal.toFixed(2)}
+
+TOP ITEMS
+${itemsText}
+
+STAFF SHIFTS
+${workersText}
+
+OTHER
+Special Items Sold: ${stats.specialItemsSold}
+Sauce Add-Ons Requested: ${stats.sauceRequests}`;
+}
+
+async function sendRollupReport(kind, key, dateKeys, label, title) {
+  const node = kind === 'weekly' ? 'weeklyReports' : 'monthlyReports';
+  const existingSnap = await get(ref(db, `${node}/${key}`));
+  const existing = existingSnap.val();
+  if (existing && existing.sent) return;
+
+  let stats;
+  if (existing && existing.dataGenerated) {
+    stats = existing;
+  } else {
+    stats = await buildRollupStats(dateKeys, label);
+    stats.dataGenerated = true;
+    stats.reportBody = buildRollupBodyText(stats, title);
+    await set(ref(db, `${node}/${key}`), { ...stats, sent: false, generatedAt: Date.now() });
+  }
+
+  const cfgSnap = await get(ref(db, 'reportsConfig'));
+  const cfg = cfgSnap.val() || {};
+  let sent = false, errorMsg = null;
+  if (cfg.email && cfg.enabled !== false) {
+    try {
+      await emailjs.send("service_imhcg7n", "template_nightly_report", {
+        to_email: cfg.email,
+        report_date: label,
+        report_body: stats.reportBody
+      });
+      sent = true;
+    } catch(e) { errorMsg = (e && e.text) || (e && e.message) || 'Email send failed'; console.error('Rollup report email error:', e); }
+  } else {
+    errorMsg = cfg.enabled === false ? 'Nightly reports are disabled' : 'No report email configured';
+  }
+  await update(ref(db, `${node}/${key}`), { sent, emailedTo: cfg.email || null, error: errorMsg, sentAttemptAt: Date.now() });
+}
+
+function weekDateKeys(weekStart) {
+  const keys = [];
+  for (let i=0; i<7; i++) { const d = new Date(weekStart); d.setDate(weekStart.getDate()+i); keys.push(localDateKey(d)); }
+  return keys;
+}
+
+async function checkWeeklyMonthlyTrigger() {
+  try {
+    const now = new Date();
+    if (now.getHours() < 9) return; // wait until things have settled for the day
+
+    if (now.getDay() === 1) { // Monday — the week that just ended
+      const weekStart = new Date(now); weekStart.setDate(now.getDate() - 7);
+      const weekKey = localDateKey(weekStart);
+      const existingSnap = await get(ref(db, `weeklyReports/${weekKey}`));
+      if (!(existingSnap.exists() && existingSnap.val().sent)) {
+        const weekEnd = new Date(weekStart); weekEnd.setDate(weekStart.getDate()+6);
+        const label = `Week of ${weekStart.toLocaleDateString('en-US',{month:'short',day:'numeric'})} – ${weekEnd.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`;
+        await sendRollupReport('weekly', weekKey, weekDateKeys(weekStart), label, 'WEEKLY REPORT');
+      }
+    }
+
+    if (now.getDate() === 1) { // 1st of the month — the month that just ended
+      const prevMonthDate = new Date(now.getFullYear(), now.getMonth()-1, 1);
+      const monthKey = prevMonthDate.getFullYear() + '-' + String(prevMonthDate.getMonth()+1).padStart(2,'0');
+      const existingSnap = await get(ref(db, `monthlyReports/${monthKey}`));
+      if (!(existingSnap.exists() && existingSnap.val().sent)) {
+        const daysInMonth = new Date(prevMonthDate.getFullYear(), prevMonthDate.getMonth()+1, 0).getDate();
+        const dateKeys = [];
+        for (let d=1; d<=daysInMonth; d++) dateKeys.push(localDateKey(new Date(prevMonthDate.getFullYear(), prevMonthDate.getMonth(), d)));
+        const label = prevMonthDate.toLocaleDateString('en-US', {month:'long', year:'numeric'});
+        await sendRollupReport('monthly', monthKey, dateKeys, label, 'MONTHLY REPORT');
+      }
+    }
+  } catch(e) { console.error('Weekly/monthly trigger error:', e); }
 }
 </script>
 </body>

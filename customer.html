@@ -113,6 +113,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 .cust-option-price{font-size:12px;color:#888}
 .cust-modal-footer{display:flex;gap:8px;margin-top:18px}
 .acct-nav-btn{background:none;border:1.5px solid #f59e0b55;color:#f59e0b;border-radius:20px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer}
+@keyframes pulse-pill{0%,100%{opacity:1}50%{opacity:0.6}}
 .acct-nav-btn:hover{background:#1f1a0e}
 .acct-label{font-size:11px;color:#888;font-weight:600;display:block;margin-top:8px}
 .acct-label:first-of-type{margin-top:0}
@@ -150,7 +151,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
   <div id="closed-msg-display" style="font-size:16px;color:#888">Check back soon!</div>
 </div>
 
-<div class="topnav" style="justify-content:space-between"><div class="brand">&#9654; Order Here</div><div style="display:flex;gap:8px;align-items:center"><button class="acct-nav-btn" id="account-nav-btn" onclick="openAccountModal()">👤 Sign In</button><a href="leaderboard.html" style="display:flex;align-items:center;gap:6px;background:#1a1a1a;border:1.5px solid #44444455;color:#ccc;text-decoration:none;border-radius:20px;padding:6px 14px;font-size:12px;font-weight:700;transition:all 0.15s" onmouseover="this.style.borderColor='#666'" onmouseout="this.style.borderColor='#44444455'">🏆 Leaderboard</a><a href="ratemybuff.html" style="display:flex;align-items:center;gap:6px;background:#1f1a0e;border:1.5px solid #f59e0b55;color:#f59e0b;text-decoration:none;border-radius:20px;padding:6px 14px;font-size:12px;font-weight:700;transition:all 0.15s" onmouseover="this.style.background='#2a2010'" onmouseout="this.style.background='#1f1a0e'">⭐ Rate My Buff</a></div></div>
+<div class="topnav" style="justify-content:space-between"><div class="brand">&#9654; Order Here</div><div style="display:flex;gap:8px;align-items:center"><span id="active-order-pill" onclick="openAccountModal()" style="display:none;align-items:center;gap:6px;background:#1f1a0e;border:1.5px solid #f59e0b;color:#f59e0b;border-radius:20px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;animation:pulse-pill 2s infinite">🧑&zwj;🍳 Order in Progress</span><button class="acct-nav-btn" id="account-nav-btn" onclick="openAccountModal()">👤 Sign In</button><a href="leaderboard.html" style="display:flex;align-items:center;gap:6px;background:#1a1a1a;border:1.5px solid #44444455;color:#ccc;text-decoration:none;border-radius:20px;padding:6px 14px;font-size:12px;font-weight:700;transition:all 0.15s" onmouseover="this.style.borderColor='#666'" onmouseout="this.style.borderColor='#44444455'">🏆 Leaderboard</a><a href="ratemybuff.html" style="display:flex;align-items:center;gap:6px;background:#1f1a0e;border:1.5px solid #f59e0b55;color:#f59e0b;text-decoration:none;border-radius:20px;padding:6px 14px;font-size:12px;font-weight:700;transition:all 0.15s" onmouseover="this.style.background='#2a2010'" onmouseout="this.style.background='#1f1a0e'">⭐ Rate My Buff</a></div></div>
 <div class="content">
   <div class="menu-panel" id="menu-panel"><div class="loading">Loading menu...</div></div>
   <div class="cart-panel">
@@ -1015,7 +1016,6 @@ window.placeOrder = async function() {
       var commentsEl = document.getElementById('cust-comments'); if (commentsEl) commentsEl.value = '';
       var discCodeEl = document.getElementById('disc-code'); if (discCodeEl) discCodeEl.value = '';
       prefillCheckoutFromAccount();
-      loadAccountOrderHistory();
     } else {
       ['cust-name','cust-email','cust-comments','disc-code'].forEach(function(id) {
         var el = document.getElementById(id); if (el) el.value = '';
@@ -1040,12 +1040,13 @@ onAuthStateChanged(auth, async user => {
     accountView = 'account';
     editingProfile = false; changingPassword = false;
     prefillCheckoutFromAccount();
-    loadAccountOrderHistory();
+    subscribeAccountOrders();
   } else {
     accountUser = null;
     accountProfile = null;
     accountView = 'login';
     unlockCheckoutFields();
+    unsubscribeAccountOrders();
   }
   updateAccountNavBtn();
   renderAccountModal();
@@ -1231,7 +1232,7 @@ window.doAccountSignup = async function() {
     accountView = 'account';
     updateAccountNavBtn();
     prefillCheckoutFromAccount();
-    loadAccountOrderHistory();
+    subscribeAccountOrders();
     closeAccountModal();
     showToast('Account created! Welcome, ' + name.split(' ')[0] + '!');
   } catch(e) {
@@ -1289,33 +1290,67 @@ window.doAccountSignout = async function() {
   showToast('Signed out');
 }
 
-async function loadAccountOrderHistory() {
+let accountOrdersUnsub = null;
+
+function subscribeAccountOrders() {
+  if (accountOrdersUnsub) { accountOrdersUnsub(); accountOrdersUnsub = null; }
   if (!accountUser) return;
-  try {
-    const snap = await get(ref(db, 'orders'));
+  const email = (accountUser.email || '').toLowerCase();
+  let firstLoad = true;
+  accountOrdersUnsub = onValue(ref(db, 'orders'), snap => {
     const all = snap.val() ? Object.entries(snap.val()) : [];
-    const email = (accountUser.email || '').toLowerCase();
+    const prevActiveKeys = new Set(accountOrderHistory.filter(o => o.status !== 'done').map(o => o.fbKey));
     accountOrderHistory = all
       .filter(([k,o]) => (o.email||'').toLowerCase() === email)
       .map(([k,o]) => ({...o, fbKey:k}))
       .sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
-  } catch(e) { console.error(e); accountOrderHistory = []; }
-  renderOrderHistoryList();
+    if (!firstLoad) {
+      const justFinished = accountOrderHistory.some(o => o.status === 'done' && prevActiveKeys.has(o.fbKey));
+      if (justFinished) showToast('✅ Your order is ready!', 6000);
+    }
+    firstLoad = false;
+    renderOrderHistoryList();
+    updateActiveOrderPill();
+  });
+}
+
+function unsubscribeAccountOrders() {
+  if (accountOrdersUnsub) { accountOrdersUnsub(); accountOrdersUnsub = null; }
+  accountOrderHistory = [];
+  updateActiveOrderPill();
+}
+
+function updateActiveOrderPill() {
+  const pill = document.getElementById('active-order-pill');
+  if (!pill) return;
+  const hasActive = accountUser && accountOrderHistory.some(o => o.status !== 'done');
+  pill.style.display = hasActive ? 'inline-flex' : 'none';
 }
 
 function renderOrderHistoryList() {
   const el = document.getElementById('order-history-list');
   if (!el) return;
   if (!accountOrderHistory.length) { el.innerHTML = '<div style="font-size:12px;color:#666">No past orders yet.</div>'; return; }
-  el.innerHTML = accountOrderHistory.slice(0,20).map(o => {
-    const itemsText = (o.items||[]).map(i => `${i.qty}x ${escapeHtmlAttr(i.name)}`).join(', ');
-    const dateLabel = o.date || (o.createdAt ? new Date(o.createdAt).toLocaleDateString() : '');
-    return `<div class="order-hist-item">
+  const active = accountOrderHistory.filter(o => o.status !== 'done');
+  const past = accountOrderHistory.filter(o => o.status === 'done').slice(0, 20);
+  el.innerHTML = active.map(o => orderHistoryCardHtml(o, true)).join('')
+    + past.map(o => orderHistoryCardHtml(o, false)).join('');
+}
+
+function orderHistoryCardHtml(o, isActive) {
+  const itemsText = (o.items||[]).map(i => `${i.qty}x ${escapeHtmlAttr(i.name)}`).join(', ');
+  const dateLabel = o.date || (o.createdAt ? new Date(o.createdAt).toLocaleDateString() : '');
+  const statusHtml = o.status === 'done'
+    ? '<span style="color:#22c55e;font-weight:700;font-size:11px;white-space:nowrap">✅ Ready</span>'
+    : '<span style="color:#f59e0b;font-weight:700;font-size:11px;white-space:nowrap">🧑\u200d🍳 Being Prepared</span>';
+  return `<div class="order-hist-item"${isActive ? ' style="border-color:#f59e0b66;background:#1f1a0e"' : ''}>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
       <div class="order-hist-date">${escapeHtmlAttr(dateLabel)}${o.time ? ' · ' + escapeHtmlAttr(o.time) : ''}</div>
-      <div class="order-hist-items">${itemsText}</div>
-      <div class="order-hist-total">$${parseFloat(o.total||0).toFixed(2)}</div>
-    </div>`;
-  }).join('');
+      ${statusHtml}
+    </div>
+    <div class="order-hist-items">${itemsText}</div>
+    <div class="order-hist-total">$${parseFloat(o.total||0).toFixed(2)}</div>
+  </div>`;
 }
 
 function showToast(msg, duration = 4000) {

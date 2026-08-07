@@ -161,7 +161,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
       <button class="tb" onclick="switchTab('menu')">Menu</button>
       <button class="tb" onclick="switchTab('coupons')">Coupons</button>
       <button class="tb" onclick="switchTab('staff')">Staff</button>
-      <button class="tb" onclick="switchTab('inventory')">Inventory</button>
+      <button class="tb" onclick="switchTab('inventory')">Inventory <span class="badge" id="stockbadge" style="background:#ef4444"></span></button>
       <button class="tb" onclick="switchTab('loyalty')">Loyalty</button>
       <button class="tb" onclick="switchTab('waittime')">Wait Time</button>
       <button class="tb" onclick="switchTab('finance')">Finance</button>
@@ -383,7 +383,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
           <input type="text" id="loyalty-search" placeholder="Search by name or email..." oninput="renderLoyaltyAdmin()" style="background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:5px 9px;font-size:12px;color:#fff;width:220px">
         </div>
         <table class="mtable" style="margin-top:10px">
-          <thead><tr><th>Name</th><th>Email</th><th>Orders</th><th>Credits</th><th>Last Order</th><th>Actions</th></tr></thead>
+          <thead><tr><th>Name</th><th>Tier</th><th>Email</th><th>Orders</th><th>Credits</th><th>Last Order</th><th>Actions</th></tr></thead>
           <tbody id="loyalty-admin-body"></tbody>
         </table>
       </div>
@@ -890,6 +890,24 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
         <tbody id="reports-history-body"></tbody>
       </table>
     </div>
+    <div class="asec">
+      <div class="asec-title">📅 Weekly Rollups</div>
+      <div style="font-size:12px;color:#888;margin-bottom:10px">Auto-generates every Monday (after 9 AM), covering the Monday–Sunday week that just finished. Same email, same setup above.</div>
+      <button onclick="checkThisWeeksReport()" style="margin-bottom:10px;background:#1a2a3a;border:1px solid #2e75b6;color:#60a5fa;border-radius:6px;padding:7px 14px;font-size:12px;cursor:pointer">Check/Send This Week's Report Now</button>
+      <table class="mtable">
+        <thead><tr><th>Week</th><th>Orders</th><th>Revenue</th><th>Status</th><th></th></tr></thead>
+        <tbody id="weekly-reports-body"></tbody>
+      </table>
+    </div>
+    <div class="asec">
+      <div class="asec-title">🗓️ Monthly Rollups</div>
+      <div style="font-size:12px;color:#888;margin-bottom:10px">Auto-generates on the 1st of each month (after 9 AM), covering the full previous calendar month.</div>
+      <button onclick="checkLastMonthsReport()" style="margin-bottom:10px;background:#1a2a3a;border:1px solid #2e75b6;color:#60a5fa;border-radius:6px;padding:7px 14px;font-size:12px;cursor:pointer">Check/Send Last Month's Report Now</button>
+      <table class="mtable">
+        <thead><tr><th>Month</th><th>Orders</th><th>Revenue</th><th>Status</th><th></th></tr></thead>
+        <tbody id="monthly-reports-body"></tbody>
+      </table>
+    </div>
   </div></div>
 </div>
 
@@ -897,11 +915,20 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 <div class="tab-content" id="tab-leaderboard">
   <div class="admin-scroll"><div class="admin-wrap">
     <div class="admin-title">🏆 Leaderboard</div>
-    <div class="admin-sub">Ranked by total lifetime orders, computed live from your order history. The public version at leaderboard.html shows names and order counts only — this internal view also shows email and lifetime dollars spent.</div>
+    <div class="admin-sub">Ranked by total lifetime orders, computed live from your order history. The public version at leaderboard.html shows names and order counts only — this internal view also shows email, tier, and lifetime dollars spent.</div>
     <div class="asec">
+      <div class="asec-title">Customers</div>
       <table class="mtable">
-        <thead><tr><th>#</th><th>Name</th><th>Email</th><th>Lifetime Orders</th><th>Lifetime Spent</th></tr></thead>
+        <thead><tr><th>#</th><th>Name</th><th>Tier</th><th>Email</th><th>Lifetime Orders</th><th>Lifetime Spent</th></tr></thead>
         <tbody id="leaderboard-body"></tbody>
+      </table>
+    </div>
+    <div class="asec">
+      <div class="asec-title">Staff (Internal Only)</div>
+      <div style="font-size:12px;color:#888;margin-bottom:10px">Ranked by orders marked complete. Only counts orders finished after this feature was added — anything completed before then won't be attributed to anyone.</div>
+      <table class="mtable">
+        <thead><tr><th>#</th><th>Staff Member</th><th>Orders Completed</th></tr></thead>
+        <tbody id="staff-leaderboard-body"></tbody>
       </table>
     </div>
   </div></div>
@@ -954,20 +981,25 @@ emailjs.init("yoxsvEb1uuAA4Ytcd");
 const auth = getAuth(app);
 const db = getDatabase(app);
 
-let orders = {}, menu = [], coupons = [], staffList = [], loyaltyRecords = {}, loyaltyMilestonesData = {}, waittimeData = {}, brandingData = {}, expensesData = {}, rewardStaffData = {}, specialsData = {}, ratingsData = {}, rmbWorkersData = {}, deliveryLocationsData = {}, deliverySettingsData = {}, loungeDisplayData = {}, drinkPicturesData = {}, saucesData = [], reportsConfigData = {}, nightlyReportsData = {};
+let orders = {}, menu = [], coupons = [], staffList = [], loyaltyRecords = {}, loyaltyMilestonesData = {}, waittimeData = {}, brandingData = {}, expensesData = {}, rewardStaffData = {}, specialsData = {}, ratingsData = {}, rmbWorkersData = {}, deliveryLocationsData = {}, deliverySettingsData = {}, loungeDisplayData = {}, drinkPicturesData = {}, saucesData = [], reportsConfigData = {}, nightlyReportsData = {}, weeklyReportsData = {}, monthlyReportsData = {};
 let tapTimers = {}, currentTab = 'orders';
+
+let currentAdminUID = null, currentAdminName = 'Admin';
 
 onAuthStateChanged(auth, async user => {
   if (user) {
-    const snap = await get(ref(db, `users/${user.uid}/role`));
-    const role = snap.val();
-    if (role === 'admin') {
+    const snap = await get(ref(db, `users/${user.uid}`));
+    const userData = snap.val() || {};
+    if (userData.role === 'admin') {
+      currentAdminUID = user.uid;
+      currentAdminName = userData.name || 'Admin';
       showAdmin();
     } else {
       await signOut(auth);
       showLoginErr('Admin access only.');
     }
   } else {
+    currentAdminUID = null;
     document.getElementById('login-wrap').style.display = 'flex';
     document.getElementById('admin-app').style.display = 'none';
   }
@@ -987,8 +1019,9 @@ function showLoginErr(msg) { const e = document.getElementById('login-err'); e.s
 function showAdmin() {
   document.getElementById('login-wrap').style.display = 'none';
   document.getElementById('admin-app').style.display = 'flex';
-  onValue(ref(db,'orders'), snap => { orders = snap.val()||{}; renderOrders(); renderHistory(); updateBadge(); if(currentTab==='waittime') updateWaitTimeUI(); if(currentTab==='finance') renderFinance(); if(currentTab==='leaderboard') renderLeaderboard(); });
-  onValue(ref(db,'menu'), snap => { const d = snap.val(); menu = d ? Object.values(d) : []; renderMenuAdmin(); if(currentTab==='lounge'){ populateDrinkPictureItemSelect(); renderDrinkPictures(); } });
+  onValue(ref(db,'orders'), snap => { orders = snap.val()||{}; renderOrders(); renderHistory(); updateBadge(); if(currentTab==='waittime') updateWaitTimeUI(); if(currentTab==='finance') renderFinance(); if(currentTab==='leaderboard') { renderLeaderboard(); renderStaffLeaderboard(); } });
+  onValue(ref(db,'menu'), snap => { const d = snap.val(); menu = d ? Object.values(d) : []; renderMenuAdmin(); renderInventory(); if(currentTab==='lounge'){ populateDrinkPictureItemSelect(); renderDrinkPictures(); } });
+  onValue(ref(db,'inventorySettings'), snap => { inventorySettingsData = snap.val()||{}; renderInventory(); });
   onValue(ref(db,'sauces'), snap => { const d = snap.val(); saucesData = d ? Object.values(d) : []; if(currentTab==='menu') renderSauces(); });
   onValue(ref(db,'coupons'), snap => { const d = snap.val(); coupons = d ? Object.entries(d).map(([k,v])=>({fbKey:k,...v})) : []; renderCoupons(); });
   onValue(ref(db,'users'), snap => {
@@ -1020,10 +1053,13 @@ function showAdmin() {
   onValue(ref(db,'rmbWorkers'), snap => { rmbWorkersData = snap.val()||{}; if(currentTab==='ratings') renderRmbAdmin(); });
   onValue(ref(db,'reportsConfig'), snap => { reportsConfigData = snap.val()||{}; if(currentTab==='reports') renderReportsSettings(); });
   onValue(ref(db,'nightlyReports'), snap => { nightlyReportsData = snap.val()||{}; if(currentTab==='reports') renderReportsHistory(); });
+  onValue(ref(db,'weeklyReports'), snap => { weeklyReportsData = snap.val()||{}; if(currentTab==='reports') renderWeeklyReportsHistory(); });
+  onValue(ref(db,'monthlyReports'), snap => { monthlyReportsData = snap.val()||{}; if(currentTab==='reports') renderMonthlyReportsHistory(); });
   if (!window._reportsInterval) {
-    window._reportsInterval = setInterval(checkNightlyReportTrigger, 30000);
+    window._reportsInterval = setInterval(() => { checkNightlyReportTrigger(); checkWeeklyMonthlyTrigger(); }, 30000);
   }
   checkNightlyReportTrigger();
+  checkWeeklyMonthlyTrigger();
 }
 
 window.switchTab = function(t) {
@@ -1043,8 +1079,8 @@ window.switchTab = function(t) {
   if (t==='finance') renderFinance();
   if (t==='branding') initBranding();
   if (t==='history') renderHistory();
-  if (t==='reports') { renderReportsSettings(); renderReportsHistory(); }
-  if (t==='leaderboard') renderLeaderboard();
+  if (t==='reports') { renderReportsSettings(); renderReportsHistory(); renderWeeklyReportsHistory(); renderMonthlyReportsHistory(); }
+  if (t==='leaderboard') { renderLeaderboard(); renderStaffLeaderboard(); }
 }
 
 // ORDERS
@@ -1077,7 +1113,7 @@ function handleTap(key,order) {
 }
 
 async function markDone(key,order) {
-  await update(ref(db,`orders/${key}`),{status:'done'});
+  await update(ref(db,`orders/${key}`),{status:'done', completedBy: currentAdminUID, completedByName: currentAdminName});
   if(order.email) sendOrderReadyEmail(order);
 }
 
@@ -1544,10 +1580,26 @@ window.closeCustomizeAdmin = function() {
 }
 
 
+let inventorySettingsData = {};
+
 function renderInventory() {
   const body = document.getElementById('inventory-body');
-  if (!menu.length) { body.innerHTML = '<div style="color:#555;text-align:center;padding:40px;font-size:13px">No menu items yet — add them in the Menu tab first.</div>'; return; }
-  body.innerHTML = '';
+  const threshold = parseInt(inventorySettingsData.lowStockThreshold) || 5;
+
+  let lowCount = 0;
+  const settingsHtml = `
+    <div class="asec" style="border-color:#7f1d1d44;background:#1a0e0e">
+      <div class="asec-title" style="color:#f87171">Low-Stock Alerts</div>
+      <div style="font-size:12px;color:#888;margin-bottom:10px">Any tracked item at or below this quantity (but not yet at 0) gets flagged here and on the Inventory tab button.</div>
+      <div class="arow" style="max-width:320px">
+        <span style="font-size:12px;color:#ccc;white-space:nowrap">Alert at or below</span>
+        <input type="number" min="1" step="1" id="low-stock-threshold" value="${threshold}" class="w80">
+        <button class="aadd" onclick="saveLowStockThreshold()">Save</button>
+      </div>
+    </div>`;
+
+  if (!menu.length) { body.innerHTML = settingsHtml + '<div style="color:#555;text-align:center;padding:40px;font-size:13px">No menu items yet — add them in the Menu tab first.</div>'; updateStockBadge(0); return; }
+  body.innerHTML = settingsHtml;
   menu.forEach((cat, ci) => {
     const sec = document.createElement('div');
     sec.className = 'asec';
@@ -1556,11 +1608,13 @@ function renderInventory() {
       const unavailable = item.unavailable === true;
       const hasStock = item.stock !== undefined && item.stock !== null;
       const stockVal = hasStock ? parseInt(item.stock) : '';
+      const isLow = hasStock && stockVal > 0 && stockVal <= threshold;
+      if (isLow) lowCount++;
       const row = document.createElement('div');
       row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #2a2a2a;gap:14px;flex-wrap:wrap';
       row.innerHTML = `
         <div>
-          <div style="font-size:13px;font-weight:600;color:${unavailable?'#666':'#fff'}">${item.name} ${unavailable?'<span style="font-size:10px;color:#ef4444;font-weight:700;background:#2a1010;padding:2px 7px;border-radius:10px;margin-left:4px">UNAVAILABLE</span>':''}</div>
+          <div style="font-size:13px;font-weight:600;color:${unavailable?'#666':'#fff'}">${item.name} ${unavailable?'<span style="font-size:10px;color:#ef4444;font-weight:700;background:#2a1010;padding:2px 7px;border-radius:10px;margin-left:4px">UNAVAILABLE</span>':''}${isLow?'<span style="font-size:10px;color:#f59e0b;font-weight:700;background:#2a1f0e;padding:2px 7px;border-radius:10px;margin-left:4px">🔻 LOW STOCK</span>':''}</div>
           <div style="font-size:11px;color:#888;margin-top:2px">$${parseFloat(item.price).toFixed(2)}</div>
         </div>
         <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
@@ -1568,7 +1622,7 @@ function renderInventory() {
             <span style="font-size:9px;color:#888;text-transform:uppercase;letter-spacing:0.5px">Qty in Stock</span>
             <input type="number" min="0" step="1" value="${stockVal}" placeholder="No limit"
               onchange="updateItemStock(${ci},${ii}, this.value)"
-              style="width:84px;background:#1a1a1a;border:1px solid ${hasStock && stockVal<=0?'#7f1d1d':'#444'};border-radius:6px;padding:5px 8px;font-size:12px;color:#fff;text-align:center">
+              style="width:84px;background:#1a1a1a;border:1px solid ${hasStock && stockVal<=0?'#7f1d1d':(isLow?'#f59e0b':'#444')};border-radius:6px;padding:5px 8px;font-size:12px;color:#fff;text-align:center">
           </div>
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
             <span style="font-size:12px;color:${unavailable?'#ef4444':'#22c55e'}">${unavailable?'Off':'On'}</span>
@@ -1581,6 +1635,21 @@ function renderInventory() {
     });
     body.appendChild(sec);
   });
+  updateStockBadge(lowCount);
+}
+
+function updateStockBadge(n) {
+  const b = document.getElementById('stockbadge');
+  if (!b) return;
+  b.style.display = n > 0 ? 'inline' : 'none';
+  b.textContent = n;
+}
+
+window.saveLowStockThreshold = async function() {
+  const val = parseInt((document.getElementById('low-stock-threshold')||{}).value);
+  if (!val || val < 1) { alert('Enter a whole number of 1 or more'); return; }
+  try { await update(ref(db, 'inventorySettings'), { lowStockThreshold: val }); }
+  catch(e) { alert('Error: ' + e.message); }
 }
 
 window.toggleAvailability = async function(ci, ii) {
@@ -1653,14 +1722,33 @@ window.copyModifiersToSelected = async function() {
 }
 
 
+function getLifetimeOrderCountByEmail() {
+  const byEmail = {};
+  Object.values(orders).forEach(o => {
+    if (!o.email) return;
+    const key = o.email.toLowerCase();
+    byEmail[key] = (byEmail[key]||0) + 1;
+  });
+  return byEmail;
+}
+
+function getCustomerTier(orderCount) {
+  orderCount = orderCount || 0;
+  if (orderCount >= 25) return { name: 'Legend', emoji: '👑', color: '#a855f7' };
+  if (orderCount >= 10) return { name: 'VIP', emoji: '⭐', color: '#f59e0b' };
+  if (orderCount >= 3)  return { name: 'Regular', emoji: '🙂', color: '#22c55e' };
+  return { name: 'New', emoji: '🆕', color: '#888' };
+}
+
 window.renderLoyaltyAdmin = function() {
   const search = (document.getElementById('loyalty-search').value||'').toLowerCase();
   const tbody = document.getElementById('loyalty-admin-body');
+  const lifetimeCounts = getLifetimeOrderCountByEmail();
   let records = Object.entries(loyaltyRecords).map(([k,v]) => ({key:k,...v}));
   if (search) records = records.filter(r => (r.email||'').includes(search) || (r.name||'').toLowerCase().includes(search));
   records.sort((a,b) => (b.orderCount||0)-(a.orderCount||0));
   if (!records.length) {
-    tbody.innerHTML = '<tr><td colspan="6" style="color:#555;text-align:center;padding:16px;font-size:12px">' + (search ? 'No matching customers' : 'No loyalty records yet') + '</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" style="color:#555;text-align:center;padding:16px;font-size:12px">' + (search ? 'No matching customers' : 'No loyalty records yet') + '</td></tr>';
     return;
   }
   tbody.innerHTML = '';
@@ -1671,9 +1759,12 @@ window.renderLoyaltyAdmin = function() {
     const nextMilestone = cyclePos < 5 ? 5 : 10;
     const toNext = nextMilestone - cyclePos;
     const lastOrder = r.lastOrder ? new Date(r.lastOrder).toLocaleDateString() : '—';
+    const lifetimeCount = lifetimeCounts[(r.email||'').toLowerCase()] || 0;
+    const tier = getCustomerTier(lifetimeCount);
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td style="font-weight:600">${r.name||'—'}</td>
+      <td><span style="font-size:11px;font-weight:700;color:${tier.color}">${tier.emoji} ${tier.name}</span></td>
       <td style="font-size:11px;color:#888">${r.email||r.key.replace(/,/g,'.').replace('_at_','@')}</td>
       <td>
         <span style="font-weight:700;color:#f59e0b">${count}</span>
@@ -2385,6 +2476,277 @@ async function sendNightlyReport(dateKey) {
   await update(ref(db, `nightlyReports/${dateKey}`), { sent, emailedTo: cfg.email || null, error: errorMsg, sentAttemptAt: Date.now() });
 }
 
+// ── WEEKLY / MONTHLY ROLLUPS — aggregated from already-computed nightlyReports entries ──
+async function buildRollupStats(dateKeys, label) {
+  const snap = await get(ref(db, 'nightlyReports'));
+  const allReports = snap.val() || {};
+  const relevant = dateKeys.map(dk => allReports[dk]).filter(Boolean);
+
+  let totalOrders=0, totalRevenue=0, deliveryCount=0, preorderCount=0, couponsUsedCount=0, couponsTotalDiscount=0, loyaltyDiscountTotal=0, specialItemsSold=0, sauceRequests=0;
+  const itemMap = {};
+  const workerShiftCounts = {};
+
+  relevant.forEach(r => {
+    totalOrders += r.totalOrders||0;
+    totalRevenue += r.totalRevenue||0;
+    deliveryCount += r.deliveryCount||0;
+    preorderCount += r.preorderCount||0;
+    couponsUsedCount += r.couponsUsedCount||0;
+    couponsTotalDiscount += r.couponsTotalDiscount||0;
+    loyaltyDiscountTotal += r.loyaltyDiscountTotal||0;
+    specialItemsSold += r.specialItemsSold||0;
+    sauceRequests += r.sauceRequests||0;
+    (r.itemBreakdown||[]).forEach(it => {
+      if (!itemMap[it.name]) itemMap[it.name] = { qty: 0, revenue: 0 };
+      itemMap[it.name].qty += it.qty;
+      itemMap[it.name].revenue += it.revenue;
+    });
+    (r.workers||[]).forEach(w => { workerShiftCounts[w.name] = (workerShiftCounts[w.name]||0) + 1; });
+  });
+
+  const itemBreakdown = Object.entries(itemMap).map(([name,v]) => ({ name, qty: v.qty, revenue: round2(v.revenue) })).sort((a,b) => b.qty - a.qty);
+  const workerShifts = Object.entries(workerShiftCounts).map(([name,shifts]) => ({ name, shifts })).sort((a,b) => b.shifts - a.shifts);
+  const nightsWithData = relevant.length;
+  const avgOrder = totalOrders ? round2(totalRevenue/totalOrders) : 0;
+  const avgNightlyRevenue = nightsWithData ? round2(totalRevenue/nightsWithData) : 0;
+
+  return {
+    label, nightsWithData, totalOrders, totalRevenue: round2(totalRevenue), avgOrder, avgNightlyRevenue,
+    deliveryCount, preorderCount, couponsUsedCount, couponsTotalDiscount: round2(couponsTotalDiscount),
+    loyaltyDiscountTotal: round2(loyaltyDiscountTotal), specialItemsSold, sauceRequests,
+    itemBreakdown, workerShifts
+  };
+}
+
+function buildRollupBodyText(stats, title) {
+  const workersText = stats.workerShifts.length
+    ? stats.workerShifts.map(w => `• ${w.name} — ${w.shifts} shift${w.shifts!==1?'s':''}`).join('\n')
+    : 'No shifts recorded';
+  const itemsText = stats.itemBreakdown.length
+    ? stats.itemBreakdown.slice(0,15).map((it,i) => `${i+1}. ${it.name} — ${it.qty} sold — $${it.revenue.toFixed(2)}`).join('\n')
+    : 'No items sold';
+
+  return `THE BUFF — ${title}
+${stats.label}
+
+Nights With Data: ${stats.nightsWithData}
+
+SALES SUMMARY
+Total Orders: ${stats.totalOrders}
+Total Revenue: $${stats.totalRevenue.toFixed(2)}
+Average Order: $${stats.avgOrder.toFixed(2)}
+Average Nightly Revenue: $${stats.avgNightlyRevenue.toFixed(2)}
+
+DELIVERY & PRE-ORDERS
+Deliveries: ${stats.deliveryCount}
+Pre-Orders: ${stats.preorderCount}
+
+COUPONS
+Used: ${stats.couponsUsedCount}
+Total Discount Given: $${stats.couponsTotalDiscount.toFixed(2)}
+
+LOYALTY
+Total Loyalty Credit Used: $${stats.loyaltyDiscountTotal.toFixed(2)}
+
+TOP ITEMS
+${itemsText}
+
+STAFF SHIFTS
+${workersText}
+
+OTHER
+Special Items Sold: ${stats.specialItemsSold}
+Sauce Add-Ons Requested: ${stats.sauceRequests}`;
+}
+
+async function sendRollupReport(kind, key, dateKeys, label, title) {
+  const node = kind === 'weekly' ? 'weeklyReports' : 'monthlyReports';
+  const existingSnap = await get(ref(db, `${node}/${key}`));
+  const existing = existingSnap.val();
+  if (existing && existing.sent) return;
+
+  let stats;
+  if (existing && existing.dataGenerated) {
+    stats = existing;
+  } else {
+    stats = await buildRollupStats(dateKeys, label);
+    stats.dataGenerated = true;
+    stats.reportBody = buildRollupBodyText(stats, title);
+    await set(ref(db, `${node}/${key}`), { ...stats, sent: false, generatedAt: Date.now() });
+  }
+
+  const cfgSnap = await get(ref(db, 'reportsConfig'));
+  const cfg = cfgSnap.val() || {};
+  let sent = false, errorMsg = null;
+  if (cfg.email && cfg.enabled !== false) {
+    try {
+      await emailjs.send("service_imhcg7n", "template_nightly_report", {
+        to_email: cfg.email,
+        report_date: label,
+        report_body: stats.reportBody
+      });
+      sent = true;
+    } catch(e) { errorMsg = (e && e.text) || (e && e.message) || 'Email send failed'; console.error('Rollup report email error:', e); }
+  } else {
+    errorMsg = cfg.enabled === false ? 'Nightly reports are disabled' : 'No report email configured';
+  }
+  await update(ref(db, `${node}/${key}`), { sent, emailedTo: cfg.email || null, error: errorMsg, sentAttemptAt: Date.now() });
+}
+
+function weekDateKeys(weekStart) {
+  const keys = [];
+  for (let i=0; i<7; i++) { const d = new Date(weekStart); d.setDate(weekStart.getDate()+i); keys.push(localDateKey(d)); }
+  return keys;
+}
+
+window.checkThisWeeksReport = async function() {
+  const now = new Date();
+  const dayOffset = (now.getDay() + 6) % 7; // days since most recent Monday
+  const weekStart = new Date(now); weekStart.setDate(now.getDate() - dayOffset - 7); // the just-completed week's Monday
+  const weekKey = localDateKey(weekStart);
+  const weekEnd = new Date(weekStart); weekEnd.setDate(weekStart.getDate()+6);
+  const label = `Week of ${weekStart.toLocaleDateString('en-US',{month:'short',day:'numeric'})} – ${weekEnd.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`;
+  await sendRollupReport('weekly', weekKey, weekDateKeys(weekStart), label, 'WEEKLY REPORT');
+  renderWeeklyReportsHistory();
+  alert('Checked — see the Weekly Rollups table for status.');
+}
+
+window.checkLastMonthsReport = async function() {
+  const now = new Date();
+  const prevMonthDate = new Date(now.getFullYear(), now.getMonth()-1, 1);
+  const monthKey = prevMonthDate.getFullYear() + '-' + String(prevMonthDate.getMonth()+1).padStart(2,'0');
+  const daysInMonth = new Date(prevMonthDate.getFullYear(), prevMonthDate.getMonth()+1, 0).getDate();
+  const dateKeys = [];
+  for (let d=1; d<=daysInMonth; d++) dateKeys.push(localDateKey(new Date(prevMonthDate.getFullYear(), prevMonthDate.getMonth(), d)));
+  const label = prevMonthDate.toLocaleDateString('en-US', {month:'long', year:'numeric'});
+  await sendRollupReport('monthly', monthKey, dateKeys, label, 'MONTHLY REPORT');
+  renderMonthlyReportsHistory();
+  alert('Checked — see the Monthly Rollups table for status.');
+}
+
+window.checkWeeklyMonthlyTrigger = async function() {
+  try {
+    const now = new Date();
+    if (now.getHours() < 9) return; // wait until things have settled for the day
+
+    if (now.getDay() === 1) { // Monday — the week that just ended
+      const weekStart = new Date(now); weekStart.setDate(now.getDate() - 7);
+      const weekKey = localDateKey(weekStart);
+      const existingSnap = await get(ref(db, `weeklyReports/${weekKey}`));
+      if (!(existingSnap.exists() && existingSnap.val().sent)) {
+        const weekEnd = new Date(weekStart); weekEnd.setDate(weekStart.getDate()+6);
+        const label = `Week of ${weekStart.toLocaleDateString('en-US',{month:'short',day:'numeric'})} – ${weekEnd.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}`;
+        await sendRollupReport('weekly', weekKey, weekDateKeys(weekStart), label, 'WEEKLY REPORT');
+        if (currentTab === 'reports') renderWeeklyReportsHistory();
+      }
+    }
+
+    if (now.getDate() === 1) { // 1st of the month — the month that just ended
+      const prevMonthDate = new Date(now.getFullYear(), now.getMonth()-1, 1);
+      const monthKey = prevMonthDate.getFullYear() + '-' + String(prevMonthDate.getMonth()+1).padStart(2,'0');
+      const existingSnap = await get(ref(db, `monthlyReports/${monthKey}`));
+      if (!(existingSnap.exists() && existingSnap.val().sent)) {
+        const daysInMonth = new Date(prevMonthDate.getFullYear(), prevMonthDate.getMonth()+1, 0).getDate();
+        const dateKeys = [];
+        for (let d=1; d<=daysInMonth; d++) dateKeys.push(localDateKey(new Date(prevMonthDate.getFullYear(), prevMonthDate.getMonth(), d)));
+        const label = prevMonthDate.toLocaleDateString('en-US', {month:'long', year:'numeric'});
+        await sendRollupReport('monthly', monthKey, dateKeys, label, 'MONTHLY REPORT');
+        if (currentTab === 'reports') renderMonthlyReportsHistory();
+      }
+    }
+  } catch(e) { console.error('Weekly/monthly trigger error:', e); }
+}
+
+window.resendWeeklyReport = async function(weekKey) {
+  const r = weeklyReportsData[weekKey];
+  if (!r) return;
+  try { await sendRollupReport('weekly', weekKey, [], r.label, 'WEEKLY REPORT'); renderWeeklyReportsHistory(); alert('Resend attempted.'); }
+  catch(e) { alert('Error: ' + e.message); }
+}
+
+window.resendMonthlyReport = async function(monthKey) {
+  const r = monthlyReportsData[monthKey];
+  if (!r) return;
+  try { await sendRollupReport('monthly', monthKey, [], r.label, 'MONTHLY REPORT'); renderMonthlyReportsHistory(); alert('Resend attempted.'); }
+  catch(e) { alert('Error: ' + e.message); }
+}
+
+window.viewWeeklyReportDetails = function(weekKey) {
+  const r = weeklyReportsData[weekKey];
+  if (!r) return;
+  const body = (r.reportBody || 'No details available.').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  showModal(`
+    <h3 style="margin-bottom:10px">Weekly Report — ${r.label||weekKey}</h3>
+    <pre style="white-space:pre-wrap;font-family:inherit;font-size:12px;color:#ccc;background:#111;border:1px solid #333;border-radius:8px;padding:14px;max-height:60vh;overflow-y:auto">${body}</pre>
+    <div class="mbtns"><button class="mbtn cancel" onclick="closeModal()">Close</button></div>
+  `);
+}
+
+window.viewMonthlyReportDetails = function(monthKey) {
+  const r = monthlyReportsData[monthKey];
+  if (!r) return;
+  const body = (r.reportBody || 'No details available.').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  showModal(`
+    <h3 style="margin-bottom:10px">Monthly Report — ${r.label||monthKey}</h3>
+    <pre style="white-space:pre-wrap;font-family:inherit;font-size:12px;color:#ccc;background:#111;border:1px solid #333;border-radius:8px;padding:14px;max-height:60vh;overflow-y:auto">${body}</pre>
+    <div class="mbtns"><button class="mbtn cancel" onclick="closeModal()">Close</button></div>
+  `);
+}
+
+window.renderWeeklyReportsHistory = function() {
+  const tbody = document.getElementById('weekly-reports-body');
+  if (!tbody) return;
+  const entries = Object.entries(weeklyReportsData).sort((a,b) => b[0].localeCompare(a[0]));
+  if (!entries.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="color:#555;text-align:center;padding:14px;font-size:12px">No weekly reports yet</td></tr>';
+    return;
+  }
+  tbody.innerHTML = '';
+  entries.forEach(([key, r]) => {
+    const statusHtml = r.sent
+      ? '<span style="color:#22c55e;font-size:11px;font-weight:700">Sent</span>'
+      : `<span style="color:#ef4444;font-size:11px;font-weight:700" title="${(r.error||'').replace(/"/g,'&quot;')}">Failed</span>`;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td style="font-weight:600">${r.label || key}</td>
+      <td>${r.totalOrders||0}</td>
+      <td>$${parseFloat(r.totalRevenue||0).toFixed(2)}</td>
+      <td>${statusHtml}</td>
+      <td style="display:flex;gap:5px;flex-wrap:wrap">
+        <button onclick="viewWeeklyReportDetails('${key}')" style="background:#1a1a1a;border:1px solid #444;color:#ccc;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">View</button>
+        ${r.sent ? '' : `<button onclick="resendWeeklyReport('${key}')" style="background:#1a2a3a;border:1px solid #2e75b6;color:#60a5fa;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">Retry</button>`}
+      </td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+window.renderMonthlyReportsHistory = function() {
+  const tbody = document.getElementById('monthly-reports-body');
+  if (!tbody) return;
+  const entries = Object.entries(monthlyReportsData).sort((a,b) => b[0].localeCompare(a[0]));
+  if (!entries.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="color:#555;text-align:center;padding:14px;font-size:12px">No monthly reports yet</td></tr>';
+    return;
+  }
+  tbody.innerHTML = '';
+  entries.forEach(([key, r]) => {
+    const statusHtml = r.sent
+      ? '<span style="color:#22c55e;font-size:11px;font-weight:700">Sent</span>'
+      : `<span style="color:#ef4444;font-size:11px;font-weight:700" title="${(r.error||'').replace(/"/g,'&quot;')}">Failed</span>`;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td style="font-weight:600">${r.label || key}</td>
+      <td>${r.totalOrders||0}</td>
+      <td>$${parseFloat(r.totalRevenue||0).toFixed(2)}</td>
+      <td>${statusHtml}</td>
+      <td style="display:flex;gap:5px;flex-wrap:wrap">
+        <button onclick="viewMonthlyReportDetails('${key}')" style="background:#1a1a1a;border:1px solid #444;color:#ccc;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">View</button>
+        ${r.sent ? '' : `<button onclick="resendMonthlyReport('${key}')" style="background:#1a2a3a;border:1px solid #2e75b6;color:#60a5fa;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">Retry</button>`}
+      </td>`;
+    tbody.appendChild(tr);
+  });
+}
+
 window.checkNightlyReportTrigger = async function() {
   try {
     const dateKey = localDateKey();
@@ -2503,6 +2865,32 @@ window.resetFinanceTab = async function() {
   } catch(e) { alert('Error resetting finance data: ' + e.message); }
 }
 
+window.renderStaffLeaderboard = function() {
+  const tbody = document.getElementById('staff-leaderboard-body');
+  if (!tbody) return;
+  const byStaff = {};
+  Object.values(orders).forEach(o => {
+    if (o.status !== 'done' || !o.completedBy) return;
+    if (!byStaff[o.completedBy]) byStaff[o.completedBy] = { name: o.completedByName || 'Unknown', count: 0 };
+    byStaff[o.completedBy].count += 1;
+    if (o.completedByName) byStaff[o.completedBy].name = o.completedByName;
+  });
+  const ranked = Object.values(byStaff).sort((a,b) => b.count - a.count);
+  if (!ranked.length) {
+    tbody.innerHTML = '<tr><td colspan="3" style="color:#555;text-align:center;padding:16px;font-size:12px">No completed orders tracked yet</td></tr>';
+    return;
+  }
+  tbody.innerHTML = '';
+  ranked.forEach((r, i) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td style="font-weight:700;color:${i<3?'#f59e0b':'#888'}">${i+1}</td>
+      <td style="font-weight:600">${r.name}</td>
+      <td style="font-weight:700;color:#f59e0b">${r.count}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
 window.renderLeaderboard = function() {
   const tbody = document.getElementById('leaderboard-body');
   if (!tbody) return;
@@ -2517,15 +2905,17 @@ window.renderLeaderboard = function() {
   });
   const ranked = Object.values(byEmail).sort((a,b) => b.orderCount - a.orderCount);
   if (!ranked.length) {
-    tbody.innerHTML = '<tr><td colspan="5" style="color:#555;text-align:center;padding:16px;font-size:12px">No orders yet</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="color:#555;text-align:center;padding:16px;font-size:12px">No orders yet</td></tr>';
     return;
   }
   tbody.innerHTML = '';
   ranked.forEach((r, i) => {
+    const tier = getCustomerTier(r.orderCount);
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td style="font-weight:700;color:${i<3?'#f59e0b':'#888'}">${i+1}</td>
       <td style="font-weight:600">${r.name || '—'}</td>
+      <td><span style="font-size:11px;font-weight:700;color:${tier.color}">${tier.emoji} ${tier.name}</span></td>
       <td style="font-size:11px;color:#888">${r.email}</td>
       <td style="font-weight:700;color:#f59e0b">${r.orderCount}</td>
       <td>$${r.totalSpent.toFixed(2)}</td>`;
