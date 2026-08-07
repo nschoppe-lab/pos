@@ -250,6 +250,26 @@ body{
   text-align:center;
 }
 
+/* LEADERBOARD (top 5, no dollar amounts — matches the public leaderboard page) */
+.leaderboard-title{
+  font-family:'Baloo 2',sans-serif;
+  font-weight:800;
+  font-size:clamp(20px,calc(var(--vh) * 3.6),34px);
+  color:var(--gold-bright);
+  margin-bottom:calc(var(--vh) * 0.8);
+}
+.leaderboard-row{
+  display:flex;
+  align-items:baseline;
+  justify-content:center;
+  gap:0.7em;
+  font-size:clamp(16px,calc(var(--vh) * 2.6),26px);
+  margin-bottom:calc(var(--vh) * 0.4);
+}
+.leaderboard-rank{color:var(--gold);font-weight:800;width:1.4em;text-align:right}
+.leaderboard-name{color:var(--cream);font-weight:600}
+.leaderboard-count{color:var(--gold-bright);font-weight:700}
+
 /* CLOSED OVERLAY */
 .closed-overlay{
   display:none;
@@ -332,6 +352,11 @@ body{
 
   <div class="drinks-section">
     <div class="drinks-pictures" id="drinks-pictures"></div>
+  </div>
+
+  <div id="leaderboard-wrap" style="display:none;width:100%">
+    <div class="divider"></div>
+    <div class="leaderboard-section" id="leaderboard-section"></div>
   </div>
 
 </div>
@@ -579,7 +604,47 @@ onValue(ref(db, 'orders'), snap => {
   openOrderCount = all.filter(o => o.status === 'pending').length;
   doneOrderCount = all.filter(o => o.status === 'done').length;
   updateWaitDisplay();
+  renderLeaderboard(all);
 });
+
+// First name + last initial only — same privacy treatment as the public leaderboard page.
+function leaderboardDisplayName(fullName) {
+  const parts = String(fullName||'').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return 'A Buff Regular';
+  if (parts.length === 1) return parts[0];
+  return parts[0] + ' ' + parts[parts.length-1].charAt(0).toUpperCase() + '.';
+}
+
+function renderLeaderboard(allOrders) {
+  const wrap = document.getElementById('leaderboard-wrap');
+  const container = document.getElementById('leaderboard-section');
+  if (!wrap || !container) return;
+
+  const byEmail = {};
+  allOrders.forEach(o => {
+    if (!o.email) return;
+    const key = o.email.toLowerCase();
+    if (!byEmail[key]) byEmail[key] = { name: o.name || '', orderCount: 0 };
+    byEmail[key].orderCount += 1;
+    if (o.name) byEmail[key].name = o.name;
+  });
+  const ranked = Object.values(byEmail).sort((a,b) => b.orderCount - a.orderCount).slice(0, 5);
+
+  if (!ranked.length) {
+    wrap.style.display = 'none';
+    container.innerHTML = '';
+    return;
+  }
+
+  wrap.style.display = 'block';
+  container.innerHTML = `<div class="leaderboard-title">🏆 Top Regulars</div>` +
+    ranked.map((r, i) => `
+      <div class="leaderboard-row">
+        <span class="leaderboard-rank">#${i+1}</span>
+        <span class="leaderboard-name">${escapeHtml(leaderboardDisplayName(r.name))}</span>
+        <span class="leaderboard-count">${r.orderCount} orders</span>
+      </div>`).join('');
+}
 </script>
 </body>
 </html>
