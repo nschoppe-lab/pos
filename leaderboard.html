@@ -74,12 +74,9 @@ function escapeHtml(str) {
   return String(str||'').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 }
 
-// First name + last initial only — keeps this fun without publishing full identities.
 function displayName(fullName) {
-  const parts = String(fullName||'').trim().split(/\s+/).filter(Boolean);
-  if (!parts.length) return 'A Buff Regular';
-  if (parts.length === 1) return parts[0];
-  return parts[0] + ' ' + parts[parts.length-1].charAt(0).toUpperCase() + '.';
+  const trimmed = String(fullName||'').trim();
+  return trimmed || 'A Buff Regular';
 }
 
 function buildLeaderboard(ordersObj) {
