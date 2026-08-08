@@ -252,7 +252,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getDatabase, ref, push, onValue, serverTimestamp, get, update, set } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+import { getDatabase, ref, push, onValue, serverTimestamp, get, update, set, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, reauthenticateWithCredential, EmailAuthProvider, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 const firebaseConfig = {
@@ -987,6 +987,8 @@ window.placeOrder = async function() {
 
   try {
     await push(ref(db, 'orders'), order);
+    // Decrement tracked inventory for each ordered item; auto-hides anything that hits 0
+    try { await decrementStockForOrder(cart); } catch(e) { console.error('Stock decrement failed:', e); }
     // Mark single-use coupon as used in Firebase NOW
     if (appliedCoupon && appliedCoupon.singleUse && appliedCoupon.fbKey) {
       try { await update(ref(db, 'coupons/' + appliedCoupon.fbKey), { used: true }); }
@@ -1351,6 +1353,32 @@ function orderHistoryCardHtml(o, isActive) {
     <div class="order-hist-items">${itemsText}</div>
     <div class="order-hist-total">$${parseFloat(o.total||0).toFixed(2)}</div>
   </div>`;
+}
+
+// Decrements stock for any ordered item that has tracking enabled, and auto-marks it
+// unavailable the moment it hits 0. Uses a transaction so two customers ordering the
+// last item at nearly the same time can never both succeed and oversell it.
+async function decrementStockForOrder(cartItems) {
+  const qtyById = {};
+  cartItems.forEach(c => { qtyById[c.id] = (qtyById[c.id] || 0) + (parseInt(c.qty) || 1); });
+  if (!Object.keys(qtyById).length) return;
+
+  await runTransaction(ref(db, 'menu'), currentMenu => {
+    if (!currentMenu) return currentMenu;
+    Object.keys(currentMenu).forEach(catKey => {
+      const cat = currentMenu[catKey];
+      if (!cat || !Array.isArray(cat.items)) return;
+      cat.items.forEach(item => {
+        if (item.stock === undefined || item.stock === null) return; // not tracked — unaffected
+        const orderedQty = qtyById[item.id];
+        if (!orderedQty) return;
+        const newStock = Math.max(0, parseInt(item.stock) - orderedQty);
+        item.stock = newStock;
+        if (newStock <= 0) item.unavailable = true;
+      });
+    });
+    return currentMenu;
+  });
 }
 
 function showToast(msg, duration = 4000) {

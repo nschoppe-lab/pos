@@ -917,6 +917,17 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
     <div class="admin-title">🏆 Leaderboard</div>
     <div class="admin-sub">Ranked by total lifetime orders, computed live from your order history. The public version at leaderboard.html shows names and order counts only — this internal view also shows email, tier, and lifetime dollars spent.</div>
     <div class="asec">
+      <div class="asec-title">Tier Settings</div>
+      <div style="font-size:12px;color:#888;margin-bottom:10px">Customize the tier names, emojis, and order thresholds shown next to customers. A customer's tier is whichever one they qualify for with the highest "min orders" they meet or beat.</div>
+      <div id="tier-settings-body" style="margin-bottom:12px"></div>
+      <div class="arow">
+        <input type="text" id="new-tier-emoji" placeholder="Emoji" style="width:60px;flex:none">
+        <input type="text" id="new-tier-name" placeholder="Tier name (e.g. VIP)">
+        <input type="number" id="new-tier-min" placeholder="Min orders" min="0" step="1" style="width:100px;flex:none">
+        <button class="aadd" onclick="addCustomerTier()">Add Tier</button>
+      </div>
+    </div>
+    <div class="asec">
       <div class="asec-title">Customers</div>
       <table class="mtable">
         <thead><tr><th>#</th><th>Name</th><th>Tier</th><th>Email</th><th>Lifetime Orders</th><th>Lifetime Spent</th></tr></thead>
@@ -981,7 +992,7 @@ emailjs.init("yoxsvEb1uuAA4Ytcd");
 const auth = getAuth(app);
 const db = getDatabase(app);
 
-let orders = {}, menu = [], coupons = [], staffList = [], loyaltyRecords = {}, loyaltyMilestonesData = {}, waittimeData = {}, brandingData = {}, expensesData = {}, rewardStaffData = {}, specialsData = {}, ratingsData = {}, rmbWorkersData = {}, deliveryLocationsData = {}, deliverySettingsData = {}, loungeDisplayData = {}, drinkPicturesData = {}, saucesData = [], reportsConfigData = {}, nightlyReportsData = {}, weeklyReportsData = {}, monthlyReportsData = {};
+let orders = {}, menu = [], coupons = [], staffList = [], loyaltyRecords = {}, loyaltyMilestonesData = {}, waittimeData = {}, brandingData = {}, expensesData = {}, rewardStaffData = {}, specialsData = {}, ratingsData = {}, rmbWorkersData = {}, deliveryLocationsData = {}, deliverySettingsData = {}, loungeDisplayData = {}, drinkPicturesData = {}, saucesData = [], reportsConfigData = {}, nightlyReportsData = {}, weeklyReportsData = {}, monthlyReportsData = {}, customerTiersData = {};
 let tapTimers = {}, currentTab = 'orders';
 
 let currentAdminUID = null, currentAdminName = 'Admin';
@@ -1055,6 +1066,7 @@ function showAdmin() {
   onValue(ref(db,'nightlyReports'), snap => { nightlyReportsData = snap.val()||{}; if(currentTab==='reports') renderReportsHistory(); });
   onValue(ref(db,'weeklyReports'), snap => { weeklyReportsData = snap.val()||{}; if(currentTab==='reports') renderWeeklyReportsHistory(); });
   onValue(ref(db,'monthlyReports'), snap => { monthlyReportsData = snap.val()||{}; if(currentTab==='reports') renderMonthlyReportsHistory(); });
+  onValue(ref(db,'customerTiers'), snap => { customerTiersData = snap.val()||{}; if(currentTab==='leaderboard') { renderTierSettings(); renderLeaderboard(); } if(currentTab==='loyalty') renderLoyaltyAdmin(); });
   if (!window._reportsInterval) {
     window._reportsInterval = setInterval(() => { checkNightlyReportTrigger(); checkWeeklyMonthlyTrigger(); }, 30000);
   }
@@ -1080,7 +1092,7 @@ window.switchTab = function(t) {
   if (t==='branding') initBranding();
   if (t==='history') renderHistory();
   if (t==='reports') { renderReportsSettings(); renderReportsHistory(); renderWeeklyReportsHistory(); renderMonthlyReportsHistory(); }
-  if (t==='leaderboard') { renderLeaderboard(); renderStaffLeaderboard(); }
+  if (t==='leaderboard') { renderTierSettings(); renderLeaderboard(); renderStaffLeaderboard(); }
 }
 
 // ORDERS
@@ -1620,9 +1632,12 @@ function renderInventory() {
         <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
           <div style="display:flex;flex-direction:column;align-items:flex-start;gap:2px">
             <span style="font-size:9px;color:#888;text-transform:uppercase;letter-spacing:0.5px">Qty in Stock</span>
-            <input type="number" min="0" step="1" value="${stockVal}" placeholder="No limit"
-              onchange="updateItemStock(${ci},${ii}, this.value)"
-              style="width:84px;background:#1a1a1a;border:1px solid ${hasStock && stockVal<=0?'#7f1d1d':(isLow?'#f59e0b':'#444')};border-radius:6px;padding:5px 8px;font-size:12px;color:#fff;text-align:center">
+            <div style="display:flex;gap:4px">
+              <input type="number" min="0" step="1" value="${stockVal}" placeholder="No limit"
+                onchange="updateItemStock(${ci},${ii}, this.value)"
+                style="width:84px;background:#1a1a1a;border:1px solid ${hasStock && stockVal<=0?'#7f1d1d':(isLow?'#f59e0b':'#444')};border-radius:6px;padding:5px 8px;font-size:12px;color:#fff;text-align:center">
+              <button onclick="adjustItemStock(${ci},${ii})" title="Add or subtract from current stock" style="background:#1a2a3a;border:1px solid #2e75b6;color:#60a5fa;border-radius:6px;padding:5px 9px;font-size:13px;font-weight:700;cursor:pointer">±</button>
+            </div>
           </div>
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
             <span style="font-size:12px;color:${unavailable?'#ef4444':'#22c55e'}">${unavailable?'Off':'On'}</span>
@@ -1682,6 +1697,21 @@ window.updateItemStock = async function(ci, ii, rawVal) {
   renderInventory();
 }
 
+window.adjustItemStock = async function(ci, ii) {
+  const item = menu[ci].items[ii];
+  const current = (item.stock !== undefined && item.stock !== null) ? parseInt(item.stock) : 0;
+  const deltaStr = prompt(`"${item.name}" — current stock: ${current}\n\nEnter an amount to ADD (e.g. 10) or REMOVE (e.g. -5):`, '');
+  if (deltaStr === null) return;
+  const delta = parseInt(deltaStr, 10);
+  if (isNaN(delta)) { alert('Enter a whole number, positive to add or negative to remove (e.g. 10 or -5)'); return; }
+  const newQty = Math.max(0, current + delta);
+  const newMenu = JSON.parse(JSON.stringify(menu));
+  newMenu[ci].items[ii].stock = newQty;
+  newMenu[ci].items[ii].unavailable = newQty <= 0; // auto-hide at 0, auto-restore the moment it's restocked
+  await setMenu(newMenu);
+  renderInventory();
+}
+
 function renderCopyList() {
   const ci = window._caCI, ii = window._caII;
   const currentItem = menu[ci].items[ii];
@@ -1732,12 +1762,93 @@ function getLifetimeOrderCountByEmail() {
   return byEmail;
 }
 
+const DEFAULT_TIERS = [
+  { name: 'New', emoji: '🆕', minOrders: 0 },
+  { name: 'Regular', emoji: '🙂', minOrders: 3 },
+  { name: 'VIP', emoji: '⭐', minOrders: 10 },
+  { name: 'Legend', emoji: '👑', minOrders: 25 }
+];
+const TIER_COLORS = ['#888', '#22c55e', '#f59e0b', '#a855f7', '#ef4444', '#3b82f6', '#ec4899', '#14b8a6'];
+
+function getActiveTiers() {
+  const list = (customerTiersData && Object.keys(customerTiersData).length) ? Object.values(customerTiersData) : DEFAULT_TIERS;
+  return [...list].sort((a,b) => (parseInt(a.minOrders)||0) - (parseInt(b.minOrders)||0));
+}
+
 function getCustomerTier(orderCount) {
   orderCount = orderCount || 0;
-  if (orderCount >= 25) return { name: 'Legend', emoji: '👑', color: '#a855f7' };
-  if (orderCount >= 10) return { name: 'VIP', emoji: '⭐', color: '#f59e0b' };
-  if (orderCount >= 3)  return { name: 'Regular', emoji: '🙂', color: '#22c55e' };
-  return { name: 'New', emoji: '🆕', color: '#888' };
+  const tiers = getActiveTiers();
+  let matchIdx = 0;
+  tiers.forEach((t, i) => { if (orderCount >= (parseInt(t.minOrders)||0)) matchIdx = i; });
+  const match = tiers[matchIdx] || DEFAULT_TIERS[0];
+  return { name: match.name, emoji: match.emoji || '🏅', color: TIER_COLORS[matchIdx % TIER_COLORS.length] };
+}
+
+window.renderTierSettings = function() {
+  const container = document.getElementById('tier-settings-body');
+  if (!container) return;
+  const tiers = getActiveTiers();
+  const usingDefaults = !(customerTiersData && Object.keys(customerTiersData).length);
+  if (usingDefaults) {
+    container.innerHTML = '<div style="color:#666;font-size:12px;margin-bottom:8px">Using built-in defaults — add a tier below to start customizing.</div>';
+  } else {
+    container.innerHTML = '';
+  }
+  tiers.forEach((t) => {
+    const row = document.createElement('div');
+    row.className = 'co-row';
+    row.innerHTML = `
+      <span style="font-size:16px">${t.emoji||'🏅'}</span>
+      <span class="co-name">${escMenuHtml(t.name)} — ${parseInt(t.minOrders)||0}+ orders</span>
+      ${usingDefaults ? '' : `
+        <button onclick="editCustomerTier('${escMenuHtml(t.name)}')" style="background:#1a2a3a;border:1px solid #2e75b6;color:#60a5fa;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">Edit</button>
+        <button onclick="deleteCustomerTier('${escMenuHtml(t.name)}')" style="background:#3a0a0a;border:1px solid #991b1b;color:#fca5a5;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">Delete</button>`}
+    `;
+    container.appendChild(row);
+  });
+}
+
+window.addCustomerTier = async function() {
+  const emoji = (document.getElementById('new-tier-emoji')||{}).value.trim() || '🏅';
+  const name = (document.getElementById('new-tier-name')||{}).value.trim();
+  const min = parseInt((document.getElementById('new-tier-min')||{}).value);
+  if (!name) { alert('Enter a tier name'); return; }
+  if (isNaN(min) || min < 0) { alert('Enter a valid minimum order count (0 or more)'); return; }
+  const list = getActiveTiers().filter(t => t.name !== name); // starting fresh from defaults if this is the first custom tier
+  list.push({ name, emoji, minOrders: min });
+  await saveCustomerTiers(list);
+  document.getElementById('new-tier-name').value = '';
+  document.getElementById('new-tier-min').value = '';
+  document.getElementById('new-tier-emoji').value = '';
+}
+
+window.editCustomerTier = async function(name) {
+  const tiers = getActiveTiers();
+  const t = tiers.find(x => x.name === name);
+  if (!t) return;
+  const newName = prompt('Tier name:', t.name);
+  if (newName === null) return;
+  const newEmoji = prompt('Emoji:', t.emoji || '');
+  if (newEmoji === null) return;
+  const newMinStr = prompt('Minimum orders required:', t.minOrders);
+  if (newMinStr === null) return;
+  const newMin = parseInt(newMinStr);
+  if (!newName.trim() || isNaN(newMin) || newMin < 0) { alert('Invalid input — no changes made.'); return; }
+  const updated = tiers.map(x => x.name === name ? { name: newName.trim(), emoji: newEmoji.trim()||'🏅', minOrders: newMin } : x);
+  await saveCustomerTiers(updated);
+}
+
+window.deleteCustomerTier = async function(name) {
+  if (!confirm(`Delete the "${name}" tier?`)) return;
+  const updated = getActiveTiers().filter(t => t.name !== name);
+  await saveCustomerTiers(updated);
+}
+
+async function saveCustomerTiers(list) {
+  const obj = {};
+  list.forEach((t,i) => { obj[i] = t; });
+  try { await set(ref(db, 'customerTiers'), obj); }
+  catch(e) { alert('Error saving: ' + e.message); }
 }
 
 window.renderLoyaltyAdmin = function() {
