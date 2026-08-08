@@ -275,9 +275,13 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
   <div class="tab-content" id="tab-staff">
     <div class="admin-scroll"><div class="admin-wrap">
       <div class="admin-title">Staff Accounts</div>
-      <div class="admin-sub">Create kitchen employee accounts. They can only access the Kitchen screen.</div>
+      <div class="admin-sub">Kitchen employees log in with just a PIN on the shared kitchen touchscreen — no individual accounts or passwords for them to manage.</div>
+      <div class="asec" style="border-color:#2e75b644;background:#0e1a2a">
+        <div class="asec-title" style="color:#60a5fa">🖥️ Kitchen Device Login</div>
+        <div id="device-account-section"></div>
+      </div>
       <div class="asec">
-        <div class="asec-title">Create Kitchen Employee Account</div>
+        <div class="asec-title">Add Kitchen Employee</div>
         <div class="arow">
           <input type="text" id="new-sname" placeholder="Name">
           <input type="email" id="new-semail" placeholder="Email (kept on file, not used to log in)">
@@ -288,12 +292,10 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
           <input type="time" id="new-sshift-start" value="10:00" style="width:130px;flex:none">
           <label style="font-size:12px;color:#888;white-space:nowrap;margin-left:8px">Shift end:</label>
           <input type="time" id="new-sshift-end" value="22:00" style="width:130px;flex:none">
-          <button class="aadd" onclick="createStaff()" style="margin-left:auto">Create Account</button>
+          <button class="aadd" onclick="createStaffMember()" style="margin-left:auto">Add Employee</button>
         </div>
         <div style="font-size:11px;color:#666;margin-top:6px">
-          Staff log in at <strong style="color:#ff6b35">kitchen.html</strong> using just their 4-digit PIN — no typing email required.
-          The email stays attached to the account for your records. The Buff auto-opens when they log in and auto-closes when they log out.
-          Shift times are used as a backup schedule if no one is logged in.
+          They'll tap their PIN on the kitchen touchscreen to clock in. The Buff auto-opens when the first person of the day clocks in, and auto-closes when the last person clocks out.
         </div>
       </div>
       <div class="asec">
@@ -973,8 +975,8 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 </div>
 
 <script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getDatabase, ref, onValue, update, remove, push, set, get } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
 const firebaseConfig = {
@@ -992,7 +994,7 @@ emailjs.init("yoxsvEb1uuAA4Ytcd");
 const auth = getAuth(app);
 const db = getDatabase(app);
 
-let orders = {}, menu = [], coupons = [], staffList = [], loyaltyRecords = {}, loyaltyMilestonesData = {}, waittimeData = {}, brandingData = {}, expensesData = {}, rewardStaffData = {}, specialsData = {}, ratingsData = {}, rmbWorkersData = {}, deliveryLocationsData = {}, deliverySettingsData = {}, loungeDisplayData = {}, drinkPicturesData = {}, saucesData = [], reportsConfigData = {}, nightlyReportsData = {}, weeklyReportsData = {}, monthlyReportsData = {}, customerTiersData = {};
+let orders = {}, menu = [], coupons = [], staffList = [], usersList = [], kitchenDeviceData = {}, loyaltyRecords = {}, loyaltyMilestonesData = {}, waittimeData = {}, brandingData = {}, expensesData = {}, rewardStaffData = {}, specialsData = {}, ratingsData = {}, rmbWorkersData = {}, deliveryLocationsData = {}, deliverySettingsData = {}, loungeDisplayData = {}, drinkPicturesData = {}, saucesData = [], reportsConfigData = {}, nightlyReportsData = {}, weeklyReportsData = {}, monthlyReportsData = {}, customerTiersData = {};
 let tapTimers = {}, currentTab = 'orders';
 
 let currentAdminUID = null, currentAdminName = 'Admin';
@@ -1037,17 +1039,17 @@ function showAdmin() {
   onValue(ref(db,'coupons'), snap => { const d = snap.val(); coupons = d ? Object.entries(d).map(([k,v])=>({fbKey:k,...v})) : []; renderCoupons(); });
   onValue(ref(db,'users'), snap => {
     const d = snap.val() || {};
-    staffList = Object.entries(d).map(([k,v])=>({uid:k,...v}));
-    renderStaff();
-    // Mirror public-safe staff info so ratemybuff.html can read without auth
-    const publicMirror = {};
-    staffList.forEach(s => {
-      if (s.role === 'kitchen' || s.role === 'admin') {
-        publicMirror[s.uid] = { name: s.name || '', role: s.role };
-      }
-    });
-    set(ref(db, 'rmbStaffPublic'), publicMirror).catch(()=>{});
+    usersList = Object.entries(d).map(([k,v])=>({uid:k,...v}));
+    renderKitchenDeviceSection();
+    updateRmbStaffMirror();
   });
+  onValue(ref(db,'staff'), snap => {
+    const d = snap.val() || {};
+    staffList = Object.entries(d).map(([k,v])=>({id:k,...v}));
+    renderStaff();
+    updateRmbStaffMirror();
+  });
+  onValue(ref(db,'kitchenDevice'), snap => { kitchenDeviceData = snap.val() || {}; renderKitchenDeviceSection(); });
   onValue(ref(db,'loyalty'), snap => { loyaltyRecords = snap.val()||{}; if(currentTab==='loyalty') renderLoyaltyAdmin(); });
   onValue(ref(db,'loyaltyMilestones'), snap => { loyaltyMilestonesData = snap.val()||{}; if(currentTab==='loyalty') renderLoyaltyMilestones(); });
   onValue(ref(db,'deliveryLocations'), snap => { deliveryLocationsData = snap.val()||{}; if(currentTab==='delivery') renderDeliveryLocations(); });
@@ -1442,10 +1444,65 @@ window.addCoupon = async function() {
 window.deleteCoupon = async function(key) { await remove(ref(db,`coupons/${key}`)); }
 
 // STAFF
-// PIN-based kitchen login — the PIN is a UX shortcut for a real Firebase Auth password
-// that's deterministically derived from it. This exact function must match kitchen.html.
-function derivePinPassword(pin) {
-  return 'BuffKitchenPin_' + pin + '_Xk7pQ2';
+// PIN-based kitchen login — the shared kitchen touchscreen signs in once as one device
+// account; PINs are pure data (not tied to individual Firebase Auth accounts), so admin
+// can set or change any employee's PIN directly, anytime.
+function updateRmbStaffMirror() {
+  const publicMirror = {};
+  (usersList || []).forEach(u => {
+    if (kitchenDeviceData && u.uid === kitchenDeviceData.uid) return; // exclude the shared device account itself
+    if (u.role === 'admin' || u.role === 'kitchen') publicMirror['u_' + u.uid] = { name: u.name || '', role: u.role };
+  });
+  (staffList || []).forEach(s => {
+    publicMirror['s_' + s.id] = { name: s.name || '', role: 'kitchen' };
+  });
+  set(ref(db, 'rmbStaffPublic'), publicMirror).catch(()=>{});
+}
+
+function renderKitchenDeviceSection() {
+  const el = document.getElementById('device-account-section');
+  if (!el) return;
+  if (kitchenDeviceData && kitchenDeviceData.email) {
+    el.innerHTML = `
+      <div style="font-size:12px;color:#888;margin-bottom:10px">The shared kitchen touchscreen signs in once using this account, then stays signed in from then on. Workers never see or use these credentials — they only ever tap their PIN.</div>
+      <div style="background:#1a1a1a;border-radius:7px;padding:10px 12px;font-size:12px;color:#ccc">
+        Device login email: <strong style="color:#fff">${kitchenDeviceData.email}</strong><br>
+        <span style="color:#666">To change this device's own password, use "Device Settings" on the kitchen touchscreen itself once it's signed in.</span>
+      </div>`;
+  } else {
+    el.innerHTML = `
+      <div style="font-size:12px;color:#888;margin-bottom:10px">One-time setup: pick any email/password for the kitchen touchscreen to sign in with. Workers never see this — enter it once on the touchscreen and it stays signed in automatically after that.</div>
+      <div class="arow">
+        <input type="email" id="device-email" placeholder="Device login email">
+        <input type="password" id="device-pass" placeholder="Device password (min 6 chars)">
+        <button class="aadd" onclick="createKitchenDevice()">Create Device Login</button>
+      </div>`;
+  }
+}
+
+window.createKitchenDevice = async function() {
+  const email = (document.getElementById('device-email')||{}).value.trim();
+  const pass = (document.getElementById('device-pass')||{}).value;
+  if (!email || !pass) { alert('Fill in both fields'); return; }
+  if (pass.length < 6) { alert('Password must be at least 6 characters'); return; }
+  let secondaryApp;
+  try {
+    // Created via a separate, temporary Firebase app instance so it never disturbs
+    // this admin session — creating a user normally would otherwise switch this
+    // browser tab's login to the new account.
+    secondaryApp = initializeApp(firebaseConfig, 'DeviceSetup-' + Date.now());
+    const secondaryAuth = getAuth(secondaryApp);
+    const cred = await createUserWithEmailAndPassword(secondaryAuth, email, pass);
+    const uid = cred.user.uid;
+    await set(ref(db, `users/${uid}`), { name: 'Kitchen Device', email, role: 'kitchen', isDevice: true, createdAt: Date.now() });
+    await set(ref(db, 'kitchenDevice'), { uid, email });
+    await signOut(secondaryAuth);
+    alert('✅ Device login created! Go to the kitchen touchscreen and sign in once with this email and password — after that it stays signed in automatically.');
+  } catch(e) {
+    alert('Error creating device login: ' + e.message);
+  } finally {
+    if (secondaryApp) { try { await deleteApp(secondaryApp); } catch(e2) {} }
+  }
 }
 
 function renderStaff() {
@@ -1453,44 +1510,38 @@ function renderStaff() {
   tbody.innerHTML = '';
   if (!staffList.length) {
     tbody.innerHTML = '<tr><td colspan="6" style="color:#555;text-align:center;padding:12px;font-size:12px">No staff accounts yet</td></tr>';
+    const oc0 = document.getElementById('staff-online-count');
+    if (oc0) oc0.textContent = 0;
     return;
   }
-  const onlineCount = staffList.filter(s => s.online && s.role === 'kitchen').length;
+  const onlineCount = staffList.filter(s => s.online === true).length;
   const oc = document.getElementById('staff-online-count');
   if (oc) oc.textContent = onlineCount;
 
   staffList.forEach(s => {
-    const isOnline  = s.online === true;
-    const isKitchen = s.role === 'kitchen';
-    const shift     = (s.shiftStart && s.shiftEnd) ? `${s.shiftStart} – ${s.shiftEnd}` : 'Not set';
+    const isOnline = s.online === true;
+    const shift = (s.shiftStart && s.shiftEnd) ? `${s.shiftStart} – ${s.shiftEnd}` : 'Not set';
     const r = document.createElement('tr');
     r.innerHTML = `
       <td style="font-weight:600">${s.name||'—'}</td>
       <td style="font-size:11px;color:#888">${s.email||'—'}</td>
       <td style="font-size:12px;font-weight:700;color:${s.pin?'#ff6b35':'#555'};letter-spacing:1px">${s.pin || 'Not set'}</td>
-      <td style="font-size:11px;color:#ff6b35">${isKitchen ? shift : '—'}</td>
+      <td style="font-size:11px;color:#ff6b35">${shift}</td>
       <td>
         ${isOnline
           ? '<span style="background:#052e16;color:#22c55e;padding:2px 9px;border-radius:10px;font-size:11px;font-weight:700">🟢 Clocked In</span>'
           : '<span style="background:#1a1a1a;color:#555;padding:2px 9px;border-radius:10px;font-size:11px;font-weight:700">⚫ Offline</span>'}
       </td>
       <td style="display:flex;gap:5px;flex-wrap:wrap">
-        ${isKitchen ? `<button onclick="editShift('${s.uid}','${s.shiftStart||'10:00'}','${s.shiftEnd||'22:00'}')" style="background:#1a2a3a;border:1px solid #2e75b6;color:#60a5fa;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">Edit Shift</button>` : ''}
-        ${s.email ? `<button onclick="sendPinResetEmail('${s.email}','${(s.name||'').replace(/'/g,"\\'")}')" style="background:#2a1f0e;border:1px solid #f59e0b44;color:#f59e0b;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">Forgot PIN? Email Reset</button>` : ''}
+        <button onclick="editShift('${s.id}','${s.shiftStart||'10:00'}','${s.shiftEnd||'22:00'}')" style="background:#1a2a3a;border:1px solid #2e75b6;color:#60a5fa;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">Edit Shift</button>
+        <button onclick="editStaffPin('${s.id}','${s.pin||''}')" style="background:#2a1f0e;border:1px solid #f59e0b44;color:#f59e0b;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">Edit PIN</button>
+        <button onclick="deleteStaffMember('${s.id}','${(s.name||'').replace(/'/g,"\\'")}')" style="background:#3a0a0a;border:1px solid #991b1b;color:#fca5a5;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">Delete</button>
       </td>`;
     tbody.appendChild(r);
   });
 }
 
-window.sendPinResetEmail = async function(email, name) {
-  if (!confirm(`Send a password reset link to ${name || email}?\n\nThey'll use the link to set a temporary password, log in with that, then set a new PIN from the "Change My PIN" option on the kitchen screen.`)) return;
-  try {
-    await sendPasswordResetEmail(auth, email);
-    alert(`Reset link sent to ${email}.`);
-  } catch(e) { alert('Error sending reset email: ' + e.message); }
-}
-
-window.editShift = function(uid, currentStart, currentEnd) {
+window.editShift = function(staffId, currentStart, currentEnd) {
   showModal(`
     <h3>Edit Shift Times</h3>
     <p style="font-size:12px;color:#aaa;margin-bottom:14px">Update this staff member's shift. The Buff auto-opens when they clock in.</p>
@@ -1508,18 +1559,47 @@ window.editShift = function(uid, currentStart, currentEnd) {
     </div>
     <div class="mbtns">
       <button class="mbtn cancel" onclick="closeModal()">Cancel</button>
-      <button class="mbtn ok" onclick="saveShift('${uid}')">Save</button>
+      <button class="mbtn ok" onclick="saveShift('${staffId}')">Save</button>
     </div>`);
 }
 
-window.saveShift = async function(uid) {
+window.saveShift = async function(staffId) {
   const start = document.getElementById('edit-shift-start').value;
   const end   = document.getElementById('edit-shift-end').value;
-  await update(ref(db, `users/${uid}`), { shiftStart: start, shiftEnd: end });
+  await update(ref(db, `staff/${staffId}`), { shiftStart: start, shiftEnd: end });
   closeModal();
 }
 
-window.createStaff = async function() {
+window.editStaffPin = async function(staffId, currentPin) {
+  const newPin = prompt(`Current PIN: ${currentPin || '(none set)'}\n\nEnter new 4-digit PIN:`, '');
+  if (newPin === null) return;
+  if (!/^\d{4}$/.test(newPin)) { alert('PIN must be exactly 4 digits'); return; }
+  try {
+    const checkSnap = await get(ref(db, `staffPins/${newPin}`));
+    if (checkSnap.exists() && checkSnap.val() !== staffId) {
+      alert('That PIN is already in use by another staff member — pick a different one.');
+      return;
+    }
+    if (currentPin && currentPin !== newPin) {
+      await remove(ref(db, `staffPins/${currentPin}`));
+    }
+    await set(ref(db, `staffPins/${newPin}`), staffId);
+    await update(ref(db, `staff/${staffId}`), { pin: newPin });
+    alert('PIN updated to ' + newPin + '.');
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+window.deleteStaffMember = async function(staffId, name) {
+  if (!confirm(`Remove ${name || 'this employee'}? This cannot be undone.`)) return;
+  try {
+    const snap = await get(ref(db, `staff/${staffId}`));
+    const pin = snap.exists() ? snap.val().pin : null;
+    if (pin) await remove(ref(db, `staffPins/${pin}`));
+    await remove(ref(db, `staff/${staffId}`));
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+window.createStaffMember = async function() {
   const name        = document.getElementById('new-sname').value.trim();
   const email       = document.getElementById('new-semail').value.trim();
   const pin         = document.getElementById('new-spin').value.trim();
@@ -1531,27 +1611,21 @@ window.createStaff = async function() {
     const pinCheckSnap = await get(ref(db, `staffPins/${pin}`));
     if (pinCheckSnap.exists()) { alert('That PIN is already in use by another staff member — pick a different one.'); return; }
 
-    const cred = await createUserWithEmailAndPassword(auth, email, derivePinPassword(pin));
-    await set(ref(db,`users/${cred.user.uid}`), {
-      name, email, role:'kitchen', pin,
-      shiftStart, shiftEnd,
-      createdAt: Date.now(),
-      online: false
-    });
-    await set(ref(db, `staffPins/${pin}`), { uid: cred.user.uid, email });
+    const newRef = push(ref(db, 'staff'));
+    await set(newRef, { name, email, pin, shiftStart, shiftEnd, online: false, createdAt: Date.now() });
+    await set(ref(db, `staffPins/${pin}`), newRef.key);
+
     document.getElementById('new-sname').value  = '';
     document.getElementById('new-semail').value = '';
     document.getElementById('new-spin').value   = '';
-    showModal(`<h3 style="color:#22c55e">Account created!</h3>
-      <p><strong style="color:#fff">${name}</strong> can now log in at kitchen.html with just their PIN</p>
+    showModal(`<h3 style="color:#22c55e">Employee added!</h3>
+      <p><strong style="color:#fff">${name}</strong> can now clock in on the kitchen touchscreen</p>
       <div style="background:#1a1a1a;border-radius:7px;padding:10px 12px;margin:10px 0;font-size:12px;color:#888">
         PIN: <span style="color:#ff6b35;font-weight:700;letter-spacing:2px">${pin}</span><br>
-        Email on file: <span style="color:#fff">${email}</span><br>
-        Shift: <span style="color:#ff6b35">${shiftStart} – ${shiftEnd}</span><br>
-        The Buff will auto-open when they clock in and close when they clock out.
+        Shift: <span style="color:#ff6b35">${shiftStart} – ${shiftEnd}</span>
       </div>
       <div class="mbtns"><button class="mbtn ok" onclick="closeModal()">Done</button></div>`);
-  } catch(e) { alert('Error creating account: ' + e.message); }
+  } catch(e) { alert('Error adding employee: ' + e.message); }
 }
 
 window.clearOrders = async function() {
@@ -3688,13 +3762,17 @@ function initRmbAdmin() {
 }
 
 function getAllRmbWorkers() {
-  // Merge Firebase auth-based kitchen staff + manually added rmbWorkers
+  // Merge admin/kitchen-device accounts (from users) + kitchen employees (from staff) + manually added rmbWorkers.
+  // Key prefixes here must match updateRmbStaffMirror() exactly, since ratings are stored under these same keys.
   const workers = [];
-  // From users (kitchen/admin role)
-  staffList.forEach(s => {
-    if (s.role === 'kitchen' || s.role === 'admin') {
-      workers.push({ uid: s.uid, name: s.name || s.email || '—', role: s.role, source: 'staff' });
+  usersList.forEach(u => {
+    if (kitchenDeviceData && u.uid === kitchenDeviceData.uid) return; // skip the shared device account itself
+    if (u.role === 'admin' || u.role === 'kitchen') {
+      workers.push({ uid: 'u_' + u.uid, name: u.name || u.email || '—', role: u.role, source: 'staff' });
     }
+  });
+  staffList.forEach(s => {
+    workers.push({ uid: 's_' + s.id, name: s.name || s.email || '—', role: 'kitchen', source: 'staff' });
   });
   // From manually added rmbWorkers
   Object.entries(rmbWorkersData).forEach(([key, w]) => {
@@ -3849,7 +3927,14 @@ window.closeRmbReviews = function() {
 function renderStaffSpeedList() {
   var el = document.getElementById('staff-speed-list');
   if (!el) return;
-  var kitchen = staffList.filter(function(s) { return s.role === 'kitchen' || s.role === 'admin'; });
+  var kitchen = [];
+  usersList.forEach(function(u) {
+    if (kitchenDeviceData && u.uid === kitchenDeviceData.uid) return; // skip the shared device account
+    if (u.role === 'kitchen' || u.role === 'admin') kitchen.push({ refPath: 'users/' + u.uid, name: u.name, online: u.online, speedRating: u.speedRating });
+  });
+  staffList.forEach(function(s) {
+    kitchen.push({ refPath: 'staff/' + s.id, name: s.name, online: s.online, speedRating: s.speedRating });
+  });
   if (!kitchen.length) { el.innerHTML = '<div style="color:#555;font-size:12px">No staff yet.</div>'; return; }
   var html = '';
   var opts = [
@@ -3872,16 +3957,16 @@ function renderStaffSpeedList() {
     html += '</div></div>';
     html += '<div style="display:flex;align-items:center;gap:6px">';
     html += '<label style="font-size:11px;color:#888">Time/order:</label>';
-    html += '<select data-uid="' + s.uid + '" onchange="saveStaffSpeed(this.dataset.uid,this.value)" style="background:#1a1a1a;border:1px solid #444;border-radius:5px;padding:5px 8px;font-size:12px;color:#fff">' + optHTML + '</select>';
+    html += '<select data-ref="' + s.refPath + '" onchange="saveStaffSpeed(this.dataset.ref,this.value)" style="background:#1a1a1a;border:1px solid #444;border-radius:5px;padding:5px 8px;font-size:12px;color:#fff">' + optHTML + '</select>';
     html += '</div></div>';
   });
   el.innerHTML = html;
 }
 
-window.saveStaffSpeed = async function(uid, val) {
+window.saveStaffSpeed = async function(refPath, val) {
   var speed = val === '' ? null : parseFloat(val);
   try {
-    await update(ref(db, 'users/' + uid), { speedRating: speed });
+    await update(ref(db, refPath), { speedRating: speed });
     if (currentTab === 'waittime') updateWaitTimeUI();
   } catch(e) { alert('Error: ' + e.message); }
 };
