@@ -121,6 +121,33 @@ body{
   letter-spacing:0.5px;
 }
 
+/* ORDER QUEUE (only rendered while there's at least one pending order) */
+.queue-title{
+  font-family:'Baloo 2',sans-serif;
+  font-weight:800;
+  font-size:clamp(20px,calc(var(--vh) * 3.6),34px);
+  color:var(--gold-bright);
+  margin-bottom:calc(var(--vh) * 0.8);
+}
+.queue-row{
+  display:flex;
+  align-items:baseline;
+  justify-content:center;
+  gap:0.8em;
+  font-size:clamp(15px,calc(var(--vh) * 2.3),23px);
+  margin-bottom:calc(var(--vh) * 0.3);
+}
+.queue-pos{color:var(--gold);font-weight:800;width:1.6em;text-align:right}
+.queue-num{color:var(--cream);font-weight:600;letter-spacing:1px}
+.queue-time{color:var(--gold-bright);font-weight:700}
+.queue-more{
+  font-size:clamp(12px,calc(var(--vh) * 1.8),16px);
+  color:var(--cream);
+  opacity:0.6;
+  margin-top:calc(var(--vh) * 0.5);
+  font-style:italic;
+}
+
 /* MENU */
 .menu-section{width:100%}
 .menu-cat-label{
@@ -318,6 +345,11 @@ body{
     <div class="wait-time" id="wait-time">—</div>
     <div class="wait-unit" id="wait-unit">minutes</div>
     <div class="wait-stats" id="wait-stats"></div>
+  </div>
+
+  <div id="queue-wrap" style="display:none;width:100%">
+    <div class="divider"></div>
+    <div class="queue-section" id="queue-section"></div>
   </div>
 
   <div id="promo-wrap" style="display:none;width:100%">
@@ -600,12 +632,51 @@ onValue(ref(db, 'waittime'), snap => {
 
 onValue(ref(db, 'orders'), snap => {
   const data = snap.val() || {};
-  const all = Object.values(data);
+  const all = Object.entries(data).map(([k,v]) => ({ fbKey: k, ...v }));
   openOrderCount = all.filter(o => o.status === 'pending').length;
   doneOrderCount = all.filter(o => o.status === 'done').length;
   updateWaitDisplay();
+  renderOrderQueue(all);
   renderLeaderboard(all);
 });
+
+// Shows the live pending-order queue with a short (privacy-safe) order number and an
+// estimated ready time per position — never customer names.
+function renderOrderQueue(allOrders) {
+  const wrap = document.getElementById('queue-wrap');
+  const container = document.getElementById('queue-section');
+  if (!wrap || !container) return;
+
+  const pending = allOrders.filter(o => o.status === 'pending').sort((a,b) => (a.createdAt||0) - (b.createdAt||0));
+  if (!pending.length) {
+    wrap.style.display = 'none';
+    container.innerHTML = '';
+    return;
+  }
+
+  const d = waittimeSettings || {};
+  const defaultMpo = parseFloat(d.minsPerOrder) || 2;
+  const effectiveMpo = d.activeStaffMpo ? parseFloat(d.activeStaffMpo) : defaultMpo;
+
+  const maxShow = 8;
+  const shown = pending.slice(0, maxShow);
+  const extra = pending.length - shown.length;
+
+  wrap.style.display = 'block';
+  let html = `<div class="queue-title">📋 Order Queue</div>`;
+  html += shown.map((o, i) => {
+    const readyDate = new Date(Date.now() + (i + 1) * effectiveMpo * 60000);
+    const readyLabel = readyDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    const shortId = (o.fbKey || '').slice(-4).toUpperCase();
+    return `<div class="queue-row">
+      <span class="queue-pos">#${i + 1}</span>
+      <span class="queue-num">${shortId}</span>
+      <span class="queue-time">Ready ~${readyLabel}</span>
+    </div>`;
+  }).join('');
+  if (extra > 0) html += `<div class="queue-more">+ ${extra} more order${extra !== 1 ? 's' : ''} in queue</div>`;
+  container.innerHTML = html;
+}
 
 function leaderboardDisplayName(fullName) {
   const trimmed = String(fullName||'').trim();
