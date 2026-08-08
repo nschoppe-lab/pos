@@ -148,6 +148,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
     </div>
     <div style="display:flex;align-items:center;gap:8px">
       <span class="logout-btn" id="reopen-status" style="display:none;background:#0e2a1a;border-color:#22c55e44;color:#22c55e;cursor:default"></span>
+      <button class="logout-btn" id="mute-btn" onclick="toggleAlertMute()" style="background:#1a1a1a;border-color:#22c55e44;color:#22c55e">🔔 Alerts On</button>
       <button class="logout-btn" onclick="showStaffLeaderboard()" style="background:#1a1a1a;border-color:#f59e0b44;color:#f59e0b">🏆 Leaderboard</button>
       <button class="logout-btn" id="reopen-btn" onclick="reopenTemporarily()" style="display:none;background:#0e2a1a;border-color:#22c55e44;color:#22c55e">🔓 Reopen 5 Min</button>
       <button class="logout-btn" onclick="doLogout()" style="background:#2a1010;border-color:#7f1d1d;color:#ef4444">🔴 Clock Out</button>
@@ -196,6 +197,62 @@ let currentWorkerId = null;
 let currentWorkerName = '';
 let deviceListenersStarted = false;
 
+// New-order audible alert
+let knownOrderKeys = null; // null = not yet baselined (prevents sound on initial page load)
+let alertMuted = localStorage.getItem('buff_alert_muted') === 'true';
+let audioCtx = null;
+
+function ensureAudioCtx() {
+  if (!audioCtx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    audioCtx = new AC();
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+// Browsers block audio until a user gesture — this "warms up" the audio context on first tap
+document.addEventListener('click', () => ensureAudioCtx(), { once: true });
+
+function playNewOrderChime() {
+  if (alertMuted) return;
+  const ctx = ensureAudioCtx();
+  if (!ctx) return;
+  try {
+    const now = ctx.currentTime;
+    [880, 1320].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      const t0 = now + i * 0.18;
+      gain.gain.setValueAtTime(0, t0);
+      gain.gain.linearRampToValueAtTime(0.35, t0 + 0.02);
+      gain.gain.linearRampToValueAtTime(0, t0 + 0.16);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(t0);
+      osc.stop(t0 + 0.2);
+    });
+  } catch(e) { console.warn('Could not play new-order alert:', e); }
+}
+
+window.toggleAlertMute = function() {
+  alertMuted = !alertMuted;
+  localStorage.setItem('buff_alert_muted', String(alertMuted));
+  updateMuteBtn();
+  if (!alertMuted) { ensureAudioCtx(); playNewOrderChime(); } // quick confirmation beep when turning back on
+}
+
+function updateMuteBtn() {
+  const btn = document.getElementById('mute-btn');
+  if (!btn) return;
+  btn.textContent = alertMuted ? '🔕 Alerts Off' : '🔔 Alerts On';
+  btn.style.background = alertMuted ? '#2a1010' : '#1a1a1a';
+  btn.style.borderColor = alertMuted ? '#7f1d1d' : '#22c55e44';
+  btn.style.color = alertMuted ? '#ef4444' : '#22c55e';
+}
+updateMuteBtn();
+
 onAuthStateChanged(auth, user => {
   if (user) {
     setupDeviceListeners();
@@ -211,7 +268,20 @@ function setupDeviceListeners() {
   if (deviceListenersStarted) return;
   deviceListenersStarted = true;
   onValue(ref(db, 'orders'), snap => {
-    orders = snap.val() || {};
+    const data = snap.val() || {};
+    const currentKeys = new Set(Object.keys(data));
+    if (knownOrderKeys === null) {
+      // First load after opening the screen — just establish the baseline, don't alert on pre-existing orders
+      knownOrderKeys = currentKeys;
+    } else {
+      let hasNewPending = false;
+      currentKeys.forEach(k => {
+        if (!knownOrderKeys.has(k) && data[k] && data[k].status === 'pending') hasNewPending = true;
+      });
+      if (hasNewPending) playNewOrderChime();
+      knownOrderKeys = currentKeys;
+    }
+    orders = data;
     renderOrders();
   });
   onValue(ref(db, 'waittime'), snap => {
