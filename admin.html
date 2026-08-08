@@ -280,8 +280,8 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
         <div class="asec-title">Create Kitchen Employee Account</div>
         <div class="arow">
           <input type="text" id="new-sname" placeholder="Name">
-          <input type="email" id="new-semail" placeholder="Email">
-          <input type="password" id="new-spass" placeholder="Password (min 6 chars)">
+          <input type="email" id="new-semail" placeholder="Email (kept on file, not used to log in)">
+          <input type="text" inputmode="numeric" maxlength="4" id="new-spin" placeholder="4-digit PIN" style="width:110px;flex:none;letter-spacing:2px">
         </div>
         <div class="arow">
           <label style="font-size:12px;color:#888;white-space:nowrap">Shift start:</label>
@@ -291,8 +291,8 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
           <button class="aadd" onclick="createStaff()" style="margin-left:auto">Create Account</button>
         </div>
         <div style="font-size:11px;color:#666;margin-top:6px">
-          Staff log in at <strong style="color:#ff6b35">kitchen.html</strong>. 
-          The Buff auto-opens when they log in and auto-closes when they log out.
+          Staff log in at <strong style="color:#ff6b35">kitchen.html</strong> using just their 4-digit PIN — no typing email required.
+          The email stays attached to the account for your records. The Buff auto-opens when they log in and auto-closes when they log out.
           Shift times are used as a backup schedule if no one is logged in.
         </div>
       </div>
@@ -302,7 +302,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
           <span id="staff-online-count" style="color:#22c55e;font-weight:700">0</span> staff currently clocked in
         </div>
         <table class="mtable">
-          <thead><tr><th>Name</th><th>Email</th><th>Shift</th><th>Status</th><th>Actions</th></tr></thead>
+          <thead><tr><th>Name</th><th>Email</th><th>PIN</th><th>Shift</th><th>Status</th><th>Actions</th></tr></thead>
           <tbody id="staff-body"></tbody>
         </table>
       </div>
@@ -974,7 +974,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getDatabase, ref, onValue, update, remove, push, set, get } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
 const firebaseConfig = {
@@ -1442,11 +1442,17 @@ window.addCoupon = async function() {
 window.deleteCoupon = async function(key) { await remove(ref(db,`coupons/${key}`)); }
 
 // STAFF
+// PIN-based kitchen login — the PIN is a UX shortcut for a real Firebase Auth password
+// that's deterministically derived from it. This exact function must match kitchen.html.
+function derivePinPassword(pin) {
+  return 'BuffKitchenPin_' + pin + '_Xk7pQ2';
+}
+
 function renderStaff() {
   const tbody = document.getElementById('staff-body');
   tbody.innerHTML = '';
   if (!staffList.length) {
-    tbody.innerHTML = '<tr><td colspan="5" style="color:#555;text-align:center;padding:12px;font-size:12px">No staff accounts yet</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="color:#555;text-align:center;padding:12px;font-size:12px">No staff accounts yet</td></tr>';
     return;
   }
   const onlineCount = staffList.filter(s => s.online && s.role === 'kitchen').length;
@@ -1461,6 +1467,7 @@ function renderStaff() {
     r.innerHTML = `
       <td style="font-weight:600">${s.name||'—'}</td>
       <td style="font-size:11px;color:#888">${s.email||'—'}</td>
+      <td style="font-size:12px;font-weight:700;color:${s.pin?'#ff6b35':'#555'};letter-spacing:1px">${s.pin || 'Not set'}</td>
       <td style="font-size:11px;color:#ff6b35">${isKitchen ? shift : '—'}</td>
       <td>
         ${isOnline
@@ -1469,9 +1476,18 @@ function renderStaff() {
       </td>
       <td style="display:flex;gap:5px;flex-wrap:wrap">
         ${isKitchen ? `<button onclick="editShift('${s.uid}','${s.shiftStart||'10:00'}','${s.shiftEnd||'22:00'}')" style="background:#1a2a3a;border:1px solid #2e75b6;color:#60a5fa;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">Edit Shift</button>` : ''}
+        ${s.email ? `<button onclick="sendPinResetEmail('${s.email}','${(s.name||'').replace(/'/g,"\\'")}')" style="background:#2a1f0e;border:1px solid #f59e0b44;color:#f59e0b;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">Forgot PIN? Email Reset</button>` : ''}
       </td>`;
     tbody.appendChild(r);
   });
+}
+
+window.sendPinResetEmail = async function(email, name) {
+  if (!confirm(`Send a password reset link to ${name || email}?\n\nThey'll use the link to set a temporary password, log in with that, then set a new PIN from the "Change My PIN" option on the kitchen screen.`)) return;
+  try {
+    await sendPasswordResetEmail(auth, email);
+    alert(`Reset link sent to ${email}.`);
+  } catch(e) { alert('Error sending reset email: ' + e.message); }
 }
 
 window.editShift = function(uid, currentStart, currentEnd) {
@@ -1506,26 +1522,31 @@ window.saveShift = async function(uid) {
 window.createStaff = async function() {
   const name        = document.getElementById('new-sname').value.trim();
   const email       = document.getElementById('new-semail').value.trim();
-  const pass        = document.getElementById('new-spass').value;
+  const pin         = document.getElementById('new-spin').value.trim();
   const shiftStart  = document.getElementById('new-sshift-start').value || '10:00';
   const shiftEnd    = document.getElementById('new-sshift-end').value   || '22:00';
-  if (!name||!email||!pass) { alert('Fill in all fields'); return; }
-  if (pass.length < 6)      { alert('Password must be at least 6 characters'); return; }
+  if (!name||!email||!pin) { alert('Fill in all fields'); return; }
+  if (!/^\d{4}$/.test(pin)) { alert('PIN must be exactly 4 digits'); return; }
   try {
-    const cred = await createUserWithEmailAndPassword(auth, email, pass);
+    const pinCheckSnap = await get(ref(db, `staffPins/${pin}`));
+    if (pinCheckSnap.exists()) { alert('That PIN is already in use by another staff member — pick a different one.'); return; }
+
+    const cred = await createUserWithEmailAndPassword(auth, email, derivePinPassword(pin));
     await set(ref(db,`users/${cred.user.uid}`), {
-      name, email, role:'kitchen',
+      name, email, role:'kitchen', pin,
       shiftStart, shiftEnd,
       createdAt: Date.now(),
       online: false
     });
+    await set(ref(db, `staffPins/${pin}`), { uid: cred.user.uid, email });
     document.getElementById('new-sname').value  = '';
     document.getElementById('new-semail').value = '';
-    document.getElementById('new-spass').value  = '';
+    document.getElementById('new-spin').value   = '';
     showModal(`<h3 style="color:#22c55e">Account created!</h3>
-      <p><strong style="color:#fff">${name}</strong> can now log in at kitchen.html</p>
+      <p><strong style="color:#fff">${name}</strong> can now log in at kitchen.html with just their PIN</p>
       <div style="background:#1a1a1a;border-radius:7px;padding:10px 12px;margin:10px 0;font-size:12px;color:#888">
-        Email: <span style="color:#fff">${email}</span><br>
+        PIN: <span style="color:#ff6b35;font-weight:700;letter-spacing:2px">${pin}</span><br>
+        Email on file: <span style="color:#fff">${email}</span><br>
         Shift: <span style="color:#ff6b35">${shiftStart} – ${shiftEnd}</span><br>
         The Buff will auto-open when they clock in and close when they clock out.
       </div>

@@ -20,6 +20,15 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 .login-btn{width:100%;background:#ff6b35;color:#fff;border:none;border-radius:8px;padding:12px;font-size:15px;font-weight:700;cursor:pointer;margin-top:18px;transition:all 0.15s}
 .login-btn:hover{background:#e55a2b}
 .login-err{background:#2a0e0e;color:#ef4444;border-radius:6px;padding:8px 12px;font-size:13px;margin-top:12px;display:none}
+.pin-dots{display:flex;gap:14px;justify-content:center;margin:22px 0}
+.pin-dot{width:16px;height:16px;border-radius:50%;border:2px solid #444;background:transparent;transition:all 0.15s}
+.pin-dot.filled{background:#ff6b35;border-color:#ff6b35}
+.pin-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.pin-key{background:#1a1a1a;border:1px solid #333;color:#fff;border-radius:10px;font-size:22px;font-weight:700;padding:18px 0;cursor:pointer;transition:all 0.1s;user-select:none}
+.pin-key:active{background:#2a2a2a;transform:scale(0.96)}
+.pin-key-alt{font-size:13px;font-weight:600;color:#888}
+.pin-fallback-link{color:#666;font-size:12px;text-decoration:underline;cursor:pointer}
+.pin-fallback-link:hover{color:#999}
 /* KITCHEN */
 .kitchen{display:none;flex-direction:column;min-height:100vh}
 .topbar{background:#111;padding:0 16px;height:52px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #333;flex-shrink:0}
@@ -87,7 +96,36 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 
 <!-- LOGIN -->
 <div class="login-wrap" id="login-wrap">
-  <div class="login-box">
+  <div class="login-box" id="pin-box">
+    <div class="login-logo">&#9654; Kitchen Display</div>
+    <div class="login-sub">Enter your 4-digit PIN</div>
+    <div class="pin-dots" id="pin-dots">
+      <span class="pin-dot" id="pin-dot-0"></span>
+      <span class="pin-dot" id="pin-dot-1"></span>
+      <span class="pin-dot" id="pin-dot-2"></span>
+      <span class="pin-dot" id="pin-dot-3"></span>
+    </div>
+    <div class="pin-pad">
+      <button class="pin-key" onclick="pinPress('1')">1</button>
+      <button class="pin-key" onclick="pinPress('2')">2</button>
+      <button class="pin-key" onclick="pinPress('3')">3</button>
+      <button class="pin-key" onclick="pinPress('4')">4</button>
+      <button class="pin-key" onclick="pinPress('5')">5</button>
+      <button class="pin-key" onclick="pinPress('6')">6</button>
+      <button class="pin-key" onclick="pinPress('7')">7</button>
+      <button class="pin-key" onclick="pinPress('8')">8</button>
+      <button class="pin-key" onclick="pinPress('9')">9</button>
+      <button class="pin-key pin-key-alt" onclick="pinClear()">Clear</button>
+      <button class="pin-key" onclick="pinPress('0')">0</button>
+      <button class="pin-key pin-key-alt" onclick="pinBackspace()">&#9003;</button>
+    </div>
+    <div class="login-err" id="login-err"></div>
+    <div style="text-align:center;margin-top:16px">
+      <span class="pin-fallback-link" onclick="showEmailFallback()">Use email &amp; password instead</span>
+    </div>
+  </div>
+
+  <div class="login-box" id="email-box" style="display:none">
     <div class="login-logo">&#9654; Kitchen Display</div>
     <div class="login-sub">Employee login required</div>
     <label>Email</label>
@@ -95,7 +133,10 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
     <label>Password</label>
     <input type="password" id="login-pass" placeholder="Password" onkeydown="if(event.key==='Enter')doLogin()">
     <button class="login-btn" onclick="doLogin()">Sign In</button>
-    <div class="login-err" id="login-err"></div>
+    <div class="login-err" id="login-err-email"></div>
+    <div style="text-align:center;margin-top:16px">
+      <span class="pin-fallback-link" onclick="showPinPad()">Use PIN instead</span>
+    </div>
   </div>
 </div>
 
@@ -110,6 +151,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
     <div style="display:flex;align-items:center;gap:8px">
       <span class="logout-btn" id="reopen-status" style="display:none;background:#0e2a1a;border-color:#22c55e44;color:#22c55e;cursor:default"></span>
       <button class="logout-btn" onclick="showStaffLeaderboard()" style="background:#1a1a1a;border-color:#f59e0b44;color:#f59e0b">🏆 Leaderboard</button>
+      <button class="logout-btn" onclick="showChangePinModal()" style="background:#1a1a1a;border-color:#444;color:#ccc">🔢 Change PIN</button>
       <button class="logout-btn" id="reopen-btn" onclick="reopenTemporarily()" style="display:none;background:#0e2a1a;border-color:#22c55e44;color:#22c55e">🔓 Reopen 5 Min</button>
       <button class="logout-btn" onclick="doLogout()" style="background:#2a1010;border-color:#7f1d1d;color:#ef4444">🔴 Clock Out</button>
     </div>
@@ -128,8 +170,8 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 emailjs.init("yoxsvEb1uuAA4Ytcd");
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getDatabase, ref, onValue, update, get, set, push } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getDatabase, ref, onValue, update, get, set, push, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCG5nhzdAHBTGg2eXXmhqH8pF8S8qFqM7o",
@@ -152,6 +194,13 @@ const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Satur
 
 let currentUID = null;
 let currentUserName = '';
+let currentUserPin = null;
+
+// PIN-based kitchen login — the PIN is a UX shortcut for a real Firebase Auth password
+// that's deterministically derived from it. This exact function must match admin.html.
+function derivePinPassword(pin) {
+  return 'BuffKitchenPin_' + pin + '_Xk7pQ2';
+}
 
 onAuthStateChanged(auth, async user => {
   if (user) {
@@ -161,6 +210,7 @@ onAuthStateChanged(auth, async user => {
     if (!userData) { await signOut(auth); showError('Account not found.'); return; }
     if (userData.role === 'kitchen' || userData.role === 'admin') {
       currentUserName = userData.name || '';
+      currentUserPin = userData.pin || null;
       // Mark staff as online
       await update(ref(db, `users/${user.uid}`), { online: true, lastLogin: new Date().toISOString() });
       try {
@@ -176,6 +226,7 @@ onAuthStateChanged(auth, async user => {
     }
   } else {
     currentUID = null;
+    currentUserPin = null;
     document.getElementById('login-wrap').style.display = 'flex';
     document.getElementById('kitchen').style.display = 'none';
   }
@@ -193,13 +244,120 @@ window.addEventListener('beforeunload', async () => {
 window.doLogin = async function() {
   const email = document.getElementById('login-email').value.trim();
   const pass = document.getElementById('login-pass').value;
-  const errEl = document.getElementById('login-err');
+  const errEl = document.getElementById('login-err-email');
   errEl.style.display = 'none';
   try {
     await signInWithEmailAndPassword(auth, email, pass);
   } catch(e) {
     errEl.style.display = 'block';
     errEl.textContent = 'Invalid email or password.';
+  }
+}
+
+// ── PIN PAD ──
+let pinEntry = '';
+
+function updatePinDots() {
+  for (let i = 0; i < 4; i++) {
+    const dot = document.getElementById('pin-dot-' + i);
+    if (dot) dot.classList.toggle('filled', i < pinEntry.length);
+  }
+}
+
+window.pinPress = function(digit) {
+  if (pinEntry.length >= 4) return;
+  pinEntry += digit;
+  updatePinDots();
+  const errEl = document.getElementById('login-err');
+  if (errEl) errEl.style.display = 'none';
+  if (pinEntry.length === 4) attemptPinLogin(pinEntry);
+}
+
+window.pinBackspace = function() {
+  pinEntry = pinEntry.slice(0, -1);
+  updatePinDots();
+}
+
+window.pinClear = function() {
+  pinEntry = '';
+  updatePinDots();
+  const errEl = document.getElementById('login-err');
+  if (errEl) errEl.style.display = 'none';
+}
+
+async function attemptPinLogin(pin) {
+  const errEl = document.getElementById('login-err');
+  try {
+    const snap = await get(ref(db, `staffPins/${pin}`));
+    const entry = snap.val();
+    if (!entry || !entry.email) {
+      errEl.textContent = 'PIN not recognized.';
+      errEl.style.display = 'block';
+      pinEntry = ''; updatePinDots();
+      return;
+    }
+    await signInWithEmailAndPassword(auth, entry.email, derivePinPassword(pin));
+    pinEntry = ''; updatePinDots();
+  } catch(e) {
+    errEl.textContent = 'PIN not recognized.';
+    errEl.style.display = 'block';
+    pinEntry = ''; updatePinDots();
+  }
+}
+
+window.showEmailFallback = function() {
+  document.getElementById('pin-box').style.display = 'none';
+  document.getElementById('email-box').style.display = 'block';
+  document.getElementById('login-err').style.display = 'none';
+  pinEntry = ''; updatePinDots();
+}
+
+window.showPinPad = function() {
+  document.getElementById('email-box').style.display = 'none';
+  document.getElementById('pin-box').style.display = 'block';
+  document.getElementById('login-err-email').style.display = 'none';
+}
+
+// ── SELF-SERVICE PIN CHANGE (a worker can only ever change their own PIN — Firebase
+// doesn't allow one account to overwrite another account's password remotely) ──
+window.showChangePinModal = function() {
+  showModal(`
+    <h3>Change My PIN</h3>
+    <p style="font-size:12px;color:#aaa;margin-bottom:14px">Choose a new 4-digit PIN. You'll use it next time you log in.</p>
+    <label style="font-size:11px;color:#888;font-weight:600;display:block;margin-bottom:4px">New PIN</label>
+    <input type="text" inputmode="numeric" maxlength="4" id="new-pin-1" style="width:100%;background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:9px 11px;font-size:14px;color:#fff;letter-spacing:3px;margin-bottom:10px;box-sizing:border-box">
+    <label style="font-size:11px;color:#888;font-weight:600;display:block;margin-bottom:4px">Confirm New PIN</label>
+    <input type="text" inputmode="numeric" maxlength="4" id="new-pin-2" style="width:100%;background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:9px 11px;font-size:14px;color:#fff;letter-spacing:3px;box-sizing:border-box">
+    <div class="mbtns"><button class="mbtn cancel" onclick="closeModal()">Cancel</button><button class="mbtn ok" onclick="saveNewPin()">Save</button></div>
+  `);
+}
+
+window.saveNewPin = async function() {
+  const p1 = (document.getElementById('new-pin-1')||{}).value.trim();
+  const p2 = (document.getElementById('new-pin-2')||{}).value.trim();
+  if (!/^\d{4}$/.test(p1)) { alert('PIN must be exactly 4 digits'); return; }
+  if (p1 !== p2) { alert('PINs do not match'); return; }
+  try {
+    const checkSnap = await get(ref(db, `staffPins/${p1}`));
+    if (checkSnap.exists() && checkSnap.val().uid !== currentUID) {
+      alert('That PIN is already in use by someone else — pick a different one.');
+      return;
+    }
+    await updatePassword(auth.currentUser, derivePinPassword(p1));
+    if (currentUserPin && currentUserPin !== p1) {
+      try { await remove(ref(db, `staffPins/${currentUserPin}`)); } catch(e) {}
+    }
+    await set(ref(db, `staffPins/${p1}`), { uid: currentUID, email: auth.currentUser.email });
+    await update(ref(db, `users/${currentUID}`), { pin: p1 });
+    currentUserPin = p1;
+    closeModal();
+    alert('PIN updated! Use ' + p1 + ' next time you log in.');
+  } catch(e) {
+    if (e.code === 'auth/requires-recent-login') {
+      alert('For security, please log out, log back in with your current PIN, then try changing it again right away.');
+    } else {
+      alert('Error: ' + e.message);
+    }
   }
 }
 
@@ -225,7 +383,9 @@ window.doLogout = async function() {
 }
 
 function showError(msg) {
-  const errEl = document.getElementById('login-err');
+  const pinBox = document.getElementById('pin-box');
+  const usingPin = pinBox && pinBox.style.display !== 'none';
+  const errEl = document.getElementById(usingPin ? 'login-err' : 'login-err-email');
   errEl.style.display = 'block';
   errEl.textContent = msg;
 }
