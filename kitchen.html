@@ -96,9 +96,21 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 
 <!-- LOGIN -->
 <div class="login-wrap" id="login-wrap">
-  <div class="login-box" id="pin-box">
+  <div class="login-box" id="device-box" style="display:none">
     <div class="login-logo">&#9654; Kitchen Display</div>
-    <div class="login-sub">Enter your 4-digit PIN</div>
+    <div class="login-sub">Device setup — one-time only</div>
+    <label>Device Email</label>
+    <input type="email" id="device-email-input" placeholder="device@yourrestaurant.com">
+    <label>Device Password</label>
+    <input type="password" id="device-pass-input" placeholder="Password" onkeydown="if(event.key==='Enter')doDeviceLogin()">
+    <button class="login-btn" onclick="doDeviceLogin()">Sign In This Device</button>
+    <div class="login-err" id="device-login-err"></div>
+    <div style="font-size:11px;color:#555;margin-top:14px;text-align:center">Ask your manager for these credentials. You'll only need this once — the touchscreen stays signed in after this.</div>
+  </div>
+
+  <div class="login-box" id="pin-box" style="display:none">
+    <div class="login-logo">&#9654; Kitchen Display</div>
+    <div class="login-sub">Who's working? Enter your 4-digit PIN</div>
     <div class="pin-dots" id="pin-dots">
       <span class="pin-dot" id="pin-dot-0"></span>
       <span class="pin-dot" id="pin-dot-1"></span>
@@ -119,23 +131,9 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
       <button class="pin-key" onclick="pinPress('0')">0</button>
       <button class="pin-key pin-key-alt" onclick="pinBackspace()">&#9003;</button>
     </div>
-    <div class="login-err" id="login-err"></div>
+    <div class="login-err" id="pin-err"></div>
     <div style="text-align:center;margin-top:16px">
-      <span class="pin-fallback-link" onclick="showEmailFallback()">Use email &amp; password instead</span>
-    </div>
-  </div>
-
-  <div class="login-box" id="email-box" style="display:none">
-    <div class="login-logo">&#9654; Kitchen Display</div>
-    <div class="login-sub">Employee login required</div>
-    <label>Email</label>
-    <input type="email" id="login-email" placeholder="your@email.com">
-    <label>Password</label>
-    <input type="password" id="login-pass" placeholder="Password" onkeydown="if(event.key==='Enter')doLogin()">
-    <button class="login-btn" onclick="doLogin()">Sign In</button>
-    <div class="login-err" id="login-err-email"></div>
-    <div style="text-align:center;margin-top:16px">
-      <span class="pin-fallback-link" onclick="showPinPad()">Use PIN instead</span>
+      <span class="pin-fallback-link" onclick="showDeviceSettingsModal()">Device Settings</span>
     </div>
   </div>
 </div>
@@ -151,7 +149,6 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
     <div style="display:flex;align-items:center;gap:8px">
       <span class="logout-btn" id="reopen-status" style="display:none;background:#0e2a1a;border-color:#22c55e44;color:#22c55e;cursor:default"></span>
       <button class="logout-btn" onclick="showStaffLeaderboard()" style="background:#1a1a1a;border-color:#f59e0b44;color:#f59e0b">🏆 Leaderboard</button>
-      <button class="logout-btn" onclick="showChangePinModal()" style="background:#1a1a1a;border-color:#444;color:#ccc">🔢 Change PIN</button>
       <button class="logout-btn" id="reopen-btn" onclick="reopenTemporarily()" style="display:none;background:#0e2a1a;border-color:#22c55e44;color:#22c55e">🔓 Reopen 5 Min</button>
       <button class="logout-btn" onclick="doLogout()" style="background:#2a1010;border-color:#7f1d1d;color:#ef4444">🔴 Clock Out</button>
     </div>
@@ -170,7 +167,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 emailjs.init("yoxsvEb1uuAA4Ytcd");
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getDatabase, ref, onValue, update, get, set, push, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
 const firebaseConfig = {
@@ -192,69 +189,87 @@ let tapTimers = {};
 let waittimeSettings = {};
 const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 
-let currentUID = null;
-let currentUserName = '';
-let currentUserPin = null;
+// The touchscreen signs in ONCE as one shared "kitchen device" account and stays signed
+// in indefinitely. currentWorkerId/currentWorkerName track WHICH employee has the screen
+// right now — a pure data lookup by PIN, completely separate from the device's own login.
+let currentWorkerId = null;
+let currentWorkerName = '';
+let deviceListenersStarted = false;
 
-// PIN-based kitchen login — the PIN is a UX shortcut for a real Firebase Auth password
-// that's deterministically derived from it. This exact function must match admin.html.
-function derivePinPassword(pin) {
-  return 'BuffKitchenPin_' + pin + '_Xk7pQ2';
-}
-
-onAuthStateChanged(auth, async user => {
+onAuthStateChanged(auth, user => {
   if (user) {
-    currentUID = user.uid;
-    const snap = await get(ref(db, `users/${user.uid}`));
-    const userData = snap.val();
-    if (!userData) { await signOut(auth); showError('Account not found.'); return; }
-    if (userData.role === 'kitchen' || userData.role === 'admin') {
-      currentUserName = userData.name || '';
-      currentUserPin = userData.pin || null;
-      // Mark staff as online
-      await update(ref(db, `users/${user.uid}`), { online: true, lastLogin: new Date().toISOString() });
-      try {
-        await update(ref(db, 'waittime'), { closed: false, manualOverride: false });
-      } catch(e) { console.warn('Could not update waittime on login:', e); }
-      try {
-        await push(ref(db, 'shiftLog'), { uid: user.uid, name: currentUserName, action: 'in', timestamp: Date.now() });
-      } catch(e) { console.warn('Could not log shift sign-on:', e); }
-      showKitchen(userData);
-    } else {
-      await signOut(auth);
-      showError('Access denied. Kitchen accounts only.');
-    }
+    setupDeviceListeners();
+    showPinStage();
   } else {
-    currentUID = null;
-    currentUserPin = null;
-    document.getElementById('login-wrap').style.display = 'flex';
-    document.getElementById('kitchen').style.display = 'none';
+    currentWorkerId = null;
+    currentWorkerName = '';
+    showDeviceLogin();
   }
 });
 
-// Mark offline if browser/tab is closed
-window.addEventListener('beforeunload', async () => {
-  if (currentUID) {
-    // Use sendBeacon for reliability on page close
-    const url = `https://duncan--the-buff-default-rtdb.firebaseio.com/users/${currentUID}/online.json`;
+function setupDeviceListeners() {
+  if (deviceListenersStarted) return;
+  deviceListenersStarted = true;
+  onValue(ref(db, 'orders'), snap => {
+    orders = snap.val() || {};
+    renderOrders();
+  });
+  onValue(ref(db, 'waittime'), snap => {
+    waittimeSettings = snap.val() || {};
+    updateReopenUI();
+  });
+  if (!window._scheduleInterval) {
+    window._scheduleInterval = setInterval(checkScheduleAndReport, 15000);
+  }
+  checkScheduleAndReport();
+  if (!window._reopenTickInterval) {
+    window._reopenTickInterval = setInterval(updateReopenUI, 1000);
+  }
+}
+
+// Mark the current worker offline if the browser/tab is closed mid-shift
+window.addEventListener('beforeunload', () => {
+  if (currentWorkerId) {
+    const url = `https://duncan--the-buff-default-rtdb.firebaseio.com/staff/${currentWorkerId}/online.json`;
     navigator.sendBeacon(url + '?auth=', JSON.stringify(false));
   }
 });
 
-window.doLogin = async function() {
-  const email = document.getElementById('login-email').value.trim();
-  const pass = document.getElementById('login-pass').value;
-  const errEl = document.getElementById('login-err-email');
+function showDeviceLogin() {
+  document.getElementById('device-box').style.display = 'block';
+  document.getElementById('pin-box').style.display = 'none';
+  document.getElementById('login-wrap').style.display = 'flex';
+  document.getElementById('kitchen').style.display = 'none';
+}
+
+function showPinStage() {
+  document.getElementById('device-box').style.display = 'none';
+  document.getElementById('pin-box').style.display = 'block';
+  document.getElementById('login-wrap').style.display = 'flex';
+  document.getElementById('kitchen').style.display = 'none';
+  pinEntry = ''; updatePinDots();
+}
+
+function showKitchenScreen() {
+  document.getElementById('login-wrap').style.display = 'none';
+  document.getElementById('kitchen').style.display = 'flex';
+}
+
+window.doDeviceLogin = async function() {
+  const email = document.getElementById('device-email-input').value.trim();
+  const pass = document.getElementById('device-pass-input').value;
+  const errEl = document.getElementById('device-login-err');
   errEl.style.display = 'none';
   try {
     await signInWithEmailAndPassword(auth, email, pass);
   } catch(e) {
     errEl.style.display = 'block';
-    errEl.textContent = 'Invalid email or password.';
+    errEl.textContent = 'Invalid device email or password.';
   }
 }
 
-// ── PIN PAD ──
+// ── PIN PAD — identifies which employee is using the screen right now.
+// This is a plain database lookup, NOT a Firebase Auth sign-in. ──
 let pinEntry = '';
 
 function updatePinDots() {
@@ -268,9 +283,9 @@ window.pinPress = function(digit) {
   if (pinEntry.length >= 4) return;
   pinEntry += digit;
   updatePinDots();
-  const errEl = document.getElementById('login-err');
+  const errEl = document.getElementById('pin-err');
   if (errEl) errEl.style.display = 'none';
-  if (pinEntry.length === 4) attemptPinLogin(pinEntry);
+  if (pinEntry.length === 4) attemptPinIdentify(pinEntry);
 }
 
 window.pinBackspace = function() {
@@ -281,139 +296,119 @@ window.pinBackspace = function() {
 window.pinClear = function() {
   pinEntry = '';
   updatePinDots();
-  const errEl = document.getElementById('login-err');
+  const errEl = document.getElementById('pin-err');
   if (errEl) errEl.style.display = 'none';
 }
 
-async function attemptPinLogin(pin) {
-  const errEl = document.getElementById('login-err');
+async function attemptPinIdentify(pin) {
+  const errEl = document.getElementById('pin-err');
   try {
-    const snap = await get(ref(db, `staffPins/${pin}`));
-    const entry = snap.val();
-    if (!entry || !entry.email) {
+    const pinSnap = await get(ref(db, `staffPins/${pin}`));
+    const staffId = pinSnap.val();
+    if (!staffId) {
       errEl.textContent = 'PIN not recognized.';
       errEl.style.display = 'block';
       pinEntry = ''; updatePinDots();
       return;
     }
-    await signInWithEmailAndPassword(auth, entry.email, derivePinPassword(pin));
+    const staffSnap = await get(ref(db, `staff/${staffId}`));
+    const staffData = staffSnap.val();
+    if (!staffData) {
+      errEl.textContent = 'Account not found — ask your manager.';
+      errEl.style.display = 'block';
+      pinEntry = ''; updatePinDots();
+      return;
+    }
     pinEntry = ''; updatePinDots();
+    await clockInWorker(staffId, staffData);
   } catch(e) {
-    errEl.textContent = 'PIN not recognized.';
+    errEl.textContent = 'Something went wrong — try again.';
     errEl.style.display = 'block';
     pinEntry = ''; updatePinDots();
   }
 }
 
-window.showEmailFallback = function() {
-  document.getElementById('pin-box').style.display = 'none';
-  document.getElementById('email-box').style.display = 'block';
-  document.getElementById('login-err').style.display = 'none';
-  pinEntry = ''; updatePinDots();
-}
-
-window.showPinPad = function() {
-  document.getElementById('email-box').style.display = 'none';
-  document.getElementById('pin-box').style.display = 'block';
-  document.getElementById('login-err-email').style.display = 'none';
-}
-
-// ── SELF-SERVICE PIN CHANGE (a worker can only ever change their own PIN — Firebase
-// doesn't allow one account to overwrite another account's password remotely) ──
-window.showChangePinModal = function() {
-  showModal(`
-    <h3>Change My PIN</h3>
-    <p style="font-size:12px;color:#aaa;margin-bottom:14px">Choose a new 4-digit PIN. You'll use it next time you log in.</p>
-    <label style="font-size:11px;color:#888;font-weight:600;display:block;margin-bottom:4px">New PIN</label>
-    <input type="text" inputmode="numeric" maxlength="4" id="new-pin-1" style="width:100%;background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:9px 11px;font-size:14px;color:#fff;letter-spacing:3px;margin-bottom:10px;box-sizing:border-box">
-    <label style="font-size:11px;color:#888;font-weight:600;display:block;margin-bottom:4px">Confirm New PIN</label>
-    <input type="text" inputmode="numeric" maxlength="4" id="new-pin-2" style="width:100%;background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:9px 11px;font-size:14px;color:#fff;letter-spacing:3px;box-sizing:border-box">
-    <div class="mbtns"><button class="mbtn cancel" onclick="closeModal()">Cancel</button><button class="mbtn ok" onclick="saveNewPin()">Save</button></div>
-  `);
-}
-
-window.saveNewPin = async function() {
-  const p1 = (document.getElementById('new-pin-1')||{}).value.trim();
-  const p2 = (document.getElementById('new-pin-2')||{}).value.trim();
-  if (!/^\d{4}$/.test(p1)) { alert('PIN must be exactly 4 digits'); return; }
-  if (p1 !== p2) { alert('PINs do not match'); return; }
+async function clockInWorker(staffId, staffData) {
+  currentWorkerId = staffId;
+  currentWorkerName = staffData.name || '';
   try {
-    const checkSnap = await get(ref(db, `staffPins/${p1}`));
-    if (checkSnap.exists() && checkSnap.val().uid !== currentUID) {
-      alert('That PIN is already in use by someone else — pick a different one.');
-      return;
-    }
-    await updatePassword(auth.currentUser, derivePinPassword(p1));
-    if (currentUserPin && currentUserPin !== p1) {
-      try { await remove(ref(db, `staffPins/${currentUserPin}`)); } catch(e) {}
-    }
-    await set(ref(db, `staffPins/${p1}`), { uid: currentUID, email: auth.currentUser.email });
-    await update(ref(db, `users/${currentUID}`), { pin: p1 });
-    currentUserPin = p1;
-    closeModal();
-    alert('PIN updated! Use ' + p1 + ' next time you log in.');
-  } catch(e) {
-    if (e.code === 'auth/requires-recent-login') {
-      alert('For security, please log out, log back in with your current PIN, then try changing it again right away.');
-    } else {
-      alert('Error: ' + e.message);
-    }
-  }
+    await update(ref(db, `staff/${staffId}`), { online: true, lastLogin: new Date().toISOString() });
+  } catch(e) { console.warn('Could not mark staff online:', e); }
+  try {
+    await update(ref(db, 'waittime'), { closed: false, manualOverride: false });
+  } catch(e) { console.warn('Could not update waittime on clock-in:', e); }
+  try {
+    await push(ref(db, 'shiftLog'), { uid: staffId, name: currentWorkerName, action: 'in', timestamp: Date.now() });
+  } catch(e) { console.warn('Could not log shift sign-on:', e); }
+  const brand = document.querySelector('.brand');
+  if (brand) brand.textContent = '▶ Kitchen — ' + currentWorkerName;
+  showKitchenScreen();
 }
 
 window.doLogout = async function() {
-  if (currentUID) {
+  if (currentWorkerId) {
     try {
-      await push(ref(db, 'shiftLog'), { uid: currentUID, name: currentUserName, action: 'out', timestamp: Date.now() });
+      await push(ref(db, 'shiftLog'), { uid: currentWorkerId, name: currentWorkerName, action: 'out', timestamp: Date.now() });
     } catch(e) { console.warn('Could not log shift sign-off:', e); }
-    // Mark this staff member offline
-    await update(ref(db, `users/${currentUID}`), { online: false });
-    // Check if any other kitchen staff are still online
-    const usersSnap = await get(ref(db, 'users'));
-    const users = usersSnap.val() || {};
-    const anyoneOnline = Object.values(users).some(u => u.online === true && u.uid !== currentUID);
-    // If nobody else is online, close The Buff
-    if (!anyoneOnline) {
-      try {
+    try {
+      await update(ref(db, `staff/${currentWorkerId}`), { online: false });
+    } catch(e) { console.warn('Could not mark staff offline:', e); }
+    // Check if any other staff are still clocked in
+    try {
+      const staffSnap = await get(ref(db, 'staff'));
+      const allStaff = staffSnap.val() || {};
+      const anyoneOnline = Object.values(allStaff).some(s => s.online === true);
+      if (!anyoneOnline) {
         await update(ref(db, 'waittime'), { closed: true, manualOverride: false });
-      } catch(e) { console.warn('Could not update waittime on logout:', e); }
-    }
+      }
+    } catch(e) { console.warn('Could not update waittime on clock-out:', e); }
   }
+  currentWorkerId = null;
+  currentWorkerName = '';
+  showPinStage();
+}
+
+// ── DEVICE SETTINGS — the device's own login is separate from employee PINs.
+// Rarely used: only for re-provisioning or troubleshooting this specific touchscreen. ──
+window.showDeviceSettingsModal = function() {
+  showModal(`
+    <h3>Device Settings</h3>
+    <p style="font-size:12px;color:#aaa;margin-bottom:14px">Manage this touchscreen's own login. Separate from employee PINs — most days you'll never need this.</p>
+    <button class="mbtn ok" style="width:100%;margin-bottom:8px" onclick="showChangeDevicePassword()">Change Device Password</button>
+    <button class="mbtn cancel" style="width:100%;background:#2a1010;color:#ef4444" onclick="signOutDevice()">Sign Out This Device</button>
+    <div class="mbtns"><button class="mbtn cancel" onclick="closeModal()">Close</button></div>
+  `);
+}
+
+window.signOutDevice = async function() {
+  if (!confirm('Sign this touchscreen out completely? You will need the device email and password to sign it back in.')) return;
+  closeModal();
   await signOut(auth);
 }
 
-function showError(msg) {
-  const pinBox = document.getElementById('pin-box');
-  const usingPin = pinBox && pinBox.style.display !== 'none';
-  const errEl = document.getElementById(usingPin ? 'login-err' : 'login-err-email');
-  errEl.style.display = 'block';
-  errEl.textContent = msg;
+window.showChangeDevicePassword = function() {
+  showModal(`
+    <h3>Change Device Password</h3>
+    <label style="font-size:11px;color:#888;font-weight:600;display:block;margin-bottom:4px">Current Password</label>
+    <input type="password" id="dev-cur-pass" style="width:100%;background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:9px 11px;font-size:14px;color:#fff;margin-bottom:10px;box-sizing:border-box">
+    <label style="font-size:11px;color:#888;font-weight:600;display:block;margin-bottom:4px">New Password</label>
+    <input type="password" id="dev-new-pass" style="width:100%;background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:9px 11px;font-size:14px;color:#fff;margin-bottom:10px;box-sizing:border-box">
+    <div class="mbtns"><button class="mbtn cancel" onclick="closeModal()">Cancel</button><button class="mbtn ok" onclick="saveDevicePassword()">Save</button></div>
+  `);
 }
 
-function showKitchen(userData) {
-  document.getElementById('login-wrap').style.display = 'none';
-  document.getElementById('kitchen').style.display = 'flex';
-  // Show staff name in header
-  if (userData && userData.name) {
-    const brand = document.querySelector('.brand');
-    if (brand) brand.textContent = '▶ Kitchen — ' + userData.name;
-  }
-  // Listen to orders in real time
-  onValue(ref(db, 'orders'), snap => {
-    orders = snap.val() || {};
-    renderOrders();
-  });
-  // Listen to wait time / schedule settings (drives the reopen button + auto close enforcement)
-  onValue(ref(db, 'waittime'), snap => {
-    waittimeSettings = snap.val() || {};
-    updateReopenUI();
-  });
-  if (!window._scheduleInterval) {
-    window._scheduleInterval = setInterval(checkScheduleAndReport, 15000);
-  }
-  checkScheduleAndReport();
-  if (!window._reopenTickInterval) {
-    window._reopenTickInterval = setInterval(updateReopenUI, 1000);
+window.saveDevicePassword = async function() {
+  const curPass = (document.getElementById('dev-cur-pass')||{}).value;
+  const newPass = (document.getElementById('dev-new-pass')||{}).value;
+  if (!newPass || newPass.length < 6) { alert('New password must be at least 6 characters'); return; }
+  try {
+    const cred = EmailAuthProvider.credential(auth.currentUser.email, curPass);
+    await reauthenticateWithCredential(auth.currentUser, cred);
+    await updatePassword(auth.currentUser, newPass);
+    closeModal();
+    alert('Device password updated.');
+  } catch(e) {
+    alert(e.code === 'auth/wrong-password' ? 'Current password is incorrect.' : 'Error: ' + e.message);
   }
 }
 
@@ -480,7 +475,7 @@ function handleTap(key, order) {
 }
 
 async function markDone(key, order) {
-  await update(ref(db, `orders/${key}`), { status: 'done', completedBy: currentUID, completedByName: currentUserName || 'Unknown' });
+  await update(ref(db, `orders/${key}`), { status: 'done', completedBy: currentWorkerId, completedByName: currentWorkerName || 'Unknown' });
   // Only send email if not already sent (prevents duplicate with admin screen)
   if (order.email && !order.emailSent) {
     await update(ref(db, `orders/${key}`), { emailSent: true });
