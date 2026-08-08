@@ -667,10 +667,10 @@ function renderOrderQueue(allOrders) {
   html += shown.map((o, i) => {
     const readyDate = new Date(Date.now() + (i + 1) * effectiveMpo * 60000);
     const readyLabel = readyDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-    const shortId = (o.fbKey || '').slice(-4).toUpperCase();
+    const customerName = escapeHtml(o.name || 'Guest');
     return `<div class="queue-row">
       <span class="queue-pos">#${i + 1}</span>
-      <span class="queue-num">${shortId}</span>
+      <span class="queue-num">${customerName}</span>
       <span class="queue-time">Ready ~${readyLabel}</span>
     </div>`;
   }).join('');
