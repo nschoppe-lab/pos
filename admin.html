@@ -178,6 +178,14 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 
   <!-- ORDERS TAB -->
   <div class="tab-content active" id="tab-orders">
+    <div style="background:#151515;border-bottom:1px solid #2a2a2a;padding:8px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span style="font-size:11px;color:#888;font-weight:600">🧾 Receipt Text Size:</span>
+      <input type="range" id="receipt-scale-input" min="80" max="200" step="10" value="100"
+        oninput="document.getElementById('receipt-scale-display').textContent=this.value+'%'"
+        onchange="saveReceiptScale(this.value)" style="width:140px">
+      <span id="receipt-scale-display" style="font-size:11px;color:#ff6b35;font-weight:700;min-width:38px">100%</span>
+      <span style="font-size:10px;color:#555">Applies to tickets printed from Mark Paid</span>
+    </div>
     <div class="kitch-top">
       <div class="open-pill" id="open-pill">0 open</div>
       <div class="hint">Double-tap to mark done</div>
@@ -994,7 +1002,7 @@ emailjs.init("yoxsvEb1uuAA4Ytcd");
 const auth = getAuth(app);
 const db = getDatabase(app);
 
-let orders = {}, menu = [], coupons = [], staffList = [], usersList = [], kitchenDeviceData = {}, loyaltyRecords = {}, loyaltyMilestonesData = {}, waittimeData = {}, brandingData = {}, expensesData = {}, rewardStaffData = {}, specialsData = {}, ratingsData = {}, rmbWorkersData = {}, deliveryLocationsData = {}, deliverySettingsData = {}, loungeDisplayData = {}, drinkPicturesData = {}, saucesData = [], reportsConfigData = {}, nightlyReportsData = {}, weeklyReportsData = {}, monthlyReportsData = {}, customerTiersData = {};
+let orders = {}, menu = [], coupons = [], staffList = [], usersList = [], kitchenDeviceData = {}, loyaltyRecords = {}, loyaltyMilestonesData = {}, waittimeData = {}, brandingData = {}, expensesData = {}, rewardStaffData = {}, specialsData = {}, ratingsData = {}, rmbWorkersData = {}, deliveryLocationsData = {}, deliverySettingsData = {}, loungeDisplayData = {}, drinkPicturesData = {}, saucesData = [], reportsConfigData = {}, nightlyReportsData = {}, weeklyReportsData = {}, monthlyReportsData = {}, customerTiersData = {}, printSettingsData = {};
 let tapTimers = {}, currentTab = 'orders';
 
 let currentAdminUID = null, currentAdminName = 'Admin';
@@ -1069,6 +1077,14 @@ function showAdmin() {
   onValue(ref(db,'weeklyReports'), snap => { weeklyReportsData = snap.val()||{}; if(currentTab==='reports') renderWeeklyReportsHistory(); });
   onValue(ref(db,'monthlyReports'), snap => { monthlyReportsData = snap.val()||{}; if(currentTab==='reports') renderMonthlyReportsHistory(); });
   onValue(ref(db,'customerTiers'), snap => { customerTiersData = snap.val()||{}; if(currentTab==='leaderboard') { renderTierSettings(); renderLeaderboard(); } if(currentTab==='loyalty') renderLoyaltyAdmin(); });
+  onValue(ref(db,'printSettings'), snap => {
+    printSettingsData = snap.val()||{};
+    const scale = printSettingsData.receiptScale || 100;
+    const input = document.getElementById('receipt-scale-input');
+    const display = document.getElementById('receipt-scale-display');
+    if (input) input.value = scale;
+    if (display) display.textContent = scale + '%';
+  });
   if (!window._reportsInterval) {
     window._reportsInterval = setInterval(() => { checkNightlyReportTrigger(); checkWeeklyMonthlyTrigger(); }, 30000);
   }
@@ -1626,6 +1642,12 @@ window.createStaffMember = async function() {
       </div>
       <div class="mbtns"><button class="mbtn ok" onclick="closeModal()">Done</button></div>`);
   } catch(e) { alert('Error adding employee: ' + e.message); }
+}
+
+window.saveReceiptScale = async function(val) {
+  const scale = parseInt(val) || 100;
+  try { await update(ref(db, 'printSettings'), { receiptScale: scale }); }
+  catch(e) { alert('Error saving: ' + e.message); }
 }
 
 window.clearOrders = async function() {

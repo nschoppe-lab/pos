@@ -2,10 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Kitchen Display</title>
 <style>
-*{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+*{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;touch-action:manipulation;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none}
 body{background:#1a1a1a;color:#fff;min-height:100vh}
 /* LOGIN */
 .login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
@@ -58,6 +58,9 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 .sbadge.pending{background:#2a1f0e;color:#f59e0b}
 .sbadge.done{background:#052e16;color:#22c55e}
 .tap-hint{font-size:10px;color:#555}
+.big-paid-btn{display:block;width:100%;padding:18px 10px;font-size:17px;font-weight:800;letter-spacing:0.5px;border:none;border-top:2px solid #333;cursor:pointer;background:#2a1f0e;color:#f59e0b;transition:all 0.15s}
+.big-paid-btn:active{transform:scale(0.98)}
+.big-paid-btn.is-paid{background:#052e16;color:#22c55e;border-top-color:#22c55e44}
 /* MODAL */
 .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:999}
 .modal{background:#1e1e1e;border:1px solid #333;border-radius:11px;padding:22px;width:340px;max-width:92vw}
@@ -77,17 +80,17 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
   #print-ticket,#print-ticket *{visibility:visible}
   #print-ticket{display:block;position:absolute;top:0;left:0;width:80mm}
   .pt-wrap{width:80mm;padding:6mm 4mm;font-family:'Courier New',monospace;color:#000;text-align:center;box-sizing:border-box}
-  .pt-name{font-size:15px;font-weight:700;margin-bottom:3mm;word-break:break-word}
-  .pt-items{font-size:13px;margin-bottom:3mm;text-align:left;width:100%}
+  .pt-name{font-size:calc(15px * var(--receipt-scale,1));font-weight:700;margin-bottom:3mm;word-break:break-word}
+  .pt-items{font-size:calc(13px * var(--receipt-scale,1));margin-bottom:3mm;text-align:left;width:100%}
   .pt-line{padding:1mm 0;border-bottom:1px dashed #000}
   .pt-line:last-child{border-bottom:none}
-  .pt-tag{font-size:10px;font-weight:900}
-  .pt-sauce{font-size:11px;padding:0 0 1mm 3mm;text-align:left}
-  .pt-coupon{font-size:12px;font-weight:700;text-align:left;margin-bottom:2mm}
-  .pt-total{font-size:14px;font-weight:900;text-align:left;margin-bottom:2mm;padding-top:2mm;border-top:1px dashed #000}
-  .pt-msg-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-top:3mm;margin-bottom:1mm;text-align:left}
-  .pt-msg{font-size:12px;text-align:left;padding:2mm;border:1px dashed #000;margin-bottom:3mm;word-break:break-word}
-  .pt-paid{font-size:20px;font-weight:900;letter-spacing:2px;border:2px solid #000;display:inline-block;padding:4px 16px;margin-top:2mm}
+  .pt-tag{font-size:calc(10px * var(--receipt-scale,1));font-weight:900}
+  .pt-sauce{font-size:calc(11px * var(--receipt-scale,1));padding:0 0 1mm 3mm;text-align:left}
+  .pt-coupon{font-size:calc(12px * var(--receipt-scale,1));font-weight:700;text-align:left;margin-bottom:2mm}
+  .pt-total{font-size:calc(14px * var(--receipt-scale,1));font-weight:900;text-align:left;margin-bottom:2mm;padding-top:2mm;border-top:1px dashed #000}
+  .pt-msg-label{font-size:calc(10px * var(--receipt-scale,1));font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-top:3mm;margin-bottom:1mm;text-align:left}
+  .pt-msg{font-size:calc(12px * var(--receipt-scale,1));text-align:left;padding:2mm;border:1px dashed #000;margin-bottom:3mm;word-break:break-word}
+  .pt-paid{font-size:calc(20px * var(--receipt-scale,1));font-weight:900;letter-spacing:2px;border:2px solid #000;display:inline-block;padding:4px 16px;margin-top:2mm}
 }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
@@ -188,6 +191,7 @@ const db = getDatabase(app);
 let orders = {};
 let tapTimers = {};
 let waittimeSettings = {};
+let receiptScale = 1;
 const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 
 // The touchscreen signs in ONCE as one shared "kitchen device" account and stays signed
@@ -287,6 +291,9 @@ function setupDeviceListeners() {
   onValue(ref(db, 'waittime'), snap => {
     waittimeSettings = snap.val() || {};
     updateReopenUI();
+  });
+  onValue(ref(db, 'printSettings'), snap => {
+    receiptScale = ((snap.val() || {}).receiptScale || 100) / 100;
   });
   if (!window._scheduleInterval) {
     window._scheduleInterval = setInterval(checkScheduleAndReport, 15000);
@@ -515,12 +522,13 @@ function renderOrders() {
         <span class="sbadge ${order.status==='done'?'done':'pending'}">${order.status==='done'?'Done':'In Progress'}</span>
         ${order.status==='done'
           ? `<button onclick="event.stopPropagation();undoDone('${order.fbKey}')" style="background:#2a1f0e;border:1px solid #f59e0b44;color:#f59e0b;border-radius:6px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer">↩ Undo</button>`
-          : `<label onclick="event.stopPropagation()" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;${order.paid ? 'background:#052e16;color:#22c55e' : 'background:#1a1a1a;color:#555;border:1px solid #333'}">
-          <input type="checkbox" ${order.paid ? 'checked' : ''} onclick="event.stopPropagation()" onchange="togglePaid('${order.fbKey}', this.checked)" style="accent-color:#22c55e;width:14px;height:14px">
-          ${order.paid ? '✓ PAID' : 'Mark Paid'}
-        </label>`}
+          : ''}
         <span class="tap-hint">${order.status==='done'?'Completed':'Double-tap to complete'}</span>
-      </div>`;
+      </div>
+      ${order.status!=='done' ? `
+      <button onclick="event.stopPropagation();togglePaid('${order.fbKey}', ${!order.paid})" class="big-paid-btn ${order.paid?'is-paid':''}">
+        ${order.paid ? '✓ PAID' : '💳 Mark Paid'}
+      </button>` : ''}`;
     if (order.status !== 'done') {
       card.addEventListener('click', () => handleTap(order.fbKey, order));
     }
@@ -605,7 +613,7 @@ function printPaidTicket(order) {
     : '';
   const totalHtml = `<div class="pt-total">Total: $${parseFloat(order.total||0).toFixed(2)}</div>`;
   ticket.innerHTML = `
-    <div class="pt-wrap">
+    <div class="pt-wrap" style="--receipt-scale:${receiptScale}">
       <div class="pt-name">${escapeHtml(order.name)}</div>
       <div class="pt-items">${itemsHtml}</div>
       ${deliveryHtml}
