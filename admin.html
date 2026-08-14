@@ -185,6 +185,11 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
         onchange="saveReceiptScale(this.value)" style="width:140px">
       <span id="receipt-scale-display" style="font-size:11px;color:#ff6b35;font-weight:700;min-width:38px">100%</span>
       <span style="font-size:10px;color:#555">Applies to tickets printed from Mark Paid</span>
+      <span style="width:1px;height:16px;background:#333;margin:0 2px"></span>
+      <span style="font-size:11px;color:#888;font-weight:600">🖨️ Printer Name:</span>
+      <input type="text" id="printer-name-input" placeholder="e.g. EPSON TM-T88V (leave blank for default)"
+        onchange="savePrinterName(this.value)" style="width:260px;background:#1a1a1a;border:1px solid #333;border-radius:6px;padding:5px 8px;font-size:11px;color:#fff">
+      <span style="font-size:10px;color:#555">Must match the printer's exact name in macOS. Needs QZ Tray running on the kitchen Mac.</span>
     </div>
     <div class="kitch-top">
       <div class="open-pill" id="open-pill">0 open</div>
@@ -1084,6 +1089,8 @@ function showAdmin() {
     const display = document.getElementById('receipt-scale-display');
     if (input) input.value = scale;
     if (display) display.textContent = scale + '%';
+    const printerInput = document.getElementById('printer-name-input');
+    if (printerInput && document.activeElement !== printerInput) printerInput.value = printSettingsData.printerName || '';
   });
   if (!window._reportsInterval) {
     window._reportsInterval = setInterval(() => { checkNightlyReportTrigger(); checkWeeklyMonthlyTrigger(); }, 30000);
@@ -1647,6 +1654,11 @@ window.createStaffMember = async function() {
 window.saveReceiptScale = async function(val) {
   const scale = parseInt(val) || 100;
   try { await update(ref(db, 'printSettings'), { receiptScale: scale }); }
+  catch(e) { alert('Error saving: ' + e.message); }
+}
+
+window.savePrinterName = async function(val) {
+  try { await update(ref(db, 'printSettings'), { printerName: (val||'').trim() }); }
   catch(e) { alert('Error saving: ' + e.message); }
 }
 

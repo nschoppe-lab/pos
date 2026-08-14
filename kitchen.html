@@ -94,6 +94,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qz-tray@2.2.4/qz-tray.js"></script>
 </head>
 <body>
 
@@ -150,6 +151,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
       <div class="hint">Double-tap to complete</div>
     </div>
     <div style="display:flex;align-items:center;gap:8px">
+      <span class="logout-btn" id="printer-status" style="background:#2a1010;border-color:#7f1d1d44;color:#888;cursor:default">🖨️ Printer: connecting…</span>
       <span class="logout-btn" id="reopen-status" style="display:none;background:#0e2a1a;border-color:#22c55e44;color:#22c55e;cursor:default"></span>
       <button class="logout-btn" id="mute-btn" onclick="toggleAlertMute()" style="background:#1a1a1a;border-color:#22c55e44;color:#22c55e">🔔 Alerts On</button>
       <button class="logout-btn" onclick="showStaffLeaderboard()" style="background:#1a1a1a;border-color:#f59e0b44;color:#f59e0b">🏆 Leaderboard</button>
@@ -167,6 +169,61 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 <div id="print-ticket"></div>
 
 <script type="module">
+// ---- QZ Tray (silent thermal printing) ----
+let qzPrinterName = null; // resolved printer to print to (from printSettings, or the default)
+let qzConnecting = false;
+
+function setPrinterStatus(state) {
+  const el = document.getElementById('printer-status');
+  if (!el) return;
+  if (state === 'connected') {
+    el.textContent = '🖨️ Printer: connected';
+    el.style.background = '#0e2a1a'; el.style.borderColor = '#22c55e44'; el.style.color = '#22c55e';
+  } else if (state === 'connecting') {
+    el.textContent = '🖨️ Printer: connecting…';
+    el.style.background = '#2a1010'; el.style.borderColor = '#7f1d1d44'; el.style.color = '#888';
+  } else {
+    el.textContent = '🖨️ Printer: not connected (open QZ Tray)';
+    el.style.background = '#2a1010'; el.style.borderColor = '#7f1d1d44'; el.style.color = '#ef4444';
+  }
+}
+
+async function connectQZ() {
+  if (typeof qz === 'undefined') { setPrinterStatus('disconnected'); return; }
+  if (qz.websocket.isActive()) { setPrinterStatus('connected'); return; }
+  if (qzConnecting) return;
+  qzConnecting = true;
+  setPrinterStatus('connecting');
+  // Unsigned mode: QZ Tray will show a one-time "allow this site?" trust prompt
+  // in the QZ Tray app itself (not a browser print dialog). Check "remember
+  // this decision" there and it won't ask again on that machine.
+  qz.security.setCertificatePromise(resolve => resolve());
+  qz.security.setSignaturePromise(() => (resolve => resolve()));
+  try {
+    await qz.websocket.connect();
+    setPrinterStatus('connected');
+  } catch (e) {
+    console.warn('QZ Tray not reachable — is the QZ Tray app running on this Mac?', e);
+    setPrinterStatus('disconnected');
+  } finally {
+    qzConnecting = false;
+  }
+}
+
+async function resolveQZPrinter() {
+  const configured = (printSettings && printSettings.printerName) ? printSettings.printerName.trim() : '';
+  try {
+    if (configured) return await qz.printers.find(configured);
+    return await qz.printers.getDefault();
+  } catch (e) {
+    console.warn('Could not resolve printer "' + configured + '", falling back to default printer.', e);
+    return await qz.printers.getDefault();
+  }
+}
+
+// Retry connecting every 10s if QZ Tray isn't up yet (e.g. app still starting)
+setInterval(() => { if (!qz || !qz.websocket.isActive()) connectQZ(); }, 10000);
+
 // Initialize EmailJS
 emailjs.init("yoxsvEb1uuAA4Ytcd");
 
@@ -192,6 +249,7 @@ let orders = {};
 let tapTimers = {};
 let waittimeSettings = {};
 let receiptScale = 1;
+let printSettings = {};
 const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 
 // The touchscreen signs in ONCE as one shared "kitchen device" account and stays signed
@@ -293,7 +351,8 @@ function setupDeviceListeners() {
     updateReopenUI();
   });
   onValue(ref(db, 'printSettings'), snap => {
-    receiptScale = ((snap.val() || {}).receiptScale || 100) / 100;
+    printSettings = snap.val() || {};
+    receiptScale = (printSettings.receiptScale || 100) / 100;
   });
   if (!window._scheduleInterval) {
     window._scheduleInterval = setInterval(checkScheduleAndReport, 15000);
@@ -302,6 +361,7 @@ function setupDeviceListeners() {
   if (!window._reopenTickInterval) {
     window._reopenTickInterval = setInterval(updateReopenUI, 1000);
   }
+  connectQZ();
 }
 
 // Mark the current worker offline if the browser/tab is closed mid-shift
@@ -594,9 +654,7 @@ function escapeHtml(str) {
   return String(str||'').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 }
 
-function printPaidTicket(order) {
-  const ticket = document.getElementById('print-ticket');
-  if (!ticket) return;
+function buildTicketHtml(order) {
   const itemsHtml = (order.items||[]).map(i => {
     const specialTag = i.isSpecial ? ' <span class="pt-tag">★ SPECIAL</span>' : '';
     const sauceNote = (i.sauces && i.sauces.length) ? `<div class="pt-sauce">🥫 Side: ${escapeHtml(i.sauces.join(', '))}</div>` : '';
@@ -612,7 +670,7 @@ function printPaidTicket(order) {
     ? `<div class="pt-coupon">Coupon used: ${escapeHtml(order.coupon)}${order.discount ? ' (-$' + parseFloat(order.discount).toFixed(2) + ')' : ''}</div>`
     : '';
   const totalHtml = `<div class="pt-total">Total: $${parseFloat(order.total||0).toFixed(2)}</div>`;
-  ticket.innerHTML = `
+  return `
     <div class="pt-wrap" style="--receipt-scale:${receiptScale}">
       <div class="pt-name">${escapeHtml(order.name)}</div>
       <div class="pt-items">${itemsHtml}</div>
@@ -622,10 +680,57 @@ function printPaidTicket(order) {
       ${msgHtml}
       <div class="pt-paid">PAID</div>
     </div>`;
-  // Wait for the browser to actually paint the ticket content before printing.
-  // Calling window.print() synchronously right after setting innerHTML is what
-  // was causing blank/empty printouts on Mac (Safari/Chrome grab the page
-  // before layout of the new content has finished).
+}
+
+// Self-contained document (own <html>/<style>) — QZ Tray rasterizes this
+// independently of the page, so all the pt-* styles need to travel with it.
+function buildTicketDocument(innerHtml) {
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{width:80mm}
+    .pt-wrap{width:80mm;padding:6mm 4mm;font-family:'Courier New',monospace;color:#000;text-align:center;box-sizing:border-box;background:#fff}
+    .pt-name{font-size:calc(15px * var(--receipt-scale,1));font-weight:700;margin-bottom:3mm;word-break:break-word}
+    .pt-items{font-size:calc(13px * var(--receipt-scale,1));margin-bottom:3mm;text-align:left;width:100%}
+    .pt-line{padding:1mm 0;border-bottom:1px dashed #000}
+    .pt-line:last-child{border-bottom:none}
+    .pt-tag{font-size:calc(10px * var(--receipt-scale,1));font-weight:900}
+    .pt-sauce{font-size:calc(11px * var(--receipt-scale,1));padding:0 0 1mm 3mm;text-align:left}
+    .pt-coupon{font-size:calc(12px * var(--receipt-scale,1));font-weight:700;text-align:left;margin-bottom:2mm}
+    .pt-total{font-size:calc(14px * var(--receipt-scale,1));font-weight:900;text-align:left;margin-bottom:2mm;padding-top:2mm;border-top:1px dashed #000}
+    .pt-msg-label{font-size:calc(10px * var(--receipt-scale,1));font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-top:3mm;margin-bottom:1mm;text-align:left}
+    .pt-msg{font-size:calc(12px * var(--receipt-scale,1));text-align:left;padding:2mm;border:1px dashed #000;margin-bottom:3mm;word-break:break-word}
+    .pt-paid{font-size:calc(20px * var(--receipt-scale,1));font-weight:900;letter-spacing:2px;border:2px solid #000;display:inline-block;padding:4px 16px;margin-top:2mm}
+  </style></head><body>${innerHtml}</body></html>`;
+}
+
+async function printPaidTicket(order) {
+  const innerHtml = buildTicketHtml(order);
+
+  // Preferred path: silent print via QZ Tray, straight to the thermal printer,
+  // no browser dialog at all.
+  if (typeof qz !== 'undefined' && qz.websocket.isActive()) {
+    try {
+      const printer = await resolveQZPrinter();
+      const config = qz.configs.create(printer, { units: 'mm', size: { width: 80 }, margins: 0, rasterize: true });
+      const data = [{ type: 'pixel', format: 'html', flavor: 'plain', data: buildTicketDocument(innerHtml) }];
+      await qz.print(config, data);
+      return;
+    } catch (e) {
+      console.error('QZ Tray print failed, falling back to browser print dialog:', e);
+      showModal(`<h3 style="color:#ef4444">Silent print failed</h3><p style="font-size:12px;color:#aaa">Could not reach the printer through QZ Tray, so the regular print dialog will open instead. Check that QZ Tray is running and the printer name in Admin → Receipt settings is correct.</p><div class="mbtns"><button class="mbtn cancel" onclick="closeModal()">OK</button></div>`);
+      // fall through to browser fallback below
+    }
+  } else {
+    console.warn('QZ Tray not connected — printing via the browser dialog instead. Open the QZ Tray app on this Mac to enable silent printing.');
+  }
+
+  // Fallback: old browser print-dialog path, only used if QZ Tray is unreachable.
+  const ticket = document.getElementById('print-ticket');
+  if (!ticket) return;
+  ticket.innerHTML = innerHtml;
+  // Wait for the browser to actually paint the ticket content before printing —
+  // calling window.print() synchronously right after setting innerHTML is what
+  // caused blank/empty printouts on Mac.
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       window.print();
