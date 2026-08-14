@@ -622,7 +622,15 @@ function printPaidTicket(order) {
       ${msgHtml}
       <div class="pt-paid">PAID</div>
     </div>`;
-  window.print();
+  // Wait for the browser to actually paint the ticket content before printing.
+  // Calling window.print() synchronously right after setting innerHTML is what
+  // was causing blank/empty printouts on Mac (Safari/Chrome grab the page
+  // before layout of the new content has finished).
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      window.print();
+    });
+  });
 }
 
 window.showModal = function(html) { document.getElementById('modal-content').innerHTML=html; document.getElementById('modal').style.display='flex'; }
