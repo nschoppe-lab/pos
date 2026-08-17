@@ -180,7 +180,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
   <div class="tab-content active" id="tab-orders">
     <div style="background:#151515;border-bottom:1px solid #2a2a2a;padding:8px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <span style="font-size:11px;color:#888;font-weight:600">🧾 Receipt Text Size:</span>
-      <input type="range" id="receipt-scale-input" min="80" max="200" step="10" value="100"
+      <input type="range" id="receipt-scale-input" min="0" max="200" step="10" value="100"
         oninput="document.getElementById('receipt-scale-display').textContent=this.value+'%'"
         onchange="saveReceiptScale(this.value)" style="width:140px">
       <span id="receipt-scale-display" style="font-size:11px;color:#ff6b35;font-weight:700;min-width:38px">100%</span>
@@ -1079,7 +1079,7 @@ function showAdmin() {
   onValue(ref(db,'customerTiers'), snap => { customerTiersData = snap.val()||{}; if(currentTab==='leaderboard') { renderTierSettings(); renderLeaderboard(); } if(currentTab==='loyalty') renderLoyaltyAdmin(); });
   onValue(ref(db,'printSettings'), snap => {
     printSettingsData = snap.val()||{};
-    const scale = printSettingsData.receiptScale || 100;
+    const scale = (printSettingsData.receiptScale === undefined || printSettingsData.receiptScale === null) ? 100 : printSettingsData.receiptScale;
     const input = document.getElementById('receipt-scale-input');
     const display = document.getElementById('receipt-scale-display');
     if (input) input.value = scale;
@@ -1645,7 +1645,8 @@ window.createStaffMember = async function() {
 }
 
 window.saveReceiptScale = async function(val) {
-  const scale = parseInt(val) || 100;
+  const parsed = parseInt(val);
+  const scale = isNaN(parsed) ? 100 : parsed;
   try { await update(ref(db, 'printSettings'), { receiptScale: scale }); }
   catch(e) { alert('Error saving: ' + e.message); }
 }

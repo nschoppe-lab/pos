@@ -76,9 +76,8 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 #print-ticket{display:none}
 @page{size:80mm auto;margin:0}
 @media print{
-  body *{visibility:hidden}
-  #print-ticket,#print-ticket *{visibility:visible}
-  #print-ticket{display:block;position:absolute;top:0;left:0;width:80mm}
+  body > *:not(#print-ticket){display:none!important}
+  #print-ticket{display:block;position:static;width:80mm}
   .pt-wrap{width:80mm;padding:6mm 4mm;font-family:'Courier New',monospace;color:#000;text-align:center;box-sizing:border-box}
   .pt-name{font-size:calc(15px * var(--receipt-scale,1));font-weight:700;margin-bottom:3mm;word-break:break-word}
   .pt-items{font-size:calc(13px * var(--receipt-scale,1));margin-bottom:3mm;text-align:left;width:100%}
@@ -295,7 +294,7 @@ function setupDeviceListeners() {
   });
   onValue(ref(db, 'printSettings'), snap => {
     printSettings = snap.val() || {};
-    receiptScale = (printSettings.receiptScale || 100) / 100;
+    receiptScale = ((printSettings.receiptScale === undefined || printSettings.receiptScale === null) ? 100 : printSettings.receiptScale) / 100;
   });
   if (!window._scheduleInterval) {
     window._scheduleInterval = setInterval(checkScheduleAndReport, 15000);
