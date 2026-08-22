@@ -40,11 +40,14 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 .logout-btn:hover{border-color:#555;color:#ccc}
 .orders-grid{flex:1;padding:12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;align-content:start;overflow-y:auto}
 .empty{text-align:center;padding:60px;color:#555;grid-column:1/-1}
-.oc{background:#1e1e1e;border:1.5px solid #333;border-radius:10px;overflow:hidden;cursor:pointer;user-select:none;transition:border-color 0.15s}
+.oc{background:#1e1e1e;border:1.5px solid #333;border-radius:10px;overflow:hidden;cursor:pointer;user-select:none;transition:border-color 0.15s;position:relative}
 .oc:hover{border-color:#ff6b35}
 .oc.flash{border-color:#f59e0b}
 .oc.done{border-color:#22c55e;opacity:0.5}
 .oc.paid:not(.done){border-color:#22c55e;box-shadow:0 0 0 1px #22c55e44}
+.oc-timer{position:absolute;top:8px;right:8px;font-size:11px;font-weight:800;padding:3px 9px;border-radius:20px;background:#000000b3;color:#9ca3af;z-index:2;font-variant-numeric:tabular-nums;letter-spacing:0.3px;pointer-events:none}
+.oc-timer.warn{color:#f59e0b}
+.oc-timer.alert{color:#ef4444}
 .oc-hdr{padding:10px 14px;background:#252525;display:flex;justify-content:space-between;align-items:center}
 .oc-num{font-size:13px;font-weight:700;color:#ff6b35}
 .oc-name{font-size:13px;font-weight:600}
@@ -303,6 +306,9 @@ function setupDeviceListeners() {
   if (!window._reopenTickInterval) {
     window._reopenTickInterval = setInterval(updateReopenUI, 1000);
   }
+  if (!window._orderTimerInterval) {
+    window._orderTimerInterval = setInterval(updateOrderTimers, 1000);
+  }
 }
 
 // Mark the current worker offline if the browser/tab is closed mid-shift
@@ -490,6 +496,27 @@ window.saveDevicePassword = async function() {
   }
 }
 
+function formatElapsed(totalSeconds) {
+  if (totalSeconds < 0) totalSeconds = 0;
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  return `${m}:${String(s).padStart(2,'0')}`;
+}
+
+function updateOrderTimers() {
+  document.querySelectorAll('.oc-timer').forEach(el => {
+    const created = parseInt(el.dataset.created, 10);
+    if (!created) { el.textContent = '--:--'; return; }
+    const elapsedSec = Math.floor((Date.now() - created) / 1000);
+    el.textContent = formatElapsed(elapsedSec);
+    el.classList.remove('warn', 'alert');
+    if (elapsedSec >= 600) el.classList.add('alert');
+    else if (elapsedSec >= 300) el.classList.add('warn');
+  });
+}
+
 function renderOrders() {
   const grid = document.getElementById('orders-grid');
   const allOrders = Object.entries(orders).map(([k,v]) => ({fbKey:k,...v}));
@@ -506,6 +533,7 @@ function renderOrders() {
     card.className = 'oc' + (order.status==='done' ? ' done' : '') + (order.paid ? ' paid' : '');
     card.dataset.key = order.fbKey;
     card.innerHTML = `
+      <span class="oc-timer" data-created="${order.createdAt||''}">--:--</span>
       <div class="oc-hdr">
         <span class="oc-num">#${order.fbKey.slice(-4).toUpperCase()}</span>
         <span class="oc-name">${order.name}</span>
@@ -535,6 +563,7 @@ function renderOrders() {
     }
     grid.appendChild(card);
   });
+  updateOrderTimers();
 }
 
 function handleTap(key, order) {
