@@ -279,6 +279,7 @@ let deliveryLocations = {};
 let deliveryOn = false, preorderOn = false;
 let deliveryTestOverride = false;
 let preorderTestOverride = false;
+let deliveryFeeAmount = 5;
 let custItem = null, custSelections = {};
 let sauces = [];
 let custSauceSelections = {};
@@ -504,8 +505,20 @@ onValue(ref(db, 'deliverySettings'), snap => {
   const d = snap.val() || {};
   deliveryTestOverride = d.testOverride === true;
   preorderTestOverride = d.preorderTestOverride === true;
+  const fee = parseFloat(d.deliveryFee);
+  deliveryFeeAmount = (fee || fee === 0) ? fee : 5;
+  updateDeliveryFeeLabels();
   if (typeof refreshOrderOptionAvailability === 'function') refreshOrderOptionAvailability();
 });
+
+function updateDeliveryFeeLabels() {
+  const toggle = document.getElementById('delivery-toggle');
+  const row = toggle && toggle.closest('.oo-row');
+  const feeEl = row && row.querySelector('.oo-fee');
+  if (feeEl) feeEl.textContent = `+$${deliveryFeeAmount.toFixed(2)}`;
+  const rowFeeEl = document.querySelector('#delivery-fee-row span:last-child');
+  if (rowFeeEl) rowFeeEl.textContent = `+$${deliveryFeeAmount.toFixed(2)}`;
+}
 
 function escapeHtmlAttr(str) {
   return String(str||'').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
@@ -864,7 +877,7 @@ function updateTotals() {
   } else { lr.style.display = 'none'; }
   document.getElementById('subtotal').textContent = `$${sub.toFixed(2)}`;
   const baseTotal = Math.max(0, sub-disc-loyDisc);
-  const deliveryFee = (deliveryOn && isDeliveryWindowOpen()) ? 5 : 0;
+  const deliveryFee = (deliveryOn && isDeliveryWindowOpen()) ? deliveryFeeAmount : 0;
   const preorderFee = (preorderOn && isPreorderWindowOpen()) ? 1 : 0;
   const grandTotal = Math.round((baseTotal + deliveryFee + preorderFee) * 100) / 100;
   const delivRow = document.getElementById('delivery-fee-row');

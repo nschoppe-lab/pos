@@ -791,7 +791,16 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 <div class="tab-content" id="tab-delivery">
   <div class="admin-scroll"><div class="admin-wrap">
     <div class="admin-title">🚚 Delivery Locations</div>
-    <div class="admin-sub">Manage the locations customers can choose when they place a delivery order. Delivery orders are only accepted Monday, Wednesday & Thursday, 7–8 PM ET, add a $5 fee automatically, and all go out for delivery between 8:30–9 PM ET — that scheduling and fee are built in and don't need to be set here.</div>
+    <div class="admin-sub">Manage the locations customers can choose when they place a delivery order. Delivery orders are only accepted Monday, Wednesday & Thursday, 7–8 PM ET and all go out for delivery between 8:30–9 PM ET — that scheduling is built in and doesn't need to be set here. The delivery fee is set below.</div>
+    <div class="asec">
+      <div class="asec-title">Delivery Fee</div>
+      <div style="font-size:12px;color:#888;margin-bottom:12px">The flat fee added to a customer's total when they choose delivery. Updates everywhere instantly — the order screen, cart total, and kitchen/admin order details.</div>
+      <div class="arow" style="align-items:center">
+        <label style="font-size:13px;color:#ccc;display:flex;align-items:center;gap:6px">$<input type="number" id="delivery-fee-input" min="0" step="0.25" placeholder="5.00" style="width:90px;background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:7px 9px;font-size:13px;color:#fff"></label>
+        <button class="aadd" onclick="saveDeliveryFee()">Save</button>
+        <span id="delivery-fee-saved-msg" style="font-size:12px;color:#22c55e;display:none">✓ Saved</span>
+      </div>
+    </div>
     <div class="asec">
       <div class="asec-title">Locations</div>
       <table class="mtable" style="margin-bottom:14px">
@@ -1075,7 +1084,7 @@ function showAdmin() {
   onValue(ref(db,'loyalty'), snap => { loyaltyRecords = snap.val()||{}; if(currentTab==='loyalty') renderLoyaltyAdmin(); });
   onValue(ref(db,'loyaltyMilestones'), snap => { loyaltyMilestonesData = snap.val()||{}; if(currentTab==='loyalty') renderLoyaltyMilestones(); });
   onValue(ref(db,'deliveryLocations'), snap => { deliveryLocationsData = snap.val()||{}; if(currentTab==='delivery') renderDeliveryLocations(); });
-  onValue(ref(db,'deliverySettings'), snap => { deliverySettingsData = snap.val()||{}; if(currentTab==='delivery') renderDeliveryOverrideUI(); });
+  onValue(ref(db,'deliverySettings'), snap => { deliverySettingsData = snap.val()||{}; if(currentTab==='delivery') { renderDeliveryOverrideUI(); renderDeliveryFeeInput(); } });
   onValue(ref(db,'loungeDisplay'), snap => { loungeDisplayData = snap.val()||{}; if(currentTab==='lounge') { renderLoungeLogoPreview(); renderLoungeRotationButtons(); renderLoungeTextSizeControls(); renderCustomizeOptions(); } });
   onValue(ref(db,'drinkPictures'), snap => { drinkPicturesData = snap.val()||{}; if(currentTab==='lounge') renderDrinkPictures(); });
   onValue(ref(db,'waittime'), snap => { waittimeData = snap.val()||{};
@@ -1117,7 +1126,7 @@ window.switchTab = function(t) {
   if (t==='ratings') initRmbAdmin();
   if (t==='inventory') renderInventory();
   if (t==='loyalty') { renderLoyaltyAdmin(); renderLoyaltyMilestones(); }
-  if (t==='delivery') { renderDeliveryLocations(); renderDeliveryOverrideUI(); }
+  if (t==='delivery') { renderDeliveryLocations(); renderDeliveryOverrideUI(); renderDeliveryFeeInput(); }
   if (t==='lounge') { renderLoungeLogoPreview(); renderLoungeRotationButtons(); renderLoungeTextSizeControls(); renderCustomizeOptions(); populateDrinkPictureItemSelect(); renderDrinkPictures(); }
   if (t==='waittime') initWaitTime();
   if (t==='finance') renderFinance();
@@ -2164,6 +2173,24 @@ window.toggleDeliveryTestOverride = async function() {
   const newVal = !(deliverySettingsData.testOverride === true);
   try { await update(ref(db, 'deliverySettings'), { testOverride: newVal }); }
   catch(e) { alert('Error: ' + e.message); }
+}
+
+window.renderDeliveryFeeInput = function() {
+  const input = document.getElementById('delivery-fee-input');
+  if (!input) return;
+  const fee = parseFloat(deliverySettingsData.deliveryFee);
+  input.value = (fee || fee === 0) ? fee : 5;
+}
+
+window.saveDeliveryFee = async function() {
+  const input = document.getElementById('delivery-fee-input');
+  const val = parseFloat(input.value);
+  if (isNaN(val) || val < 0) { alert('Please enter a valid delivery fee ($0 or more).'); return; }
+  try {
+    await update(ref(db, 'deliverySettings'), { deliveryFee: val });
+    const msg = document.getElementById('delivery-fee-saved-msg');
+    if (msg) { msg.style.display = 'inline'; setTimeout(() => { msg.style.display = 'none'; }, 2000); }
+  } catch(e) { alert('Error: ' + e.message); }
 }
 
 window.togglePreorderTestOverride = async function() {
