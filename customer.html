@@ -168,7 +168,10 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
     </div>
     <div class="cust-form">
       <label>Your Name</label>
-      <input type="text" id="cust-name" placeholder="e.g. Mike Smith">
+      <div style="display:flex;gap:8px">
+        <input type="text" id="cust-fname" placeholder="First name" style="flex:1">
+        <input type="text" id="cust-lname" placeholder="Last name" style="flex:1">
+      </div>
       <label>Email (we'll email you when your order is ready)</label>
       <input type="email" id="cust-email" placeholder="e.g. youremail@gmail.com">
       <label>Comments / Special Requests (optional)</label>
@@ -921,10 +924,12 @@ window.applyDiscount = function() {
 }
 
 window.placeOrder = async function() {
-  const name = document.getElementById('cust-name').value.trim();
+  const firstName = document.getElementById('cust-fname').value.trim();
+  const lastName = document.getElementById('cust-lname').value.trim();
+  const name = (firstName + ' ' + lastName).trim();
   const email = document.getElementById('cust-email').value.trim().toLowerCase();
   const comments = document.getElementById('cust-comments').value.trim();
-  if (!name) { alert('Please enter your name'); return; }
+  if (!firstName || !lastName) { alert('Please enter your first and last name'); return; }
   if (!email) { alert('Please enter your email'); return; }
   if (!cart.length) { alert('Your cart is empty'); return; }
 
@@ -1044,7 +1049,7 @@ window.placeOrder = async function() {
       var discCodeEl = document.getElementById('disc-code'); if (discCodeEl) discCodeEl.value = '';
       prefillCheckoutFromAccount();
     } else {
-      ['cust-name','cust-email','cust-comments','disc-code'].forEach(function(id) {
+      ['cust-fname','cust-lname','cust-email','cust-comments','disc-code'].forEach(function(id) {
         var el = document.getElementById(id); if (el) el.value = '';
       });
     }
@@ -1091,9 +1096,14 @@ function updateAccountNavBtn() {
 }
 
 function prefillCheckoutFromAccount(force) {
-  const nameEl = document.getElementById('cust-name');
+  const fnameEl = document.getElementById('cust-fname');
+  const lnameEl = document.getElementById('cust-lname');
   const emailEl = document.getElementById('cust-email');
-  if (nameEl && accountProfile && (force || !nameEl.value)) { nameEl.value = accountProfile.name || ''; }
+  if (fnameEl && lnameEl && accountProfile && (force || (!fnameEl.value && !lnameEl.value))) {
+    const parts = (accountProfile.name || '').trim().split(/\s+/);
+    fnameEl.value = parts[0] || '';
+    lnameEl.value = parts.slice(1).join(' ') || '';
+  }
   if (emailEl && accountUser && (force || !emailEl.value)) { emailEl.value = accountUser.email || ''; }
   let note = document.getElementById('acct-checkout-note');
   if (!note && emailEl) {
