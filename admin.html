@@ -290,6 +290,21 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
         <div class="asec-title" style="color:#60a5fa">🖥️ Kitchen Device Login</div>
         <div id="device-account-section"></div>
       </div>
+      <div class="asec" style="border-color:#ff6b3544;background:#241a12">
+        <div class="asec-title" style="color:#ff6b35">🔑 Admin Accounts</div>
+        <div style="font-size:12px;color:#888;margin-bottom:12px">People who can sign in to this admin panel with full access. Give this out only to people you trust — admins can see finances, edit the menu, issue coupons, and everything else on these tabs.</div>
+        <div class="arow">
+          <input type="text" id="new-adminname" placeholder="Name">
+          <input type="email" id="new-adminemail" placeholder="Their email">
+          <input type="password" id="new-adminpass" placeholder="Temporary password (min 6 chars)">
+          <button class="aadd" onclick="createAdmin()">Add Admin</button>
+        </div>
+        <div style="font-size:11px;color:#666;margin-top:2px;margin-bottom:12px">They'll sign in at this same admin.html page with the email/password you set here. They can change their own password later from their account (or you can just remove them below and re-add with a new one).</div>
+        <table class="mtable">
+          <thead><tr><th>Name</th><th>Email</th><th></th></tr></thead>
+          <tbody id="admin-body"></tbody>
+        </table>
+      </div>
       <div class="asec">
         <div class="asec-title">Add Kitchen Employee</div>
         <div class="arow">
@@ -1074,6 +1089,7 @@ function showAdmin() {
     const d = snap.val() || {};
     usersList = Object.entries(d).map(([k,v])=>({uid:k,...v}));
     renderKitchenDeviceSection();
+    renderAdminsSection();
     updateRmbStaffMirror();
   });
   onValue(ref(db,'staff'), snap => {
@@ -1556,6 +1572,54 @@ window.createKitchenDevice = async function() {
   } finally {
     if (secondaryApp) { try { await deleteApp(secondaryApp); } catch(e2) {} }
   }
+}
+
+function renderAdminsSection() {
+  const tbody = document.getElementById('admin-body');
+  if (!tbody) return;
+  const admins = (usersList || []).filter(u => u.role === 'admin');
+  if (!admins.length) {
+    tbody.innerHTML = '<tr><td colspan="3" style="color:#555;text-align:center;padding:12px;font-size:12px">No admins yet</td></tr>';
+    return;
+  }
+  tbody.innerHTML = admins.map(a => `
+    <tr>
+      <td>${a.name || '—'}${a.uid===currentAdminUID?' <span style="color:#666;font-size:11px">(you)</span>':''}</td>
+      <td>${a.email || '—'}</td>
+      <td>${a.uid===currentAdminUID?'':`<button class="delbtn" onclick="removeAdmin('${a.uid}','${(a.name||a.email||'this admin').replace(/'/g,"\\'")}')">Remove</button>`}</td>
+    </tr>`).join('');
+}
+
+window.createAdmin = async function() {
+  const name = (document.getElementById('new-adminname')||{}).value.trim();
+  const email = (document.getElementById('new-adminemail')||{}).value.trim();
+  const pass = (document.getElementById('new-adminpass')||{}).value;
+  if (!name || !email) { alert('Fill in name and email'); return; }
+  if (!pass || pass.length < 6) { alert('Password must be at least 6 characters'); return; }
+  let secondaryApp;
+  try {
+    // Same trick as the kitchen device login — a separate, temporary Firebase app
+    // instance so creating this account never signs the current admin out.
+    secondaryApp = initializeApp(firebaseConfig, 'AdminSetup-' + Date.now());
+    const secondaryAuth = getAuth(secondaryApp);
+    const cred = await createUserWithEmailAndPassword(secondaryAuth, email, pass);
+    const uid = cred.user.uid;
+    await set(ref(db, `users/${uid}`), { name, email, role: 'admin', createdAt: Date.now() });
+    await signOut(secondaryAuth);
+    alert('✅ Admin account created! Give them the email and password you just entered — they can sign in at this same page.');
+    document.getElementById('new-adminname').value='';
+    document.getElementById('new-adminemail').value='';
+    document.getElementById('new-adminpass').value='';
+  } catch(e) {
+    alert('Error creating admin: ' + e.message);
+  } finally {
+    if (secondaryApp) { try { await deleteApp(secondaryApp); } catch(e2) {} }
+  }
+}
+
+window.removeAdmin = async function(uid, label) {
+  if (!confirm(`Remove admin access for "${label}"?\nThey won't be able to sign in to this panel anymore. (This can't be undone from here — you'd need to add them again.)`)) return;
+  await remove(ref(db, `users/${uid}`));
 }
 
 function renderStaff() {
