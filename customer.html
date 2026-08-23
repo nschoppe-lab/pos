@@ -209,7 +209,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
         <label class="oo-row" for="preorder-toggle">
           <div class="oo-row-left">
             <span class="oo-label">⏰ Pre-Order</span>
-            <span class="oo-sub" id="preorder-sub">Available nightly, 7:00–7:59 PM ET</span>
+            <span class="oo-sub" id="preorder-sub">Loading availability...</span>
           </div>
           <div style="display:flex;align-items:center;gap:8px">
             <span class="oo-fee">+$1.00</span>
@@ -282,6 +282,7 @@ let deliveryLocations = {};
 let deliveryOn = false, preorderOn = false;
 let deliveryTestOverride = false;
 let preorderTestOverride = false;
+let preorderSettings = {};
 let deliveryFeeAmount = 5;
 let custItem = null, custSelections = {};
 let sauces = [];
@@ -508,6 +509,7 @@ onValue(ref(db, 'deliverySettings'), snap => {
   const d = snap.val() || {};
   deliveryTestOverride = d.testOverride === true;
   preorderTestOverride = d.preorderTestOverride === true;
+  preorderSettings = d;
   const fee = parseFloat(d.deliveryFee);
   deliveryFeeAmount = (fee || fee === 0) ? fee : 5;
   updateDeliveryFeeLabels();
@@ -539,17 +541,38 @@ function renderDeliveryLocationOptions() {
   if (entries.some(v => v.name === current)) sel.value = current;
 }
 
-// ── Delivery (Mon/Wed/Thu, 7–8 PM ET) and pre-order (7:00–7:59 PM ET, any open night) windows ──
+// ── Delivery (Mon/Wed/Thu, 7–8 PM ET) and pre-order (configurable nightly window, any open night) windows ──
 function getEasternParts(date) {
   date = date || new Date();
   const fmt = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York', weekday: 'short', hour: 'numeric', hour12: false
+    timeZone: 'America/New_York', weekday: 'short', hour: 'numeric', minute: 'numeric', hour12: false
   });
   const map = {};
   fmt.formatToParts(date).forEach(p => { map[p.type] = p.value; });
   let hour = parseInt(map.hour, 10);
   if (hour === 24) hour = 0;
-  return { weekday: map.weekday, hour: hour };
+  const minute = parseInt(map.minute, 10) || 0;
+  return { weekday: map.weekday, hour: hour, minute: minute };
+}
+
+function parseHHMM(str) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(str || '');
+  if (!m) return null;
+  return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+}
+
+function getPreorderWindowMinutes() {
+  const start = parseHHMM(preorderSettings.preorderStart) ?? (19 * 60);
+  const end = parseHHMM(preorderSettings.preorderEnd) ?? (20 * 60);
+  return { start, end };
+}
+
+function formatMinutesAsClock(mins) {
+  let h = Math.floor(mins / 60) % 24;
+  const m = mins % 60;
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12; if (h === 0) h = 12;
+  return h + (m ? ':' + String(m).padStart(2,'0') : '') + ' ' + ampm;
 }
 
 function isDeliveryWindowOpen() {
@@ -563,7 +586,12 @@ function isPreorderWindowOpen() {
   if (preorderTestOverride) return true; // admin testing override — bypasses the schedule/open-store check only, display text is unaffected
   const p = getEasternParts();
   const storeOpen = !(waittimeSnap && waittimeSnap.closed === true);
-  return storeOpen && p.hour === 19;
+  if (!storeOpen) return false;
+  const nowMins = p.hour * 60 + p.minute;
+  const { start, end } = getPreorderWindowMinutes();
+  if (end > start) return nowMins >= start && nowMins < end;
+  // window wraps past midnight (e.g. 11:30 PM – 12:30 AM)
+  return nowMins >= start || nowMins < end;
 }
 
 function refreshOrderOptionAvailability() {
@@ -597,9 +625,11 @@ function refreshOrderOptionAvailability() {
       if (preCard) preCard.classList.remove('active');
     }
     if (preSub) {
+      const { start, end } = getPreorderWindowMinutes();
+      const windowLabel = `${formatMinutesAsClock(start)}–${formatMinutesAsClock(end)} ET`;
       preSub.textContent = deliveryOn
         ? 'Not available with Delivery selected'
-        : (isPreorderWindowOpen() ? 'Available now (until 7:59 PM ET)' : "Available nightly, 7:00–7:59 PM ET, while we're open");
+        : (isPreorderWindowOpen() ? `Available now (until ${formatMinutesAsClock(end)})` : `Available nightly, ${windowLabel}, while we're open`);
     }
   }
 

@@ -839,6 +839,17 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
         <button class="aadd" onclick="addDeliveryLocation()">Add Location</button>
       </div>
     </div>
+    <div class="asec" style="border-color:#a78bfa44;background:#1a1030">
+      <div class="asec-title" style="color:#a78bfa">⏰ Pre-Order Window</div>
+      <div style="font-size:12px;color:#888;margin-bottom:12px">The nightly window when customers can toggle "Pre-Order" at checkout (still requires the store to be open). Updates the order screen instantly — both what customers can select and the times shown to them.</div>
+      <div class="arow" style="align-items:center">
+        <label style="font-size:13px;color:#ccc;display:flex;align-items:center;gap:6px">Start <input type="time" id="preorder-start-input" style="background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:7px 9px;font-size:13px;color:#fff"></label>
+        <label style="font-size:13px;color:#ccc;display:flex;align-items:center;gap:6px">End <input type="time" id="preorder-end-input" style="background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:7px 9px;font-size:13px;color:#fff"></label>
+        <button class="aadd" onclick="savePreorderWindow()">Save</button>
+        <span id="preorder-window-saved-msg" style="font-size:12px;color:#22c55e;display:none">✓ Saved</span>
+      </div>
+      <div style="font-size:11px;color:#666;margin-top:6px">Times are Eastern (ET), and the window is up-to-but-not-including the end time — e.g. 7:00 PM to 8:00 PM means it's open through 7:59 PM.</div>
+    </div>
     <div class="asec" style="border-color:#3b82f644;background:#0e1a2a">
       <div class="asec-title" style="color:#3b82f6">🧪 Testing Overrides (Admin Only)</div>
       <div style="font-size:12px;color:#888;margin-bottom:12px">
@@ -1112,7 +1123,7 @@ function showAdmin() {
   onValue(ref(db,'loyalty'), snap => { loyaltyRecords = snap.val()||{}; if(currentTab==='loyalty') renderLoyaltyAdmin(); });
   onValue(ref(db,'loyaltyMilestones'), snap => { loyaltyMilestonesData = snap.val()||{}; if(currentTab==='loyalty') renderLoyaltyMilestones(); });
   onValue(ref(db,'deliveryLocations'), snap => { deliveryLocationsData = snap.val()||{}; if(currentTab==='delivery') renderDeliveryLocations(); });
-  onValue(ref(db,'deliverySettings'), snap => { deliverySettingsData = snap.val()||{}; if(currentTab==='delivery') { renderDeliveryOverrideUI(); renderDeliveryFeeInput(); } });
+  onValue(ref(db,'deliverySettings'), snap => { deliverySettingsData = snap.val()||{}; if(currentTab==='delivery') { renderDeliveryOverrideUI(); renderDeliveryFeeInput(); renderPreorderWindowInputs(); } });
   onValue(ref(db,'loungeDisplay'), snap => { loungeDisplayData = snap.val()||{}; if(currentTab==='lounge') { renderLoungeLogoPreview(); renderLoungeRotationButtons(); renderLoungeTextSizeControls(); renderCustomizeOptions(); } });
   onValue(ref(db,'drinkPictures'), snap => { drinkPicturesData = snap.val()||{}; if(currentTab==='lounge') renderDrinkPictures(); });
   onValue(ref(db,'waittime'), snap => { waittimeData = snap.val()||{};
@@ -1154,7 +1165,7 @@ window.switchTab = function(t) {
   if (t==='ratings') initRmbAdmin();
   if (t==='inventory') renderInventory();
   if (t==='loyalty') { renderLoyaltyAdmin(); renderLoyaltyMilestones(); }
-  if (t==='delivery') { renderDeliveryLocations(); renderDeliveryOverrideUI(); renderDeliveryFeeInput(); }
+  if (t==='delivery') { renderDeliveryLocations(); renderDeliveryOverrideUI(); renderDeliveryFeeInput(); renderPreorderWindowInputs(); }
   if (t==='lounge') { renderLoungeLogoPreview(); renderLoungeRotationButtons(); renderLoungeTextSizeControls(); renderCustomizeOptions(); populateDrinkPictureItemSelect(); renderDrinkPictures(); }
   if (t==='waittime') initWaitTime();
   if (t==='finance') renderFinance();
@@ -2321,6 +2332,28 @@ window.togglePreorderTestOverride = async function() {
   const newVal = !(deliverySettingsData.preorderTestOverride === true);
   try { await update(ref(db, 'deliverySettings'), { preorderTestOverride: newVal }); }
   catch(e) { alert('Error: ' + e.message); }
+}
+
+window.renderPreorderWindowInputs = function() {
+  const startInput = document.getElementById('preorder-start-input');
+  const endInput = document.getElementById('preorder-end-input');
+  if (!startInput || !endInput) return;
+  startInput.value = deliverySettingsData.preorderStart || '19:00';
+  endInput.value = deliverySettingsData.preorderEnd || '20:00';
+}
+
+window.savePreorderWindow = async function() {
+  const startInput = document.getElementById('preorder-start-input');
+  const endInput = document.getElementById('preorder-end-input');
+  const start = startInput.value;
+  const end = endInput.value;
+  if (!start || !end) { alert('Please set both a start and end time.'); return; }
+  if (start === end) { alert('Start and end time can\'t be the same — that window would never be open.'); return; }
+  try {
+    await update(ref(db, 'deliverySettings'), { preorderStart: start, preorderEnd: end });
+    const msg = document.getElementById('preorder-window-saved-msg');
+    if (msg) { msg.style.display = 'inline'; setTimeout(() => { msg.style.display = 'none'; }, 2000); }
+  } catch(e) { alert('Error: ' + e.message); }
 }
 
 window.editLoyaltyCustomer = function(key) {
