@@ -257,13 +257,15 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
         <div class="arow">
           <input type="text" id="new-ccode" placeholder="Code (e.g. SAVE10)" oninput="this.value=this.value.toUpperCase()">
           <input type="number" class="w80" id="new-cval" placeholder="Value" min="0" step="0.5">
-          <select class="w120" id="new-ctype"><option value="percent">% Off</option><option value="flat">$ Off</option></select>
+          <select class="w120" id="new-ctype" onchange="toggleCouponMaxField()"><option value="percent">% Off</option><option value="flat">$ Off</option></select>
         </div>
         <div class="arow">
           <label style="font-size:12px;color:#aaa;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="new-csingle"> Single-use only</label>
           <label style="font-size:12px;color:#aaa;display:flex;align-items:center;gap:6px;cursor:pointer;margin-left:12px">Min order: $<input type="number" id="new-cmin" placeholder="0" min="0" step="0.5" style="width:60px;background:#1a1a1a;border:1px solid #444;border-radius:5px;padding:4px 7px;font-size:12px;color:#fff;margin-left:4px"></label>
+          <label id="new-cmax-wrap" style="font-size:12px;color:#aaa;display:flex;align-items:center;gap:6px;cursor:pointer;margin-left:12px">Max $ off: $<input type="number" id="new-cmax" placeholder="No cap" min="0" step="0.5" style="width:70px;background:#1a1a1a;border:1px solid #444;border-radius:5px;padding:4px 7px;font-size:12px;color:#fff;margin-left:4px"></label>
           <button class="aadd" style="margin-left:auto" onclick="addCoupon()">Create</button>
         </div>
+        <div style="font-size:11px;color:#666;margin-top:2px" id="new-cmax-hint">Caps how much a % off code can ever take off one order — e.g. 50% off, max $5. Leave blank for no cap. Doesn't apply to $ off codes.</div>
         <div class="arow">
           <label style="font-size:12px;color:#aaa;display:flex;align-items:center;gap:6px;flex:1">Assign to customer (optional):
             <input type="email" id="new-cemail" placeholder="customer@email.com — leave blank for a public code" style="flex:1;min-width:220px;background:#1a1a1a;border:1px solid #444;border-radius:5px;padding:6px 9px;font-size:12px;color:#fff">
@@ -273,7 +275,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
       </div>
       <div class="asec">
         <div class="asec-title">Active Codes</div>
-        <table class="mtable"><thead><tr><th>Code</th><th>Discount</th><th>Min</th><th>Assigned To</th><th>Uses</th><th>Single-use</th><th></th></tr></thead>
+        <table class="mtable"><thead><tr><th>Code</th><th>Discount</th><th>Max Off</th><th>Min</th><th>Assigned To</th><th>Uses</th><th>Single-use</th><th></th></tr></thead>
         <tbody id="coupon-body"></tbody></table>
       </div>
     </div></div>
@@ -1461,9 +1463,18 @@ function renderCoupons() {
   if(!coupons.length){const r=document.createElement('tr');r.innerHTML='<td colspan="7" style="color:#555;text-align:center;padding:12px;font-size:12px">No codes yet</td>';tbody.appendChild(r);return;}
   coupons.forEach(cp=>{
     const r=document.createElement('tr');
-    r.innerHTML=`<td style="font-weight:700;color:#ff6b35">${cp.code}</td><td>${cp.type==='percent'?cp.value+'%':'$'+parseFloat(cp.value).toFixed(2)} off</td><td>${cp.minOrder?'$'+parseFloat(cp.minOrder).toFixed(2):'—'}</td><td>${cp.assignedEmail?`<span style="color:#f59e0b">${cp.assignedEmail}</span>`:'—'}</td><td>${cp.useCount||0}</td><td>${cp.singleUse?`<span style="color:#f59e0b">Yes${cp.used?' (used)':''}</span>`:'No'}</td><td><button class="delbtn" onclick="deleteCoupon('${cp.fbKey}')">Delete</button></td>`;
+    r.innerHTML=`<td style="font-weight:700;color:#ff6b35">${cp.code}</td><td>${cp.type==='percent'?cp.value+'%':'$'+parseFloat(cp.value).toFixed(2)} off</td><td>${cp.type==='percent'&&cp.maxOff?'$'+parseFloat(cp.maxOff).toFixed(2):'—'}</td><td>${cp.minOrder?'$'+parseFloat(cp.minOrder).toFixed(2):'—'}</td><td>${cp.assignedEmail?`<span style="color:#f59e0b">${cp.assignedEmail}</span>`:'—'}</td><td>${cp.useCount||0}</td><td>${cp.singleUse?`<span style="color:#f59e0b">Yes${cp.used?' (used)':''}</span>`:'No'}</td><td><button class="delbtn" onclick="deleteCoupon('${cp.fbKey}')">Delete</button></td>`;
     tbody.appendChild(r);
   });
+}
+
+window.toggleCouponMaxField = function() {
+  const type=document.getElementById('new-ctype').value;
+  const wrap=document.getElementById('new-cmax-wrap');
+  const hint=document.getElementById('new-cmax-hint');
+  const show = type==='percent';
+  if(wrap) wrap.style.display = show ? 'flex' : 'none';
+  if(hint) hint.style.display = show ? 'block' : 'none';
 }
 
 window.addCoupon = async function() {
@@ -1471,13 +1482,16 @@ window.addCoupon = async function() {
   const val=parseFloat(document.getElementById('new-cval').value);
   const type=document.getElementById('new-ctype').value;
   const min=parseFloat(document.getElementById('new-cmin').value)||0;
+  const maxOffRaw=document.getElementById('new-cmax').value;
+  const maxOff = (type==='percent' && maxOffRaw!=='') ? parseFloat(maxOffRaw) : null;
   const assignedEmail=document.getElementById('new-cemail').value.trim().toLowerCase();
   const single=document.getElementById('new-csingle').checked || !!assignedEmail;
   if(!code||isNaN(val)||val<=0){alert('Enter a code and value');return;}
   if(coupons.find(c=>c.code===code)){alert('Code already exists');return;}
   if(assignedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(assignedEmail)){alert('Enter a valid customer email, or leave it blank');return;}
-  await push(ref(db,'coupons'),{code,type,value:val,singleUse:single,minOrder:min,useCount:0,used:false,assignedEmail:assignedEmail||null});
-  document.getElementById('new-ccode').value='';document.getElementById('new-cval').value='';document.getElementById('new-cmin').value='';document.getElementById('new-csingle').checked=false;document.getElementById('new-cemail').value='';
+  if(maxOff!==null && (isNaN(maxOff)||maxOff<=0)){alert('Max $ off must be a positive number, or leave it blank for no cap');return;}
+  await push(ref(db,'coupons'),{code,type,value:val,singleUse:single,minOrder:min,maxOff:maxOff,useCount:0,used:false,assignedEmail:assignedEmail||null});
+  document.getElementById('new-ccode').value='';document.getElementById('new-cval').value='';document.getElementById('new-cmin').value='';document.getElementById('new-cmax').value='';document.getElementById('new-csingle').checked=false;document.getElementById('new-cemail').value='';
 }
 
 window.deleteCoupon = async function(key) { await remove(ref(db,`coupons/${key}`)); }

@@ -848,7 +848,12 @@ function updateTotals() {
   let disc = 0;
   const dr = document.getElementById('disc-row');
   if (appliedCoupon) {
-    disc = appliedCoupon.type === 'percent' ? sub*(appliedCoupon.value/100) : Math.min(appliedCoupon.value, sub);
+    if (appliedCoupon.type === 'percent') {
+      disc = sub*(appliedCoupon.value/100);
+      if (appliedCoupon.maxOff) disc = Math.min(disc, parseFloat(appliedCoupon.maxOff));
+    } else {
+      disc = Math.min(appliedCoupon.value, sub);
+    }
     disc = Math.round(disc*100)/100;
     dr.style.display = 'flex';
     document.getElementById('disc-label').textContent = `${appliedCoupon.code} (${appliedCoupon.type==='percent'?appliedCoupon.value+'% off':'$'+appliedCoupon.value+' off'})`;
@@ -903,8 +908,15 @@ window.applyDiscount = function() {
   const sub = cart.reduce((s,c)=>s+c.price*c.qty,0);
   if (cp.minOrder && sub < cp.minOrder) { msg.className='disc-msg err'; msg.textContent=`Minimum order $${cp.minOrder.toFixed(2)} required.`; return; }
   appliedCoupon = cp;
-  const disc = cp.type==='percent' ? sub*(cp.value/100) : Math.min(cp.value,sub);
-  msg.className='disc-msg ok'; msg.textContent=`Applied! ${cp.type==='percent'?cp.value+'% off':'$'+cp.value.toFixed(2)+' off'} (-$${(Math.round(disc*100)/100).toFixed(2)})`;
+  let disc;
+  if (cp.type==='percent') {
+    disc = sub*(cp.value/100);
+    if (cp.maxOff) disc = Math.min(disc, parseFloat(cp.maxOff));
+  } else {
+    disc = Math.min(cp.value, sub);
+  }
+  const cappedNote = (cp.type==='percent' && cp.maxOff) ? ` (max $${parseFloat(cp.maxOff).toFixed(2)})` : '';
+  msg.className='disc-msg ok'; msg.textContent=`Applied! ${cp.type==='percent'?cp.value+'% off'+cappedNote:'$'+cp.value.toFixed(2)+' off'} (-$${(Math.round(disc*100)/100).toFixed(2)})`;
   updateTotals();
 }
 
