@@ -304,6 +304,16 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
           <thead><tr><th>Name</th><th>Email</th><th></th></tr></thead>
           <tbody id="admin-body"></tbody>
         </table>
+        <div style="margin-top:14px;padding-top:14px;border-top:1px solid #3a2a1a">
+          <div style="font-size:12px;font-weight:700;color:#aaa;margin-bottom:4px">Promote Existing Login by UID</div>
+          <div style="font-size:11px;color:#666;margin-bottom:8px">Use this if "Add Admin" said the email is already in use for a login this app doesn't recognize. Find the User UID in Firebase console → Authentication → Users, paste it below, and this gives that exact login admin access — no new password needed.</div>
+          <div class="arow">
+            <input type="text" id="promote-uid" placeholder="User UID from Firebase console">
+            <input type="text" id="promote-name" placeholder="Name (optional)">
+            <input type="email" id="promote-email" placeholder="Email (optional, for display)">
+            <button class="aadd" onclick="promoteAdminByUid()">Promote</button>
+          </div>
+        </div>
       </div>
       <div class="asec">
         <div class="asec-title">Add Kitchen Employee</div>
@@ -1611,9 +1621,45 @@ window.createAdmin = async function() {
     document.getElementById('new-adminemail').value='';
     document.getElementById('new-adminpass').value='';
   } catch(e) {
-    alert('Error creating admin: ' + e.message);
+    if (e.code === 'auth/email-already-in-use') {
+      // This email already has a Firebase Auth login somewhere. See if it's one
+      // this app already knows about (e.g. the kitchen device account, or an
+      // existing staff/admin login) so we can offer to just fix its role instead
+      // of forcing a brand-new account.
+      const existing = (usersList || []).find(u => (u.email||'').toLowerCase() === email.toLowerCase());
+      if (existing) {
+        const roleLabel = existing.isDevice ? 'the kitchen device login' : (existing.role ? `an existing "${existing.role}" login` : 'an existing login');
+        if (confirm(`That email is already in use here — it's ${roleLabel}${existing.name ? ' ("' + existing.name + '")' : ''}.\n\nMake this account an admin instead? (This won't change its password — they'll keep signing in with whatever password it already has.)`)) {
+          await update(ref(db, `users/${existing.uid}`), { role: 'admin', name: name || existing.name || '' });
+          alert('✅ That account now has admin access.');
+          document.getElementById('new-adminname').value='';
+          document.getElementById('new-adminemail').value='';
+          document.getElementById('new-adminpass').value='';
+        }
+      } else {
+        alert('That email already has a login in Firebase, but it\'s not one this app recognizes (it may be from an earlier attempt, or was set up outside this panel).\n\nTo fix it:\n1. Open the Firebase console → Authentication → Users, find this email, and copy its User UID.\n2. Come back here and use "Promote Existing Login by UID" below with that UID.\n\n(Or, in the Firebase console, delete that auth user first, then try Add Admin again with a fresh password.)');
+      }
+    } else {
+      alert('Error creating admin: ' + e.message);
+    }
   } finally {
     if (secondaryApp) { try { await deleteApp(secondaryApp); } catch(e2) {} }
+  }
+}
+
+window.promoteAdminByUid = async function() {
+  const uid = (document.getElementById('promote-uid')||{}).value.trim();
+  const name = (document.getElementById('promote-name')||{}).value.trim();
+  const email = (document.getElementById('promote-email')||{}).value.trim();
+  if (!uid) { alert('Paste in the User UID from the Firebase console'); return; }
+  try {
+    await update(ref(db, `users/${uid}`), { role: 'admin', ...(name?{name}:{}), ...(email?{email}:{}) });
+    alert('✅ That account now has admin access. They can sign in with the email/password already set up for that login.');
+    document.getElementById('promote-uid').value='';
+    document.getElementById('promote-name').value='';
+    document.getElementById('promote-email').value='';
+  } catch(e) {
+    alert('Error: ' + e.message);
   }
 }
 
