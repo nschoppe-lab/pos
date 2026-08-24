@@ -271,7 +271,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
             <input type="email" id="new-cemail" placeholder="customer@email.com — leave blank for a public code" style="flex:1;min-width:220px;background:#1a1a1a;border:1px solid #444;border-radius:5px;padding:6px 9px;font-size:12px;color:#fff">
           </label>
         </div>
-        <div style="font-size:11px;color:#666;margin-top:2px">Assigning a code to a customer automatically makes it single-use and reserves it — only that email can redeem it, and it won't show on the public promo list.</div>
+        <div style="font-size:11px;color:#666;margin-top:2px">Assigning a code to a customer reserves it — only that email can redeem it, and it won't show on the public promo list. Check "Single-use only" separately if you also want it to only work once; leave it unchecked to let that customer reuse the code every time (e.g. a standing discount for them).</div>
       </div>
       <div class="asec">
         <div class="asec-title">Active Codes</div>
@@ -1522,7 +1522,7 @@ window.addCoupon = async function() {
   const maxOffRaw=document.getElementById('new-cmax').value;
   const maxOff = (type==='percent' && maxOffRaw!=='') ? parseFloat(maxOffRaw) : null;
   const assignedEmail=document.getElementById('new-cemail').value.trim().toLowerCase();
-  const single=document.getElementById('new-csingle').checked || !!assignedEmail;
+  const single=document.getElementById('new-csingle').checked;
   if(!code||isNaN(val)||val<=0){alert('Enter a code and value');return;}
   if(coupons.find(c=>c.code===code)){alert('Code already exists');return;}
   if(assignedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(assignedEmail)){alert('Enter a valid customer email, or leave it blank');return;}

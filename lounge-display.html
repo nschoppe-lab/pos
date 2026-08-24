@@ -461,7 +461,7 @@ function renderPromos() {
   const wrap = document.getElementById('promo-wrap');
   const container = document.getElementById('promo-section');
   if (!wrap || !container) return;
-  const active = Object.values(coupons).filter(c => c && !c.singleUse);
+  const active = Object.values(coupons).filter(c => c && !c.singleUse && !c.assignedEmail);
   if (!active.length) {
     wrap.style.display = 'none';
     container.innerHTML = '';
