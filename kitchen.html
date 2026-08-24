@@ -160,6 +160,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
       <span class="logout-btn" id="reopen-status" style="display:none;background:#0e2a1a;border-color:#22c55e44;color:#22c55e;cursor:default"></span>
       <button class="logout-btn" id="mute-btn" onclick="toggleAlertMute()" style="background:#1a1a1a;border-color:#22c55e44;color:#22c55e">🔔 Alerts On</button>
       <button class="logout-btn" onclick="showStaffLeaderboard()" style="background:#1a1a1a;border-color:#f59e0b44;color:#f59e0b">🏆 Leaderboard</button>
+      <button class="logout-btn" onclick="showCompletedOrders()" style="background:#1a1a1a;border-color:#22c55e44;color:#22c55e">✅ Completed</button>
       <button class="logout-btn" id="reopen-btn" onclick="reopenTemporarily()" style="display:none;background:#0e2a1a;border-color:#22c55e44;color:#22c55e">🔓 Reopen 5 Min</button>
       <button class="logout-btn" onclick="doLogout()" style="background:#2a1010;border-color:#7f1d1d;color:#ef4444">🔴 Clock Out</button>
     </div>
@@ -525,20 +526,18 @@ function updateOrderTimers() {
 function renderOrders() {
   const grid = document.getElementById('orders-grid');
   const allOrders = Object.entries(orders).map(([k,v]) => ({fbKey:k,...v}));
-  const open = allOrders.filter(o => o.status === 'pending').sort((a,b) => (a.createdAt||0)-(b.createdAt||0));
-  const recent = allOrders.filter(o => o.status === 'done').sort((a,b) => (b.createdAt||0)-(a.createdAt||0)).slice(0,6);
-  const all = [...open, ...recent];
+  const open = allOrders.filter(o => o.status !== 'done').sort((a,b) => (a.createdAt||0)-(b.createdAt||0));
 
   document.getElementById('open-pill').textContent = `${open.length} open`;
-  if (!all.length) { grid.innerHTML = '<div class="empty">No orders yet</div>'; return; }
+  if (!open.length) { grid.innerHTML = '<div class="empty">No open orders</div>'; return; }
 
   grid.innerHTML = '';
-  all.forEach(order => {
+  open.forEach(order => {
     const card = document.createElement('div');
-    card.className = 'oc' + (order.status==='done' ? ' done' : '') + (order.paid ? ' paid' : '') + (order.inProgress ? ' working' : '');
+    card.className = 'oc' + (order.paid ? ' paid' : '') + (order.inProgress ? ' working' : '');
     card.dataset.key = order.fbKey;
-    const badgeClass = order.status==='done' ? 'done' : (order.inProgress ? 'working' : 'pending');
-    const badgeLabel = order.status==='done' ? 'Done' : (order.inProgress ? 'In Progress' : 'New');
+    const badgeClass = order.inProgress ? 'working' : 'pending';
+    const badgeLabel = order.inProgress ? 'In Progress' : 'New';
     card.innerHTML = `
       <span class="oc-timer" data-created="${order.createdAt||''}">--:--</span>
       <div class="oc-hdr">
@@ -556,22 +555,15 @@ function renderOrders() {
       </div>
       <div class="oc-foot">
         <span class="sbadge ${badgeClass}">${badgeLabel}</span>
-        ${order.status==='done'
-          ? `<button onclick="event.stopPropagation();undoDone('${order.fbKey}')" style="background:#2a1f0e;border:1px solid #f59e0b44;color:#f59e0b;border-radius:6px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer">↩ Undo</button>`
-          : ''}
-        <span class="tap-hint">${order.status==='done'?'Completed':'Double-tap to complete'}</span>
+        <span class="tap-hint">Double-tap to complete</span>
       </div>
-      ${order.status!=='done' ? `
       <button onclick="event.stopPropagation();toggleInProgress('${order.fbKey}', ${!order.inProgress})" class="big-progress-btn ${order.inProgress?'is-working':''}">
         ${order.inProgress ? '⏳ In Progress' : '▶ Mark In Progress'}
-      </button>` : ''}
-      ${order.status!=='done' ? `
+      </button>
       <button onclick="event.stopPropagation();togglePaid('${order.fbKey}', ${!order.paid})" class="big-paid-btn ${order.paid?'is-paid':''}">
         ${order.paid ? '✓ PAID' : '💳 Mark Paid'}
-      </button>` : ''}`;
-    if (order.status !== 'done') {
-      card.addEventListener('click', () => handleTap(order.fbKey, order));
-    }
+      </button>`;
+    card.addEventListener('click', () => handleTap(order.fbKey, order));
     grid.appendChild(card);
   });
   updateOrderTimers();
@@ -617,10 +609,6 @@ async function sendOrderReadyEmail(order) {
     showModal(`<h3 style="color:#22c55e">&#10003; Order marked done!</h3><p style="font-size:12px;color:#aaa">Could not send email automatically. You can notify ${order.name} manually.</p><div class="mbtns"><button class="mbtn cancel" onclick="closeModal()">Close</button></div>`);
     console.error('EmailJS error:', e);
   }
-}
-
-window.undoDone = async function(key) {
-  await update(ref(db, `orders/${key}`), { status: 'pending' });
 }
 
 window.togglePaid = async function(key, paid) {
@@ -688,7 +676,12 @@ function printPaidTicket(order) {
   });
 }
 
-window.showModal = function(html) { document.getElementById('modal-content').innerHTML=html; document.getElementById('modal').style.display='flex'; }
+window.showModal = function(html, wide) {
+  const content = document.getElementById('modal-content');
+  content.innerHTML = html;
+  content.style.width = wide ? 'min(480px, 92vw)' : '';
+  document.getElementById('modal').style.display='flex';
+}
 
 window.showStaffLeaderboard = function() {
   const byStaff = {};
@@ -715,6 +708,41 @@ window.showStaffLeaderboard = function() {
   `);
 }
 window.closeModal = function() { document.getElementById('modal').style.display='none'; }
+
+window.showCompletedOrders = function() {
+  const completed = Object.entries(orders)
+    .map(([k,v]) => ({fbKey:k,...v}))
+    .filter(o => o.status === 'done')
+    .sort((a,b) => (b.createdAt||0)-(a.createdAt||0))
+    .slice(0, 40);
+
+  const rowsHtml = completed.length
+    ? completed.map(o => `
+        <div data-crow="${o.fbKey}" style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #2a2a2a">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:700;color:#fff">#${o.fbKey.slice(-4).toUpperCase()} · ${escapeHtml(o.name||'')}</div>
+            <div style="font-size:11px;color:#888">${o.time||''}${o.completedByName?' · Completed by '+escapeHtml(o.completedByName):''}</div>
+          </div>
+          <span style="font-size:12px;font-weight:700;color:#ff6b35;flex-shrink:0">$${parseFloat(o.total||0).toFixed(2)}</span>
+          <button onclick="undoDoneFromModal('${o.fbKey}', this)" style="background:#2a1f0e;border:1px solid #f59e0b44;color:#f59e0b;border-radius:6px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">↩ Undo</button>
+        </div>`).join('')
+    : '<div style="color:#666;font-size:12px;text-align:center;padding:16px">No completed orders yet</div>';
+
+  showModal(`
+    <h3 style="margin-bottom:4px">✅ Completed Orders</h3>
+    <p style="font-size:12px;color:#aaa;margin-bottom:14px">Tap Undo to send an order back to the open board — useful if it was marked done by accident.</p>
+    <div style="max-height:60vh;overflow-y:auto">${rowsHtml}</div>
+    <div class="mbtns"><button class="mbtn cancel" onclick="closeModal()">Close</button></div>
+  `, true);
+}
+
+window.undoDoneFromModal = async function(key, btnEl) {
+  try {
+    await update(ref(db, `orders/${key}`), { status: 'pending' });
+    const row = btnEl.closest('[data-crow]');
+    if (row) row.remove();
+  } catch(e) { alert('Error: ' + e.message); }
+}
 
 // ── REOPEN FOR 5 MORE MINUTES ────────────────────────────────────
 window.reopenTemporarily = async function() {
