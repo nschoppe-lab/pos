@@ -45,6 +45,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 .oc.flash{border-color:#f59e0b}
 .oc.done{border-color:#22c55e;opacity:0.5}
 .oc.paid:not(.done){border-color:#22c55e;box-shadow:0 0 0 1px #22c55e44}
+.oc.working:not(.done):not(.paid){border-color:#2dd4bf;box-shadow:0 0 0 1px #2dd4bf44}
 .oc-timer{position:absolute;top:8px;right:8px;font-size:11px;font-weight:800;padding:3px 9px;border-radius:20px;background:#000000b3;color:#9ca3af;z-index:2;font-variant-numeric:tabular-nums;letter-spacing:0.3px;pointer-events:none}
 .oc-timer.warn{color:#f59e0b}
 .oc-timer.alert{color:#ef4444}
@@ -59,11 +60,15 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 .oc-foot{display:flex;align-items:center;justify-content:space-between;padding:8px 14px;background:#1a1a1a;border-top:1px solid #333}
 .sbadge{font-size:10px;font-weight:700;padding:3px 10px;border-radius:20px}
 .sbadge.pending{background:#2a1f0e;color:#f59e0b}
+.sbadge.working{background:#042f2e;color:#2dd4bf}
 .sbadge.done{background:#052e16;color:#22c55e}
 .tap-hint{font-size:10px;color:#555}
 .big-paid-btn{display:block;width:100%;padding:18px 10px;font-size:17px;font-weight:800;letter-spacing:0.5px;border:none;border-top:2px solid #333;cursor:pointer;background:#2a1f0e;color:#f59e0b;transition:all 0.15s}
 .big-paid-btn:active{transform:scale(0.98)}
 .big-paid-btn.is-paid{background:#052e16;color:#22c55e;border-top-color:#22c55e44}
+.big-progress-btn{display:block;width:100%;padding:18px 10px;font-size:17px;font-weight:800;letter-spacing:0.5px;border:none;border-top:2px solid #333;cursor:pointer;background:#0f2626;color:#2dd4bf;transition:all 0.15s}
+.big-progress-btn:active{transform:scale(0.98)}
+.big-progress-btn.is-working{background:#042f2e;color:#5eead4;border-top-color:#2dd4bf44}
 /* MODAL */
 .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:999}
 .modal{background:#1e1e1e;border:1px solid #333;border-radius:11px;padding:22px;width:340px;max-width:92vw}
@@ -530,8 +535,10 @@ function renderOrders() {
   grid.innerHTML = '';
   all.forEach(order => {
     const card = document.createElement('div');
-    card.className = 'oc' + (order.status==='done' ? ' done' : '') + (order.paid ? ' paid' : '');
+    card.className = 'oc' + (order.status==='done' ? ' done' : '') + (order.paid ? ' paid' : '') + (order.inProgress ? ' working' : '');
     card.dataset.key = order.fbKey;
+    const badgeClass = order.status==='done' ? 'done' : (order.inProgress ? 'working' : 'pending');
+    const badgeLabel = order.status==='done' ? 'Done' : (order.inProgress ? 'In Progress' : 'New');
     card.innerHTML = `
       <span class="oc-timer" data-created="${order.createdAt||''}">--:--</span>
       <div class="oc-hdr">
@@ -548,12 +555,16 @@ function renderOrders() {
         <div class="oc-total">$${parseFloat(order.total).toFixed(2)}</div>
       </div>
       <div class="oc-foot">
-        <span class="sbadge ${order.status==='done'?'done':'pending'}">${order.status==='done'?'Done':'In Progress'}</span>
+        <span class="sbadge ${badgeClass}">${badgeLabel}</span>
         ${order.status==='done'
           ? `<button onclick="event.stopPropagation();undoDone('${order.fbKey}')" style="background:#2a1f0e;border:1px solid #f59e0b44;color:#f59e0b;border-radius:6px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer">↩ Undo</button>`
           : ''}
         <span class="tap-hint">${order.status==='done'?'Completed':'Double-tap to complete'}</span>
       </div>
+      ${order.status!=='done' ? `
+      <button onclick="event.stopPropagation();toggleInProgress('${order.fbKey}', ${!order.inProgress})" class="big-progress-btn ${order.inProgress?'is-working':''}">
+        ${order.inProgress ? '⏳ In Progress' : '▶ Mark In Progress'}
+      </button>` : ''}
       ${order.status!=='done' ? `
       <button onclick="event.stopPropagation();togglePaid('${order.fbKey}', ${!order.paid})" class="big-paid-btn ${order.paid?'is-paid':''}">
         ${order.paid ? '✓ PAID' : '💳 Mark Paid'}
@@ -618,6 +629,16 @@ window.togglePaid = async function(key, paid) {
     if (order) printPaidTicket(order);
   }
   await update(ref(db, `orders/${key}`), { paid });
+}
+
+window.toggleInProgress = async function(key, inProgress) {
+  const updates = { inProgress };
+  if (inProgress) {
+    updates.inProgressBy = currentWorkerId || null;
+    updates.inProgressByName = currentWorkerName || 'Unknown';
+    updates.inProgressAt = Date.now();
+  }
+  await update(ref(db, `orders/${key}`), updates);
 }
 
 function escapeHtml(str) {
