@@ -190,7 +190,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
         <label class="oo-row" for="delivery-toggle">
           <div class="oo-row-left">
             <span class="oo-label">🚚 Delivery</span>
-            <span class="oo-sub" id="delivery-sub">Available Mon, Wed & Thu, 7–8 PM ET</span>
+            <span class="oo-sub" id="delivery-sub">Loading availability...</span>
           </div>
           <div style="display:flex;align-items:center;gap:8px">
             <span class="oo-fee">+$5.00</span>
@@ -282,7 +282,7 @@ let deliveryLocations = {};
 let deliveryOn = false, preorderOn = false;
 let deliveryTestOverride = false;
 let preorderTestOverride = false;
-let preorderSettings = {};
+let preorderSettings = {}; // sourced from the 'deliverySettings' node — also holds delivery window times, despite the name
 let deliveryFeeAmount = 5;
 let custItem = null, custSelections = {};
 let sauces = [];
@@ -504,7 +504,7 @@ onValue(ref(db, 'deliveryLocations'), snap => {
 });
 
 // Admin-only testing override — lets an admin force delivery to be selectable outside its normal window.
-// This never changes what's shown to customers (the Mon/Wed/Thu, 7–8 PM ET text stays exactly as-is).
+// This never changes what's shown to customers (the delivery-window text always reflects the real configured time).
 onValue(ref(db, 'deliverySettings'), snap => {
   const d = snap.val() || {};
   deliveryTestOverride = d.testOverride === true;
@@ -541,7 +541,7 @@ function renderDeliveryLocationOptions() {
   if (entries.some(v => v.name === current)) sel.value = current;
 }
 
-// ── Delivery (Mon/Wed/Thu, 7–8 PM ET) and pre-order (configurable nightly window, any open night) windows ──
+// ── Delivery (Mon/Wed/Thu, configurable nightly window) and pre-order (configurable nightly window, any open night) windows ──
 function getEasternParts(date) {
   date = date || new Date();
   const fmt = new Intl.DateTimeFormat('en-US', {
@@ -567,6 +567,12 @@ function getPreorderWindowMinutes() {
   return { start, end };
 }
 
+function getDeliveryWindowMinutes() {
+  const start = parseHHMM(preorderSettings.deliveryStart) ?? (19 * 60);
+  const end = parseHHMM(preorderSettings.deliveryEnd) ?? (20 * 60);
+  return { start, end };
+}
+
 function formatMinutesAsClock(mins) {
   let h = Math.floor(mins / 60) % 24;
   const m = mins % 60;
@@ -579,7 +585,12 @@ function isDeliveryWindowOpen() {
   if (deliveryTestOverride) return true; // admin testing override — bypasses the schedule check only, display text is unaffected
   const p = getEasternParts();
   const validDays = ['Mon','Wed','Thu'];
-  return validDays.indexOf(p.weekday) !== -1 && p.hour === 19;
+  if (validDays.indexOf(p.weekday) === -1) return false;
+  const nowMins = p.hour * 60 + p.minute;
+  const { start, end } = getDeliveryWindowMinutes();
+  if (end > start) return nowMins >= start && nowMins < end;
+  // window wraps past midnight
+  return nowMins >= start || nowMins < end;
 }
 
 function isPreorderWindowOpen() {
@@ -609,7 +620,11 @@ function refreshOrderOptionAvailability() {
       if (fields) fields.classList.remove('show');
       if (delivCard) delivCard.classList.remove('active');
     }
-    if (delivSub) delivSub.textContent = delivOk ? 'Available now — Mon, Wed & Thu, 7–8 PM ET' : 'Available Mon, Wed & Thu, 7–8 PM ET only';
+    if (delivSub) {
+      const { start, end } = getDeliveryWindowMinutes();
+      const windowLabel = `Mon, Wed & Thu, ${formatMinutesAsClock(start)}–${formatMinutesAsClock(end)} ET`;
+      delivSub.textContent = delivOk ? `Available now — ${windowLabel}` : `Available ${windowLabel} only`;
+    }
   }
 
   const preToggle = document.getElementById('preorder-toggle');
@@ -967,7 +982,8 @@ window.placeOrder = async function() {
   let deliveryLocationVal = '', deliveryPhoneVal = '';
   if (deliveryOn) {
     if (!isDeliveryWindowOpen()) {
-      alert("The delivery window (Mon, Wed & Thu, 7–8 PM ET) has just closed. Please uncheck Delivery to continue, or place your order without it.");
+      const { start, end } = getDeliveryWindowMinutes();
+      alert(`The delivery window (Mon, Wed & Thu, ${formatMinutesAsClock(start)}–${formatMinutesAsClock(end)} ET) has just closed. Please uncheck Delivery to continue, or place your order without it.`);
       refreshOrderOptionAvailability();
       return;
     }
