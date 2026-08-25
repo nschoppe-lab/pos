@@ -272,10 +272,15 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
           </label>
         </div>
         <div style="font-size:11px;color:#666;margin-top:2px">Assigning a code to a customer reserves it — only that email can redeem it, and it won't show on the public promo list. Check "Single-use only" separately if you also want it to only work once; leave it unchecked to let that customer reuse the code every time (e.g. a standing discount for them).</div>
+        <div style="margin-top:14px;padding-top:14px;border-top:1px solid #333">
+          <label style="font-size:12px;color:#aaa;font-weight:600;display:block;margin-bottom:8px">Restrict to specific items (optional)</label>
+          <div id="new-citems" style="display:flex;flex-wrap:wrap;gap:6px 14px;max-height:160px;overflow-y:auto;padding:10px;background:#1a1a1a;border:1px solid #333;border-radius:6px"></div>
+          <div style="font-size:11px;color:#666;margin-top:6px">Leave everything unchecked to discount the whole order, like normal. Check specific items to make the discount only apply to those — e.g. "20% off quesadillas" won't touch drinks or sides in the same order.</div>
+        </div>
       </div>
       <div class="asec">
         <div class="asec-title">Active Codes</div>
-        <table class="mtable"><thead><tr><th>Code</th><th>Discount</th><th>Max Off</th><th>Min</th><th>Assigned To</th><th>Uses</th><th>Single-use</th><th></th></tr></thead>
+        <table class="mtable"><thead><tr><th>Code</th><th>Discount</th><th>Max Off</th><th>Applies To</th><th>Min</th><th>Assigned To</th><th>Uses</th><th>Single-use</th><th></th></tr></thead>
         <tbody id="coupon-body"></tbody></table>
       </div>
     </div></div>
@@ -1119,7 +1124,7 @@ function showAdmin() {
   document.getElementById('login-wrap').style.display = 'none';
   document.getElementById('admin-app').style.display = 'flex';
   onValue(ref(db,'orders'), snap => { orders = snap.val()||{}; renderOrders(); renderHistory(); updateBadge(); if(currentTab==='waittime') updateWaitTimeUI(); if(currentTab==='finance') renderFinance(); if(currentTab==='leaderboard') { renderLeaderboard(); renderStaffLeaderboard(); } });
-  onValue(ref(db,'menu'), snap => { const d = snap.val(); menu = d ? Object.values(d) : []; renderMenuAdmin(); renderInventory(); if(currentTab==='lounge'){ populateDrinkPictureItemSelect(); renderDrinkPictures(); } });
+  onValue(ref(db,'menu'), snap => { const d = snap.val(); menu = d ? Object.values(d) : []; renderMenuAdmin(); renderInventory(); populateCouponItemPicker(); if(currentTab==='lounge'){ populateDrinkPictureItemSelect(); renderDrinkPictures(); } });
   onValue(ref(db,'inventorySettings'), snap => { inventorySettingsData = snap.val()||{}; renderInventory(); });
   onValue(ref(db,'sauces'), snap => { const d = snap.val(); saucesData = d ? Object.values(d) : []; if(currentTab==='menu') renderSauces(); });
   onValue(ref(db,'coupons'), snap => { const d = snap.val(); coupons = d ? Object.entries(d).map(([k,v])=>({fbKey:k,...v})) : []; renderCoupons(); });
@@ -1512,12 +1517,31 @@ async function setMenu(newMenu) {
 }
 
 // COUPONS
+function populateCouponItemPicker() {
+  const container = document.getElementById('new-citems');
+  if (!container) return;
+  const previouslyChecked = new Set(
+    Array.from(container.querySelectorAll('input[type=checkbox]:checked')).map(el => el.value)
+  );
+  let html = '';
+  menu.forEach(cat => {
+    (cat.items||[]).forEach(item => {
+      const checked = previouslyChecked.has(item.name) ? 'checked' : '';
+      html += `<label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#ccc;cursor:pointer;white-space:nowrap"><input type="checkbox" value="${escMenuHtml(item.name)}" ${checked}> ${escMenuHtml(item.name)}</label>`;
+    });
+  });
+  container.innerHTML = html || '<span style="color:#555;font-size:12px">No menu items yet</span>';
+}
+
 function renderCoupons() {
   const tbody=document.getElementById('coupon-body');tbody.innerHTML='';
-  if(!coupons.length){const r=document.createElement('tr');r.innerHTML='<td colspan="7" style="color:#555;text-align:center;padding:12px;font-size:12px">No codes yet</td>';tbody.appendChild(r);return;}
+  if(!coupons.length){const r=document.createElement('tr');r.innerHTML='<td colspan="8" style="color:#555;text-align:center;padding:12px;font-size:12px">No codes yet</td>';tbody.appendChild(r);return;}
   coupons.forEach(cp=>{
     const r=document.createElement('tr');
-    r.innerHTML=`<td style="font-weight:700;color:#ff6b35">${cp.code}</td><td>${cp.type==='percent'?cp.value+'%':'$'+parseFloat(cp.value).toFixed(2)} off</td><td>${cp.type==='percent'&&cp.maxOff?'$'+parseFloat(cp.maxOff).toFixed(2):'—'}</td><td>${cp.minOrder?'$'+parseFloat(cp.minOrder).toFixed(2):'—'}</td><td>${cp.assignedEmail?`<span style="color:#f59e0b">${cp.assignedEmail}</span>`:'—'}</td><td>${cp.useCount||0}</td><td>${cp.singleUse?`<span style="color:#f59e0b">Yes${cp.used?' (used)':''}</span>`:'No'}</td><td><button class="delbtn" onclick="deleteCoupon('${cp.fbKey}')">Delete</button></td>`;
+    const items = cp.itemRestriction && cp.itemRestriction.length ? cp.itemRestriction : null;
+    const appliesToFull = items ? items.join(', ') : 'Whole order';
+    const appliesToShort = items && appliesToFull.length > 34 ? items[0] + ` +${items.length-1} more` : appliesToFull;
+    r.innerHTML=`<td style="font-weight:700;color:#ff6b35">${cp.code}</td><td>${cp.type==='percent'?cp.value+'%':'$'+parseFloat(cp.value).toFixed(2)} off</td><td>${cp.type==='percent'&&cp.maxOff?'$'+parseFloat(cp.maxOff).toFixed(2):'—'}</td><td title="${appliesToFull.replace(/"/g,'&quot;')}" style="${items?'color:#a78bfa':'color:#666'}">${appliesToShort}</td><td>${cp.minOrder?'$'+parseFloat(cp.minOrder).toFixed(2):'—'}</td><td>${cp.assignedEmail?`<span style="color:#f59e0b">${cp.assignedEmail}</span>`:'—'}</td><td>${cp.useCount||0}</td><td>${cp.singleUse?`<span style="color:#f59e0b">Yes${cp.used?' (used)':''}</span>`:'No'}</td><td><button class="delbtn" onclick="deleteCoupon('${cp.fbKey}')">Delete</button></td>`;
     tbody.appendChild(r);
   });
 }
@@ -1540,12 +1564,14 @@ window.addCoupon = async function() {
   const maxOff = (type==='percent' && maxOffRaw!=='') ? parseFloat(maxOffRaw) : null;
   const assignedEmail=document.getElementById('new-cemail').value.trim().toLowerCase();
   const single=document.getElementById('new-csingle').checked;
+  const itemRestriction = Array.from(document.querySelectorAll('#new-citems input[type=checkbox]:checked')).map(el => el.value);
   if(!code||isNaN(val)||val<=0){alert('Enter a code and value');return;}
   if(coupons.find(c=>c.code===code)){alert('Code already exists');return;}
   if(assignedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(assignedEmail)){alert('Enter a valid customer email, or leave it blank');return;}
   if(maxOff!==null && (isNaN(maxOff)||maxOff<=0)){alert('Max $ off must be a positive number, or leave it blank for no cap');return;}
-  await push(ref(db,'coupons'),{code,type,value:val,singleUse:single,minOrder:min,maxOff:maxOff,useCount:0,used:false,assignedEmail:assignedEmail||null});
+  await push(ref(db,'coupons'),{code,type,value:val,singleUse:single,minOrder:min,maxOff:maxOff,useCount:0,used:false,assignedEmail:assignedEmail||null,itemRestriction:itemRestriction.length?itemRestriction:null});
   document.getElementById('new-ccode').value='';document.getElementById('new-cval').value='';document.getElementById('new-cmin').value='';document.getElementById('new-cmax').value='';document.getElementById('new-csingle').checked=false;document.getElementById('new-cemail').value='';
+  document.querySelectorAll('#new-citems input[type=checkbox]:checked').forEach(el => el.checked = false);
 }
 
 window.deleteCoupon = async function(key) { await remove(ref(db,`coupons/${key}`)); }

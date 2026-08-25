@@ -473,7 +473,8 @@ function renderPromos() {
       const cap = (c.type === 'percent' && c.maxOff) ? ` up to $${parseFloat(c.maxOff).toFixed(2)}` : '';
       const reward = c.type === 'percent' ? `${c.value}% off${cap}` : `$${parseFloat(c.value).toFixed(2)} off`;
       const min = c.minOrder ? ` (min $${parseFloat(c.minOrder).toFixed(2)})` : '';
-      return `<div class="promo-item"><span class="promo-code">${escapeHtml(c.code)}</span> — ${reward}${min}</div>`;
+      const restriction = (c.itemRestriction && c.itemRestriction.length) ? ` — ${c.itemRestriction.map(escapeHtml).join(', ')} only` : '';
+      return `<div class="promo-item"><span class="promo-code">${escapeHtml(c.code)}</span> — ${reward}${min}${restriction}</div>`;
     }).join('');
 }
 

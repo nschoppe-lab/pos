@@ -358,7 +358,8 @@ function renderPromoBanner() {
     active.map(c => {
       const reward = c.type === 'percent' ? `${c.value}% off` : `$${parseFloat(c.value).toFixed(2)} off`;
       const min = c.minOrder ? ` (min $${parseFloat(c.minOrder).toFixed(2)})` : '';
-      return `<div class="promo-item"><span class="promo-code">${escapeHtmlAttr(c.code)}</span> — ${reward}${min}</div>`;
+      const restriction = (c.itemRestriction && c.itemRestriction.length) ? ` — ${c.itemRestriction.map(escapeHtmlAttr).join(', ')} only` : '';
+      return `<div class="promo-item"><span class="promo-code">${escapeHtmlAttr(c.code)}</span> — ${reward}${min}${restriction}</div>`;
     }).join('') +
     '<div class="promo-banner-note">You must enter the code above at checkout — it is not applied automatically.</div>';
 }
@@ -905,20 +906,30 @@ function renderCart() {
   if (loyaltyData) renderLoyaltyBanner();
 }
 
+function getCouponEligibleSubtotal(coupon) {
+  if (!coupon || !coupon.itemRestriction || !coupon.itemRestriction.length) {
+    return cart.reduce((s,c) => s + c.price * c.qty, 0);
+  }
+  const restrictedSet = new Set(coupon.itemRestriction);
+  return cart.reduce((s,c) => restrictedSet.has(c.name) ? s + c.price * c.qty : s, 0);
+}
+
 function updateTotals() {
   const sub = cart.reduce((s,c) => s + c.price * c.qty, 0);
   let disc = 0;
   const dr = document.getElementById('disc-row');
   if (appliedCoupon) {
+    const eligibleSub = getCouponEligibleSubtotal(appliedCoupon);
     if (appliedCoupon.type === 'percent') {
-      disc = sub*(appliedCoupon.value/100);
+      disc = eligibleSub*(appliedCoupon.value/100);
       if (appliedCoupon.maxOff) disc = Math.min(disc, parseFloat(appliedCoupon.maxOff));
     } else {
-      disc = Math.min(appliedCoupon.value, sub);
+      disc = Math.min(appliedCoupon.value, eligibleSub);
     }
     disc = Math.round(disc*100)/100;
     dr.style.display = 'flex';
-    document.getElementById('disc-label').textContent = `${appliedCoupon.code} (${appliedCoupon.type==='percent'?appliedCoupon.value+'% off':'$'+appliedCoupon.value+' off'})`;
+    const restrictionNote = (appliedCoupon.itemRestriction && appliedCoupon.itemRestriction.length) ? ` · applies to ${appliedCoupon.itemRestriction.join(', ')}` : '';
+    document.getElementById('disc-label').textContent = `${appliedCoupon.code} (${appliedCoupon.type==='percent'?appliedCoupon.value+'% off':'$'+appliedCoupon.value+' off'}${restrictionNote})`;
     document.getElementById('disc-amt').textContent = `-$${disc.toFixed(2)}`;
   } else { dr.style.display = 'none'; }
   let loyDisc = 0;
@@ -969,16 +980,23 @@ window.applyDiscount = function() {
   }
   const sub = cart.reduce((s,c)=>s+c.price*c.qty,0);
   if (cp.minOrder && sub < cp.minOrder) { msg.className='disc-msg err'; msg.textContent=`Minimum order $${cp.minOrder.toFixed(2)} required.`; return; }
+  const eligibleSub = getCouponEligibleSubtotal(cp);
+  if (cp.itemRestriction && cp.itemRestriction.length && eligibleSub <= 0) {
+    msg.className='disc-msg err';
+    msg.textContent = `This code only applies to: ${cp.itemRestriction.join(', ')} — add one to your cart to use it.`;
+    return;
+  }
   appliedCoupon = cp;
   let disc;
   if (cp.type==='percent') {
-    disc = sub*(cp.value/100);
+    disc = eligibleSub*(cp.value/100);
     if (cp.maxOff) disc = Math.min(disc, parseFloat(cp.maxOff));
   } else {
-    disc = Math.min(cp.value, sub);
+    disc = Math.min(cp.value, eligibleSub);
   }
   const cappedNote = (cp.type==='percent' && cp.maxOff) ? ` (max $${parseFloat(cp.maxOff).toFixed(2)})` : '';
-  msg.className='disc-msg ok'; msg.textContent=`Applied! ${cp.type==='percent'?cp.value+'% off'+cappedNote:'$'+cp.value.toFixed(2)+' off'} (-$${(Math.round(disc*100)/100).toFixed(2)})`;
+  const restrictionNote = (cp.itemRestriction && cp.itemRestriction.length) ? ` · applies to ${cp.itemRestriction.join(', ')}` : '';
+  msg.className='disc-msg ok'; msg.textContent=`Applied! ${cp.type==='percent'?cp.value+'% off'+cappedNote:'$'+cp.value.toFixed(2)+' off'}${restrictionNote} (-$${(Math.round(disc*100)/100).toFixed(2)})`;
   updateTotals();
 }
 
