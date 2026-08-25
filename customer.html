@@ -273,6 +273,7 @@ const db = getDatabase(app);
 const auth = getAuth(app);
 
 let accountUser = null, accountProfile = null, accountView = 'login';
+let pendingLoginEmail = '', pendingLoginNotice = '';
 let editingProfile = false, changingPassword = false, accountOrderHistory = [];
 
 let menu = [], coupons = [], cart = [], appliedCoupon = null, activeBranding = {}, openOrderCount = 0;
@@ -1186,8 +1187,9 @@ function renderAccountModal() {
     body.innerHTML = `
       <div class="cust-modal-title">Sign In</div>
       <div class="acct-err" id="acct-err"></div>
+      ${pendingLoginNotice ? `<div style="font-size:12px;color:#f59e0b;background:#2a1f0e;border:1px solid #f59e0b44;border-radius:6px;padding:8px 10px;margin-bottom:10px">${pendingLoginNotice}</div>` : ''}
       <label class="acct-label">Email</label>
-      <input type="email" class="acct-input" id="login-email" placeholder="you@email.com">
+      <input type="email" class="acct-input" id="login-email" value="${escapeHtmlAttr(pendingLoginEmail)}" placeholder="you@email.com">
       <label class="acct-label">Password</label>
       <input type="password" class="acct-input" id="login-password" placeholder="Password">
       <button class="acct-btn" onclick="doAccountLogin()">Sign In</button>
@@ -1199,6 +1201,7 @@ function renderAccountModal() {
       </div>
       <button class="acct-btn secondary" onclick="closeAccountModal()">Continue as Guest</button>
     `;
+    pendingLoginNotice = '';
   } else if (accountView === 'signup') {
     body.innerHTML = `
       <div class="cust-modal-title">Create Account</div>
@@ -1319,7 +1322,14 @@ window.doAccountSignup = async function() {
     closeAccountModal();
     showToast('Account created! Welcome, ' + name.split(' ')[0] + '!');
   } catch(e) {
-    errEl.textContent = e.code === 'auth/email-already-in-use' ? 'An account with that email already exists.' : (e.message || 'Error creating account');
+    if (e.code === 'auth/email-already-in-use') {
+      pendingLoginEmail = email;
+      pendingLoginNotice = "You already have a login with that email (maybe a staff or admin account?) — just sign in below with its password. It works right here too, and gets its own order history and saved info, separate from anything else that login can access.";
+      accountView = 'login';
+      renderAccountModal();
+      return;
+    }
+    errEl.textContent = e.message || 'Error creating account';
     errEl.style.display = 'block';
   }
 }
