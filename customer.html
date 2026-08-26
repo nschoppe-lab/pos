@@ -151,7 +151,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
   <div id="closed-msg-display" style="font-size:16px;color:#888">Check back soon!</div>
 </div>
 
-<div class="topnav" style="justify-content:space-between"><div class="brand">&#9654; Order Here</div><div style="display:flex;gap:8px;align-items:center"><span id="active-order-pill" onclick="openAccountModal()" style="display:none;align-items:center;gap:6px;background:#1f1a0e;border:1.5px solid #f59e0b;color:#f59e0b;border-radius:20px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;animation:pulse-pill 2s infinite">🧑&zwj;🍳 Order in Progress</span><button class="acct-nav-btn" id="account-nav-btn" onclick="openAccountModal()">👤 Sign In</button><a href="leaderboard.html" style="display:flex;align-items:center;gap:6px;background:#1a1a1a;border:1.5px solid #44444455;color:#ccc;text-decoration:none;border-radius:20px;padding:6px 14px;font-size:12px;font-weight:700;transition:all 0.15s" onmouseover="this.style.borderColor='#666'" onmouseout="this.style.borderColor='#44444455'">🏆 Leaderboard</a><a href="ratemybuff.html" style="display:flex;align-items:center;gap:6px;background:#1f1a0e;border:1.5px solid #f59e0b55;color:#f59e0b;text-decoration:none;border-radius:20px;padding:6px 14px;font-size:12px;font-weight:700;transition:all 0.15s" onmouseover="this.style.background='#2a2010'" onmouseout="this.style.background='#1f1a0e'">⭐ Rate My Buff</a></div></div>
+<div class="topnav" style="justify-content:space-between"><div class="brand">&#9654; Order Here</div><div style="display:flex;gap:8px;align-items:center"><span id="active-order-pill" onclick="openOrdersModal()" style="display:none;align-items:center;gap:6px;background:#1f1a0e;border:1.5px solid #f59e0b;color:#f59e0b;border-radius:20px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;animation:pulse-pill 2s infinite">🧑&zwj;🍳 Order in Progress</span><button class="acct-nav-btn" id="orders-nav-btn" onclick="openOrdersModal()">📦 My Orders</button><a href="leaderboard.html" style="display:flex;align-items:center;gap:6px;background:#1a1a1a;border:1.5px solid #44444455;color:#ccc;text-decoration:none;border-radius:20px;padding:6px 14px;font-size:12px;font-weight:700;transition:all 0.15s" onmouseover="this.style.borderColor='#666'" onmouseout="this.style.borderColor='#44444455'">🏆 Leaderboard</a><a href="ratemybuff.html" style="display:flex;align-items:center;gap:6px;background:#1f1a0e;border:1.5px solid #f59e0b55;color:#f59e0b;text-decoration:none;border-radius:20px;padding:6px 14px;font-size:12px;font-weight:700;transition:all 0.15s" onmouseover="this.style.background='#2a2010'" onmouseout="this.style.background='#1f1a0e'">⭐ Rate My Buff</a></div></div>
 <div class="content">
   <div class="menu-panel" id="menu-panel"><div class="loading">Loading menu...</div></div>
   <div class="cart-panel">
@@ -243,9 +243,9 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
   </div>
 </div>
 
-<div class="cust-modal-bg" id="account-modal-bg" onclick="if(event.target===this)closeAccountModal()">
-  <div class="cust-modal" id="account-modal">
-    <div id="account-modal-body"></div>
+<div class="cust-modal-bg" id="orders-modal-bg" onclick="if(event.target===this)closeOrdersModal()">
+  <div class="cust-modal" id="orders-modal">
+    <div id="orders-modal-body"></div>
   </div>
 </div>
 
@@ -256,7 +256,6 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getDatabase, ref, push, onValue, serverTimestamp, get, update, set, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, reauthenticateWithCredential, EmailAuthProvider, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCG5nhzdAHBTGg2eXXmhqH8pF8S8qFqM7o",
@@ -270,11 +269,11 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
-const auth = getAuth(app);
 
-let accountUser = null, accountProfile = null, accountView = 'login';
-let pendingLoginEmail = '', pendingLoginNotice = '';
-let editingProfile = false, changingPassword = false, accountOrderHistory = [];
+// No accounts, no passwords — order tracking and history are just tied to whatever
+// email the customer types at checkout (or looks up in the My Orders modal).
+let trackedEmail = '', myOrderHistory = [], myOrdersUnsub = null;
+let ordersModalLookupMode = false;
 
 let menu = [], coupons = [], cart = [], appliedCoupon = null, activeBranding = {}, openOrderCount = 0;
 let loyaltyData = null, loyaltyDiscount = 0, useCredit = true;
@@ -439,8 +438,8 @@ onValue(ref(db, 'specials'), snap => {
 
 document.getElementById('cust-email').addEventListener('blur', () => {
   const email = document.getElementById('cust-email').value.trim().toLowerCase();
-  if (email) loadLoyalty(email);
-  else { loyaltyData = null; loyaltyDiscount = 0; hideLoyaltyBanner(); updateTotals(); }
+  if (email) { loadLoyalty(email); subscribeMyOrders(email); }
+  else { loyaltyData = null; loyaltyDiscount = 0; hideLoyaltyBanner(); updateTotals(); unsubscribeMyOrders(); }
 });
 
 async function loadLoyalty(email) {
@@ -1089,12 +1088,12 @@ window.placeOrder = async function() {
     waitTime: currentWaitTime || '',
     time: new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),
     date: new Date().toLocaleDateString(),
-    customerId: accountUser ? accountUser.uid : null,
     status: 'pending', paid: false, createdAt: serverTimestamp()
   };
 
   try {
     await push(ref(db, 'orders'), order);
+    subscribeMyOrders(email); // guarantees tracking starts even if the email field's blur never fired
     // Decrement tracked inventory for each ordered item; auto-hides anything that hits 0
     try { await decrementStockForOrder(cart); } catch(e) { console.error('Stock decrement failed:', e); }
     // Mark single-use coupon as used in Firebase NOW
@@ -1122,15 +1121,11 @@ window.placeOrder = async function() {
     if (delivCard) delivCard.classList.remove('active');
     var preCard = document.getElementById('preorder-card');
     if (preCard) preCard.classList.remove('active');
-    if (accountUser) {
-      var commentsEl = document.getElementById('cust-comments'); if (commentsEl) commentsEl.value = '';
-      var discCodeEl = document.getElementById('disc-code'); if (discCodeEl) discCodeEl.value = '';
-      prefillCheckoutFromAccount();
-    } else {
-      ['cust-fname','cust-lname','cust-email','cust-comments','disc-code'].forEach(function(id) {
-        var el = document.getElementById(id); if (el) el.value = '';
-      });
-    }
+    // Clear the form for the next person — order tracking (the pill / My Orders) stays
+    // alive on the email that was just used, since it's tracked in JS state, not the input.
+    ['cust-fname','cust-lname','cust-email','cust-comments','disc-code'].forEach(function(id) {
+      var el = document.getElementById(id); if (el) el.value = '';
+    });
     var discMsg = document.getElementById('disc-msg');
     if (discMsg) discMsg.className = 'disc-msg';
     hideLoyaltyBanner(); renderCart();
@@ -1139,324 +1134,99 @@ window.placeOrder = async function() {
   } catch(e) { alert('Error placing order. Please try again.'); console.error(e); }
 }
 
-// ── CUSTOMER ACCOUNTS (optional — guest checkout still works without one) ──
-onAuthStateChanged(auth, async user => {
-  if (user) {
-    accountUser = user;
-    try {
-      const snap = await get(ref(db, `customers/${user.uid}`));
-      accountProfile = snap.val() || { name: user.displayName || '', email: user.email, phone: '' };
-    } catch(e) { accountProfile = { name: '', email: user.email, phone: '' }; }
-    accountView = 'account';
-    editingProfile = false; changingPassword = false;
-    prefillCheckoutFromAccount();
-    subscribeAccountOrders();
-  } else {
-    accountUser = null;
-    accountProfile = null;
-    accountView = 'login';
-    unlockCheckoutFields();
-    unsubscribeAccountOrders();
-  }
-  updateAccountNavBtn();
-  renderAccountModal();
-});
-
-function updateAccountNavBtn() {
-  const btn = document.getElementById('account-nav-btn');
-  if (!btn) return;
-  if (accountUser) {
-    const first = (accountProfile && accountProfile.name) ? accountProfile.name.split(' ')[0] : 'Account';
-    btn.textContent = '👤 ' + first;
-  } else {
-    btn.textContent = '👤 Sign In';
-  }
-}
-
-function prefillCheckoutFromAccount(force) {
-  const fnameEl = document.getElementById('cust-fname');
-  const lnameEl = document.getElementById('cust-lname');
-  const emailEl = document.getElementById('cust-email');
-  if (fnameEl && lnameEl && accountProfile && (force || (!fnameEl.value && !lnameEl.value))) {
-    const parts = (accountProfile.name || '').trim().split(/\s+/);
-    fnameEl.value = parts[0] || '';
-    lnameEl.value = parts.slice(1).join(' ') || '';
-  }
-  if (emailEl && accountUser && (force || !emailEl.value)) { emailEl.value = accountUser.email || ''; }
-  let note = document.getElementById('acct-checkout-note');
-  if (!note && emailEl) {
-    note = document.createElement('div');
-    note.id = 'acct-checkout-note';
-    note.style.cssText = 'font-size:11px;color:#22c55e;margin-top:6px';
-    emailEl.insertAdjacentElement('afterend', note);
-  }
-  if (note) note.textContent = '✓ Prefilled from your account — feel free to edit for this order';
-}
-
-function unlockCheckoutFields() {
-  const note = document.getElementById('acct-checkout-note');
-  if (note) note.remove();
-}
-
-window.openAccountModal = function() {
-  accountView = accountUser ? 'account' : 'login';
-  document.getElementById('account-modal-bg').classList.add('open');
-  renderAccountModal();
-}
-window.closeAccountModal = function() {
-  document.getElementById('account-modal-bg').classList.remove('open');
-  editingProfile = false; changingPassword = false;
-}
-window.showLoginView = function() { accountView = 'login'; renderAccountModal(); }
-window.showSignupView = function() { accountView = 'signup'; renderAccountModal(); }
-
-function renderAccountModal() {
-  const body = document.getElementById('account-modal-body');
-  if (!body) return;
-
-  if (accountView === 'login') {
-    body.innerHTML = `
-      <div class="cust-modal-title">Sign In</div>
-      <div class="acct-err" id="acct-err"></div>
-      ${pendingLoginNotice ? `<div style="font-size:12px;color:#f59e0b;background:#2a1f0e;border:1px solid #f59e0b44;border-radius:6px;padding:8px 10px;margin-bottom:10px">${pendingLoginNotice}</div>` : ''}
-      <label class="acct-label">Email</label>
-      <input type="email" class="acct-input" id="login-email" value="${escapeHtmlAttr(pendingLoginEmail)}" placeholder="you@email.com">
-      <label class="acct-label">Password</label>
-      <input type="password" class="acct-input" id="login-password" placeholder="Password">
-      <button class="acct-btn" onclick="doAccountLogin()">Sign In</button>
-      <div style="text-align:center;margin-top:12px;font-size:12px;color:#888">
-        <span class="acct-link" onclick="sendResetEmail()">Forgot password?</span>
-      </div>
-      <div style="text-align:center;margin-top:8px;font-size:12px;color:#888">
-        Don't have an account? <span class="acct-link" onclick="showSignupView()">Create one</span>
-      </div>
-      <button class="acct-btn secondary" onclick="closeAccountModal()">Continue as Guest</button>
-    `;
-    pendingLoginNotice = '';
-  } else if (accountView === 'signup') {
-    body.innerHTML = `
-      <div class="cust-modal-title">Create Account</div>
-      <div class="acct-err" id="acct-err"></div>
-      <label class="acct-label">Name</label>
-      <input type="text" class="acct-input" id="signup-name" placeholder="Your name">
-      <label class="acct-label">Email</label>
-      <input type="email" class="acct-input" id="signup-email" placeholder="you@email.com">
-      <label class="acct-label">Phone (optional)</label>
-      <input type="tel" class="acct-input" id="signup-phone" placeholder="(555) 123-4567">
-      <label class="acct-label">Password</label>
-      <input type="password" class="acct-input" id="signup-password" placeholder="At least 6 characters">
-      <label class="acct-label">Confirm Password</label>
-      <input type="password" class="acct-input" id="signup-password2" placeholder="Repeat password">
-      <button class="acct-btn" onclick="doAccountSignup()">Create Account</button>
-      <div style="text-align:center;margin-top:12px;font-size:12px;color:#888">
-        Already have an account? <span class="acct-link" onclick="showLoginView()">Sign in</span>
-      </div>
-      <button class="acct-btn secondary" onclick="closeAccountModal()">Cancel</button>
-    `;
-  } else if (accountView === 'account' && accountUser) {
-    const p = accountProfile || {};
-    let html = `<div class="cust-modal-title">My Account</div><div class="acct-err" id="acct-err"></div>`;
-
-    if (editingProfile) {
-      html += `
-        <label class="acct-label">Name</label>
-        <input type="text" class="acct-input" id="edit-name" value="${escapeHtmlAttr(p.name||'')}">
-        <label class="acct-label">Phone</label>
-        <input type="tel" class="acct-input" id="edit-phone" value="${escapeHtmlAttr(p.phone||'')}" placeholder="(555) 123-4567">
-        <div style="display:flex;gap:8px">
-          <button class="acct-btn secondary" style="flex:1" onclick="editingProfile=false;renderAccountModal();">Cancel</button>
-          <button class="acct-btn" style="flex:1" onclick="saveProfileEdit()">Save</button>
-        </div>
-      `;
-    } else {
-      html += `
-        <div class="acct-profile-row"><span class="acct-profile-label">Name</span><span class="acct-profile-value">${escapeHtmlAttr(p.name||'—')}</span></div>
-        <div class="acct-profile-row"><span class="acct-profile-label">Email</span><span class="acct-profile-value">${escapeHtmlAttr(accountUser.email||'')}</span></div>
-        <div class="acct-profile-row"><span class="acct-profile-label">Phone</span><span class="acct-profile-value">${escapeHtmlAttr(p.phone||'—')}</span></div>
-        <button class="acct-btn secondary" onclick="editingProfile=true;renderAccountModal();">Edit Info</button>
-      `;
-    }
-
-    if (changingPassword) {
-      html += `
-        <div style="margin-top:16px;padding-top:16px;border-top:1px solid #333">
-          <div style="font-size:13px;font-weight:700;margin-bottom:4px">Change Password</div>
-          <label class="acct-label">Current Password</label>
-          <input type="password" class="acct-input" id="cur-password">
-          <label class="acct-label">New Password</label>
-          <input type="password" class="acct-input" id="new-password" placeholder="At least 6 characters">
-          <label class="acct-label">Confirm New Password</label>
-          <input type="password" class="acct-input" id="new-password2">
-          <div style="display:flex;gap:8px">
-            <button class="acct-btn secondary" style="flex:1" onclick="changingPassword=false;renderAccountModal();">Cancel</button>
-            <button class="acct-btn" style="flex:1" onclick="savePasswordChange()">Update Password</button>
-          </div>
-        </div>
-      `;
-    } else {
-      html += `<button class="acct-btn secondary" onclick="changingPassword=true;renderAccountModal();">Change Password</button>`;
-    }
-
-    html += `
-      <div style="margin-top:16px;padding-top:16px;border-top:1px solid #333">
-        <div style="font-size:13px;font-weight:700;margin-bottom:8px">Order History</div>
-        <div id="order-history-list">Loading...</div>
-      </div>
-      <button class="acct-btn secondary" style="background:#2a1010;color:#ef4444" onclick="doAccountSignout()">Sign Out</button>
-    `;
-    body.innerHTML = html;
-    renderOrderHistoryList();
-    return;
-  }
-}
-
-window.doAccountLogin = async function() {
-  const email = (document.getElementById('login-email')||{}).value.trim();
-  const pass = (document.getElementById('login-password')||{}).value;
-  const errEl = document.getElementById('acct-err');
-  errEl.style.display = 'none';
-  if (!email || !pass) { errEl.textContent = 'Enter your email and password'; errEl.style.display = 'block'; return; }
-  try {
-    await signInWithEmailAndPassword(auth, email, pass);
-    closeAccountModal();
-    showToast('Welcome back!');
-  } catch(e) {
-    errEl.textContent = 'Incorrect email or password.';
-    errEl.style.display = 'block';
-  }
-}
-
-window.doAccountSignup = async function() {
-  const name = (document.getElementById('signup-name')||{}).value.trim();
-  const email = (document.getElementById('signup-email')||{}).value.trim().toLowerCase();
-  const phone = (document.getElementById('signup-phone')||{}).value.trim();
-  const pass = (document.getElementById('signup-password')||{}).value;
-  const pass2 = (document.getElementById('signup-password2')||{}).value;
-  const errEl = document.getElementById('acct-err');
-  errEl.style.display = 'none';
-  if (!name) { errEl.textContent = 'Enter your name'; errEl.style.display = 'block'; return; }
-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { errEl.textContent = 'Enter a valid email'; errEl.style.display = 'block'; return; }
-  if (pass.length < 6) { errEl.textContent = 'Password must be at least 6 characters'; errEl.style.display = 'block'; return; }
-  if (pass !== pass2) { errEl.textContent = 'Passwords do not match'; errEl.style.display = 'block'; return; }
-  try {
-    const cred = await createUserWithEmailAndPassword(auth, email, pass);
-    const profile = { name, email, phone, createdAt: Date.now() };
-    await set(ref(db, `customers/${cred.user.uid}`), profile);
-    // Set immediately rather than waiting on onAuthStateChanged — that listener can fire
-    // before this write finishes and read back an empty profile.
-    accountUser = cred.user;
-    accountProfile = profile;
-    accountView = 'account';
-    updateAccountNavBtn();
-    prefillCheckoutFromAccount();
-    subscribeAccountOrders();
-    closeAccountModal();
-    showToast('Account created! Welcome, ' + name.split(' ')[0] + '!');
-  } catch(e) {
-    if (e.code === 'auth/email-already-in-use') {
-      pendingLoginEmail = email;
-      pendingLoginNotice = "You already have a login with that email (maybe a staff or admin account?) — just sign in below with its password. It works right here too, and gets its own order history and saved info, separate from anything else that login can access.";
-      accountView = 'login';
-      renderAccountModal();
-      return;
-    }
-    errEl.textContent = e.message || 'Error creating account';
-    errEl.style.display = 'block';
-  }
-}
-
-window.saveProfileEdit = async function() {
-  const name = (document.getElementById('edit-name')||{}).value.trim();
-  const phone = (document.getElementById('edit-phone')||{}).value.trim();
-  if (!name) { alert('Name cannot be empty'); return; }
-  try {
-    await update(ref(db, `customers/${accountUser.uid}`), { name, phone });
-    accountProfile = { ...accountProfile, name, phone };
-    editingProfile = false;
-    updateAccountNavBtn();
-    prefillCheckoutFromAccount(true);
-    renderAccountModal();
-    showToast('Profile updated!');
-  } catch(e) { alert('Error: ' + e.message); }
-}
-
-window.savePasswordChange = async function() {
-  const curPass = (document.getElementById('cur-password')||{}).value;
-  const newPass = (document.getElementById('new-password')||{}).value;
-  const newPass2 = (document.getElementById('new-password2')||{}).value;
-  const errEl = document.getElementById('acct-err');
-  errEl.style.display = 'none';
-  if (newPass.length < 6) { errEl.textContent = 'New password must be at least 6 characters'; errEl.style.display = 'block'; return; }
-  if (newPass !== newPass2) { errEl.textContent = 'New passwords do not match'; errEl.style.display = 'block'; return; }
-  try {
-    const cred = EmailAuthProvider.credential(accountUser.email, curPass);
-    await reauthenticateWithCredential(accountUser, cred);
-    await updatePassword(accountUser, newPass);
-    changingPassword = false;
-    renderAccountModal();
-    showToast('Password updated!');
-  } catch(e) {
-    errEl.textContent = e.code === 'auth/wrong-password' ? 'Current password is incorrect.' : (e.message || 'Error updating password');
-    errEl.style.display = 'block';
-  }
-}
-
-window.sendResetEmail = async function() {
-  const email = (document.getElementById('login-email')||{}).value.trim();
-  if (!email) { alert('Enter your email above first, then click "Forgot password?"'); return; }
-  try { await sendPasswordResetEmail(auth, email); alert('Password reset email sent to ' + email + '.'); }
-  catch(e) { alert('Error: ' + (e.message || 'Could not send reset email')); }
-}
-
-window.doAccountSignout = async function() {
-  await signOut(auth);
-  closeAccountModal();
-  showToast('Signed out');
-}
-
-let accountOrdersUnsub = null;
-
-function subscribeAccountOrders() {
-  if (accountOrdersUnsub) { accountOrdersUnsub(); accountOrdersUnsub = null; }
-  if (!accountUser) return;
-  const email = (accountUser.email || '').toLowerCase();
+// ── ORDER TRACKING BY EMAIL (no accounts, no passwords — just whatever email is typed) ──
+function subscribeMyOrders(email) {
+  email = (email || '').trim().toLowerCase();
+  if (!email) { unsubscribeMyOrders(); return; }
+  if (myOrdersUnsub && trackedEmail === email) return; // already tracking this exact email
+  if (myOrdersUnsub) { myOrdersUnsub(); myOrdersUnsub = null; }
+  trackedEmail = email;
   let firstLoad = true;
-  accountOrdersUnsub = onValue(ref(db, 'orders'), snap => {
+  myOrdersUnsub = onValue(ref(db, 'orders'), snap => {
     const all = snap.val() ? Object.entries(snap.val()) : [];
-    const prevActiveKeys = new Set(accountOrderHistory.filter(o => o.status !== 'done').map(o => o.fbKey));
-    accountOrderHistory = all
-      .filter(([k,o]) => (o.email||'').toLowerCase() === email)
+    const prevActiveKeys = new Set(myOrderHistory.filter(o => o.status !== 'done').map(o => o.fbKey));
+    myOrderHistory = all
+      .filter(([k,o]) => (o.email||'').toLowerCase() === trackedEmail)
       .map(([k,o]) => ({...o, fbKey:k}))
       .sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
     if (!firstLoad) {
-      const justFinished = accountOrderHistory.some(o => o.status === 'done' && prevActiveKeys.has(o.fbKey));
+      const justFinished = myOrderHistory.some(o => o.status === 'done' && prevActiveKeys.has(o.fbKey));
       if (justFinished) showToast('✅ Your order is ready!', 6000);
     }
     firstLoad = false;
     renderOrderHistoryList();
     updateActiveOrderPill();
+    if (document.getElementById('orders-modal-bg').classList.contains('open')) renderOrdersModal();
   });
 }
 
-function unsubscribeAccountOrders() {
-  if (accountOrdersUnsub) { accountOrdersUnsub(); accountOrdersUnsub = null; }
-  accountOrderHistory = [];
+function unsubscribeMyOrders() {
+  if (myOrdersUnsub) { myOrdersUnsub(); myOrdersUnsub = null; }
+  trackedEmail = '';
+  myOrderHistory = [];
   updateActiveOrderPill();
 }
 
 function updateActiveOrderPill() {
   const pill = document.getElementById('active-order-pill');
   if (!pill) return;
-  const hasActive = accountUser && accountOrderHistory.some(o => o.status !== 'done');
+  const hasActive = trackedEmail && myOrderHistory.some(o => o.status !== 'done');
   pill.style.display = hasActive ? 'inline-flex' : 'none';
+}
+
+window.openOrdersModal = function() {
+  ordersModalLookupMode = !trackedEmail;
+  document.getElementById('orders-modal-bg').classList.add('open');
+  renderOrdersModal();
+}
+window.closeOrdersModal = function() {
+  document.getElementById('orders-modal-bg').classList.remove('open');
+}
+
+window.lookupMyOrders = function() {
+  const input = document.getElementById('orders-lookup-email');
+  const email = input ? input.value.trim().toLowerCase() : '';
+  if (!email) { alert('Enter the email you used when ordering'); return; }
+  subscribeMyOrders(email);
+  ordersModalLookupMode = false;
+  renderOrdersModal();
+}
+
+window.switchOrdersLookup = function() {
+  ordersModalLookupMode = true;
+  renderOrdersModal();
+}
+
+function renderOrdersModal() {
+  const body = document.getElementById('orders-modal-body');
+  if (!body) return;
+  if (ordersModalLookupMode || !trackedEmail) {
+    body.innerHTML = `
+      <div class="cust-modal-title">My Orders</div>
+      <div style="font-size:12px;color:#888;margin-bottom:12px">Enter the email you used when ordering to see its status and history — no account or password needed.</div>
+      <label class="acct-label">Email</label>
+      <input type="email" class="acct-input" id="orders-lookup-email" placeholder="you@email.com" value="${escapeHtmlAttr(trackedEmail)}">
+      <button class="acct-btn" onclick="lookupMyOrders()">Look Up My Orders</button>
+      <button class="acct-btn secondary" onclick="closeOrdersModal()">Close</button>
+    `;
+    return;
+  }
+  body.innerHTML = `
+    <div class="cust-modal-title">My Orders</div>
+    <div style="font-size:12px;color:#888;margin-bottom:4px">Showing orders for <strong style="color:#ccc">${escapeHtmlAttr(trackedEmail)}</strong></div>
+    <div style="font-size:11px;margin-bottom:12px"><span class="acct-link" onclick="switchOrdersLookup()">Not you? Look up a different email</span></div>
+    <div id="order-history-list">Loading...</div>
+    <button class="acct-btn secondary" style="margin-top:14px" onclick="closeOrdersModal()">Close</button>
+  `;
+  renderOrderHistoryList();
 }
 
 function renderOrderHistoryList() {
   const el = document.getElementById('order-history-list');
   if (!el) return;
-  if (!accountOrderHistory.length) { el.innerHTML = '<div style="font-size:12px;color:#666">No past orders yet.</div>'; return; }
-  const active = accountOrderHistory.filter(o => o.status !== 'done');
-  const past = accountOrderHistory.filter(o => o.status === 'done').slice(0, 20);
+  if (!myOrderHistory.length) { el.innerHTML = '<div style="font-size:12px;color:#666">No orders found for this email.</div>'; return; }
+  const active = myOrderHistory.filter(o => o.status !== 'done');
+  const past = myOrderHistory.filter(o => o.status === 'done').slice(0, 20);
   el.innerHTML = active.map(o => orderHistoryCardHtml(o, true)).join('')
     + past.map(o => orderHistoryCardHtml(o, false)).join('');
 }
@@ -1476,6 +1246,7 @@ function orderHistoryCardHtml(o, isActive) {
     <div class="order-hist-total">$${parseFloat(o.total||0).toFixed(2)}</div>
   </div>`;
 }
+
 
 // Decrements stock for any ordered item that has tracking enabled, and auto-marks it
 // unavailable the moment it hits 0. Uses a transaction so two customers ordering the
