@@ -173,6 +173,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
       <button class="tb" onclick="switchTab('reports')">📊 Reports</button>
       <button class="tb" onclick="switchTab('leaderboard')">🏆 Leaderboard</button>
     </div>
+    <button class="logout-btn" id="kitchen-alert-btn" onclick="showKitchenAlertModal()" style="background:#2a1010;border:1.5px solid #ef4444;color:#ef4444;position:relative">🚨 Alert Kitchen<span id="kitchen-alert-badge" style="display:none;position:absolute;top:-7px;right:-7px;background:#ef4444;color:#fff;border-radius:20px;font-size:10px;font-weight:800;padding:2px 6px;line-height:1"></span></button>
     <button class="logout-btn" onclick="doLogout()">Sign out</button>
   </div>
 
@@ -1089,6 +1090,7 @@ let orders = {}, menu = [], coupons = [], staffList = [], usersList = [], kitche
 let tapTimers = {}, currentTab = 'orders';
 
 let currentAdminUID = null, currentAdminName = 'Admin';
+let kitchenAlerts = [];
 
 onAuthStateChanged(auth, async user => {
   if (user) {
@@ -1142,6 +1144,12 @@ function showAdmin() {
     updateRmbStaffMirror();
   });
   onValue(ref(db,'kitchenDevice'), snap => { kitchenDeviceData = snap.val() || {}; renderKitchenDeviceSection(); });
+  onValue(ref(db,'adminAlerts'), snap => {
+    const d = snap.val() || {};
+    kitchenAlerts = Object.entries(d).map(([k,v])=>({fbKey:k,...v})).sort((a,b)=>(b.sentAt||0)-(a.sentAt||0));
+    updateKitchenAlertBadge();
+    renderKitchenAlertModalIfOpen();
+  });
   onValue(ref(db,'loyalty'), snap => { loyaltyRecords = snap.val()||{}; if(currentTab==='loyalty') renderLoyaltyAdmin(); });
   onValue(ref(db,'loyaltyMilestones'), snap => { loyaltyMilestonesData = snap.val()||{}; if(currentTab==='loyalty') renderLoyaltyMilestones(); });
   onValue(ref(db,'deliveryLocations'), snap => { deliveryLocationsData = snap.val()||{}; if(currentTab==='delivery') renderDeliveryLocations(); });
@@ -4300,7 +4308,69 @@ window.saveStaffSpeed = async function(refPath, val) {
 
 
 window.showModal = function(html){document.getElementById('modal-content').innerHTML=html;document.getElementById('modal').style.display='flex';}
-window.closeModal = function(){document.getElementById('modal').style.display='none';}
+
+// ── KITCHEN ALERTS (send a red pop-up message to the kitchen screen, any device, no matter who's logged in) ──
+function updateKitchenAlertBadge() {
+  const badge = document.getElementById('kitchen-alert-badge');
+  if (!badge) return;
+  const pending = kitchenAlerts.filter(a => !a.acknowledged).length;
+  badge.style.display = pending ? 'inline-block' : 'none';
+  badge.textContent = pending;
+}
+
+let kitchenAlertModalOpen = false;
+
+window.showKitchenAlertModal = function() {
+  kitchenAlertModalOpen = true;
+  renderKitchenAlertModal();
+}
+
+function renderKitchenAlertModalIfOpen() {
+  if (kitchenAlertModalOpen && document.getElementById('modal').style.display === 'flex') renderKitchenAlertModal();
+}
+
+function renderKitchenAlertModal() {
+  const recent = kitchenAlerts.slice(0, 10);
+  const rowsHtml = recent.length ? recent.map(a => {
+    const sentTime = a.sentAt ? new Date(a.sentAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : '';
+    const statusHtml = a.acknowledged
+      ? `<span style="color:#22c55e;font-weight:700;font-size:11px;white-space:nowrap">✅ Seen${a.acknowledgedByName ? ' by '+escMenuHtml(a.acknowledgedByName) : ''}${a.acknowledgedAt ? ' at '+new Date(a.acknowledgedAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : ''}</span>`
+      : `<span style="color:#f59e0b;font-weight:700;font-size:11px;white-space:nowrap">⏳ Waiting...</span>`;
+    return `<div style="padding:9px 0;border-bottom:1px solid #2a2a2a">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+        <div style="font-size:13px;color:#fff;flex:1">${escMenuHtml(a.message||'')}</div>
+        ${statusHtml}
+      </div>
+      <div style="font-size:11px;color:#666;margin-top:3px">Sent ${sentTime}${a.sentByName ? ' by '+escMenuHtml(a.sentByName) : ''}</div>
+    </div>`;
+  }).join('') : '<div style="color:#666;font-size:12px;text-align:center;padding:16px">No alerts sent yet</div>';
+
+  showModal(`
+    <h3 style="margin-bottom:4px;color:#ef4444">🚨 Alert Kitchen</h3>
+    <p style="font-size:12px;color:#aaa;margin-bottom:14px">Pops up as a full-screen red alert on the kitchen screen immediately, no matter who's logged in. It stays up until someone there taps Acknowledge, and you'll see that here.</p>
+    <textarea id="kitchen-alert-text" placeholder="e.g. We're out of sour cream, use ranch as backup" style="width:100%;min-height:70px;background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:9px 11px;font-size:13px;color:#fff;font-family:inherit;resize:vertical;box-sizing:border-box"></textarea>
+    <button class="mbtn" style="background:#ef4444;width:100%;margin-top:10px" onclick="sendKitchenAlert()">🚨 Send Alert</button>
+    <div style="margin-top:16px;padding-top:14px;border-top:1px solid #333">
+      <div style="font-size:12px;font-weight:700;color:#aaa;margin-bottom:6px">Recent Alerts</div>
+      <div style="max-height:220px;overflow-y:auto">${rowsHtml}</div>
+    </div>
+    <div class="mbtns"><button class="mbtn cancel" onclick="kitchenAlertModalOpen=false;closeModal()">Close</button></div>
+  `);
+}
+
+window.sendKitchenAlert = async function() {
+  const input = document.getElementById('kitchen-alert-text');
+  const message = input ? input.value.trim() : '';
+  if (!message) { alert('Type a message first'); return; }
+  try {
+    await push(ref(db, 'adminAlerts'), {
+      message, sentAt: Date.now(), sentByName: currentAdminName,
+      acknowledged: false, acknowledgedAt: null, acknowledgedByName: null
+    });
+    if (input) input.value = '';
+  } catch(e) { alert('Error sending alert: ' + e.message); }
+}
+window.closeModal = function(){document.getElementById('modal').style.display='none';kitchenAlertModalOpen=false;}
 
 window.addExpense = async function() {
   const week   = (document.getElementById('exp-week')   || {}).value.trim();
