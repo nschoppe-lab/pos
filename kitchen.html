@@ -102,6 +102,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
   .pt-line:last-child{border-bottom:none}
   .pt-tag{font-size:calc(10px * var(--receipt-scale,1));font-weight:900}
   .pt-sauce{font-size:calc(11px * var(--receipt-scale,1));padding:0 0 1mm 3mm;text-align:left}
+  .pt-mod{font-size:calc(11px * var(--receipt-scale,1));padding:0 0 1mm 3mm;text-align:left}
   .pt-coupon{font-size:calc(12px * var(--receipt-scale,1));font-weight:700;text-align:left;margin-bottom:2mm}
   .pt-total{font-size:calc(14px * var(--receipt-scale,1));font-weight:900;text-align:left;margin-bottom:2mm;padding-top:2mm;border-top:1px dashed #000}
   .pt-msg-label{font-size:calc(10px * var(--receipt-scale,1));font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-top:3mm;margin-bottom:1mm;text-align:left}
@@ -621,7 +622,7 @@ function renderOrders() {
       <div class="oc-body">
         ${order.delivery?`<div style="font-size:11px;color:#3b82f6;font-weight:700;margin-bottom:5px;padding:5px 8px;background:#0e1a2a;border-radius:5px">🚚 DELIVERY → ${order.deliveryLocation||'—'}${order.deliveryPhone?' · 📞 '+order.deliveryPhone:''}</div>`:''}
         ${order.preorder?`<div style="font-size:11px;color:#a78bfa;font-weight:700;margin-bottom:5px;padding:5px 8px;background:#1a1030;border-radius:5px">⏰ PRE-ORDER</div>`:''}
-        ${(order.items||[]).map(i=>`<div class="oc-line"><span>${i.qty}x</span> ${i.name}</div>${i.sauces&&i.sauces.length?`<div style="font-size:11px;color:#f59e0b;padding-left:18px">🥫 Side: ${i.sauces.join(', ')}</div>`:''}`).join('')}
+        ${(order.items||[]).map(i=>`<div class="oc-line"><span>${i.qty}x</span> ${i.name}</div>${i.customizations&&i.customizations.length?`<div style="font-size:11px;color:#a78bfa;padding-left:18px">${i.customizations.map(o=>(o.type==='remove'?'No '+o.name:'+ '+o.name)).join(', ')}</div>`:''}${i.sauces&&i.sauces.length?`<div style="font-size:11px;color:#f59e0b;padding-left:18px">🥫 Side: ${i.sauces.join(', ')}</div>`:''}`).join('')}
         ${order.discount>0?`<div style="font-size:11px;color:#22c55e;margin-top:4px">Disc: -$${parseFloat(order.discount).toFixed(2)}</div>`:''}
         ${order.comments?`<div style="font-size:11px;color:#f59e0b;margin-top:5px;padding:5px 8px;background:#2a1f0e;border-radius:5px">&#128172; ${order.comments}</div>`:''}
         <div class="oc-total">$${parseFloat(order.total).toFixed(2)}</div>
@@ -709,8 +710,9 @@ function escapeHtml(str) {
 function buildTicketHtml(order) {
   const itemsHtml = (order.items||[]).map(i => {
     const specialTag = i.isSpecial ? ' <span class="pt-tag">★ SPECIAL</span>' : '';
+    const modNote = (i.customizations && i.customizations.length) ? `<div class="pt-mod">${escapeHtml(i.customizations.map(o=>(o.type==='remove'?'No '+o.name:'+ '+o.name)).join(', '))}</div>` : '';
     const sauceNote = (i.sauces && i.sauces.length) ? `<div class="pt-sauce">🥫 Side: ${escapeHtml(i.sauces.join(', '))}</div>` : '';
-    return `<div class="pt-line">${escapeHtml(i.qty)}x ${escapeHtml(i.name)}${specialTag}</div>${sauceNote}`;
+    return `<div class="pt-line">${escapeHtml(i.qty)}x ${escapeHtml(i.name)}${specialTag}</div>${modNote}${sauceNote}`;
   }).join('');
   const msgHtml = order.comments
     ? `<div class="pt-msg-label">Message</div><div class="pt-msg">${escapeHtml(order.comments)}</div>`
