@@ -627,6 +627,7 @@ function renderOrders() {
       </div>
       <div class="oc-foot">
         <span class="sbadge ${badgeClass}">${badgeLabel}</span>
+        ${order.inProgress ? `<button onclick="event.stopPropagation();undoInProgress('${order.fbKey}')" style="background:#2a1f0e;border:1px solid #f59e0b44;color:#f59e0b;border-radius:6px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer">↩ Undo</button>` : ''}
         <span class="tap-hint">Double-tap to complete</span>
       </div>
       <button onclick="event.stopPropagation();startOrder('${order.fbKey}')" class="big-progress-btn ${order.inProgress?'is-working':''}" ${order.inProgress?'disabled':''}>
@@ -678,6 +679,14 @@ async function sendOrderReadyEmail(order) {
     showModal(`<h3 style="color:#22c55e">&#10003; Order marked done!</h3><p style="font-size:12px;color:#aaa">Could not send email automatically. You can notify ${order.name} manually.</p><div class="mbtns"><button class="mbtn cancel" onclick="closeModal()">Close</button></div>`);
     console.error('EmailJS error:', e);
   }
+}
+
+window.undoInProgress = async function(key) {
+  const order = orders[key];
+  if (!confirm(`Undo "In Progress" for ${order ? '#'+key.slice(-4).toUpperCase() : 'this order'}?\nThe ticket already printed and the customer may have already gotten the "order started" email — this only resets the status so you can re-press Mark In Progress if needed (which will print and email again).`)) return;
+  try {
+    await update(ref(db, `orders/${key}`), { inProgress: false, paid: false });
+  } catch(e) { alert('Error: ' + e.message); }
 }
 
 window.startOrder = async function(key) {
@@ -737,7 +746,6 @@ function buildTicketHtml(order) {
       ${couponHtml}
       ${totalHtml}
       ${msgHtml}
-      <div class="pt-paid">PAID</div>
     </div>`;
 }
 
