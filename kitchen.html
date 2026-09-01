@@ -44,8 +44,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 .oc:hover{border-color:#ff6b35}
 .oc.flash{border-color:#f59e0b}
 .oc.done{border-color:#22c55e;opacity:0.5}
-.oc.paid:not(.done){border-color:#22c55e;box-shadow:0 0 0 1px #22c55e44}
-.oc.working:not(.done):not(.paid){border-color:#ff2fb0;box-shadow:0 0 0 1px #ff2fb044}
+.oc.working:not(.done){border-color:#ff2fb0;box-shadow:0 0 0 1px #ff2fb044}
 .oc-timer{position:absolute;top:8px;right:8px;font-size:11px;font-weight:800;padding:3px 9px;border-radius:20px;background:#000000b3;color:#9ca3af;z-index:2;font-variant-numeric:tabular-nums;letter-spacing:0.3px;pointer-events:none}
 .oc-timer.warn{color:#f59e0b}
 .oc-timer.alert{color:#ef4444}
@@ -63,12 +62,11 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 .sbadge.working{background:#042f2e;color:#2dd4bf}
 .sbadge.done{background:#052e16;color:#22c55e}
 .tap-hint{font-size:10px;color:#555}
-.big-paid-btn{display:block;width:100%;padding:18px 10px;font-size:17px;font-weight:800;letter-spacing:0.5px;border:none;border-top:2px solid #333;cursor:pointer;background:#2a1f0e;color:#f59e0b;transition:all 0.15s}
-.big-paid-btn:active{transform:scale(0.98)}
-.big-paid-btn.is-paid{background:#052e16;color:#22c55e;border-top-color:#22c55e44}
 .big-progress-btn{display:block;width:100%;padding:18px 10px;font-size:17px;font-weight:800;letter-spacing:0.5px;border:none;border-top:2px solid #333;cursor:pointer;background:#0f2626;color:#2dd4bf;transition:all 0.15s}
 .big-progress-btn:active{transform:scale(0.98)}
 .big-progress-btn.is-working{background:#ff2fb0;color:#1a001a;border-top-color:#ff2fb0}
+.big-progress-btn:disabled{cursor:default}
+.big-progress-btn:disabled:active{transform:none}
 /* MODAL */
 .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:999}
 .admin-alert-overlay{display:none;position:fixed;inset:0;z-index:99999;background:#7f1d1d;flex-direction:column;align-items:center;justify-content:center;padding:30px;text-align:center;animation:alert-flash 1.4s infinite}
@@ -608,7 +606,7 @@ function renderOrders() {
   grid.innerHTML = '';
   open.forEach(order => {
     const card = document.createElement('div');
-    card.className = 'oc' + (order.paid ? ' paid' : '') + (order.inProgress ? ' working' : '');
+    card.className = 'oc' + (order.inProgress ? ' working' : '');
     card.dataset.key = order.fbKey;
     const badgeClass = order.inProgress ? 'working' : 'pending';
     const badgeLabel = order.inProgress ? 'In Progress' : 'New';
@@ -631,11 +629,8 @@ function renderOrders() {
         <span class="sbadge ${badgeClass}">${badgeLabel}</span>
         <span class="tap-hint">Double-tap to complete</span>
       </div>
-      <button onclick="event.stopPropagation();toggleInProgress('${order.fbKey}', ${!order.inProgress})" class="big-progress-btn ${order.inProgress?'is-working':''}">
+      <button onclick="event.stopPropagation();startOrder('${order.fbKey}')" class="big-progress-btn ${order.inProgress?'is-working':''}" ${order.inProgress?'disabled':''}>
         ${order.inProgress ? '⏳ In Progress' : '▶ Mark In Progress'}
-      </button>
-      <button onclick="event.stopPropagation();togglePaid('${order.fbKey}', ${!order.paid})" class="big-paid-btn ${order.paid?'is-paid':''}">
-        ${order.paid ? '✓ PAID' : '💳 Mark Paid'}
       </button>`;
     card.addEventListener('click', () => handleTap(order.fbKey, order));
     grid.appendChild(card);
@@ -685,22 +680,32 @@ async function sendOrderReadyEmail(order) {
   }
 }
 
-window.togglePaid = async function(key, paid) {
-  if (paid) {
-    const order = orders[key];
-    if (order) printPaidTicket(order);
-  }
-  await update(ref(db, `orders/${key}`), { paid });
+window.startOrder = async function(key) {
+  const order = orders[key];
+  if (!order || order.inProgress) return; // guard against double-fire (already started, or stale data)
+  printOrderTicket(order);
+  try {
+    await update(ref(db, `orders/${key}`), {
+      inProgress: true, paid: true,
+      inProgressBy: currentWorkerId || null, inProgressByName: currentWorkerName || 'Unknown', inProgressAt: Date.now()
+    });
+  } catch(e) { alert('Error: ' + e.message); return; }
+  if (order.email) sendOrderStartedEmail(order);
 }
 
-window.toggleInProgress = async function(key, inProgress) {
-  const updates = { inProgress };
-  if (inProgress) {
-    updates.inProgressBy = currentWorkerId || null;
-    updates.inProgressByName = currentWorkerName || 'Unknown';
-    updates.inProgressAt = Date.now();
+async function sendOrderStartedEmail(order) {
+  try {
+    const itemsList = (order.items||[]).map(i => `${i.qty}x ${i.name}`).join(', ');
+    await emailjs.send("service_imhcg7n", "template_order_started", {
+      to_name: order.name,
+      to_email: order.email,
+      from_name: "The Buff - Duncan Hall",
+      order_details: itemsList + (order.comments ? `\nNote: ${order.comments}` : ''),
+      reply_to: "duncan@nd.edu"
+    });
+  } catch(e) {
+    console.error('Could not send "order started" email:', e);
   }
-  await update(ref(db, `orders/${key}`), updates);
 }
 
 function escapeHtml(str) {
@@ -736,7 +741,7 @@ function buildTicketHtml(order) {
     </div>`;
 }
 
-function printPaidTicket(order) {
+function printOrderTicket(order) {
   const innerHtml = buildTicketHtml(order);
   const ticket = document.getElementById('print-ticket');
   if (!ticket) return;
