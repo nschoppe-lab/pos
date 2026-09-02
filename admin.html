@@ -3671,17 +3671,16 @@ window.renderFinance = function() {
   if (statusFilter === 'done') arr = arr.filter(o => o.status === 'done');
   if (statusFilter === 'pending') arr = arr.filter(o => o.status === 'pending');
 
-  // Filter by date range
+  // Filter by date range — uses the reliable server timestamp, not the free-form date string
+  // (that string is formatted by whichever device placed the order, so it can vary: "1/5/2025"
+  // vs "01/05/2025" vs "5/1/2025" for the same calendar day, which used to cause duplicate rows below)
   if (range !== 'all') {
     const days = parseInt(range);
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - days);
     arr = arr.filter(o => {
-      if (!o.date) return false;
-      const parts = o.date.split('/');
-      if (parts.length < 3) return true;
-      const d = new Date(parseInt(parts[2]), parseInt(parts[0])-1, parseInt(parts[1]));
-      return d >= cutoff;
+      if (!o.createdAt) return false;
+      return new Date(o.createdAt) >= cutoff;
     });
   }
 
@@ -3704,20 +3703,26 @@ window.renderFinance = function() {
     <div style="font-size:22px;font-weight:800;color:${s.color}">${s.val}</div>
   </div>`).join('');
 
-  // Revenue by day
+  // Revenue by day — grouped by the server timestamp (formatted consistently here, in one
+  // fixed locale) rather than the order's stored date string, which can vary by device and
+  // used to split one real day into multiple rows.
   const byDay = {};
   arr.forEach(o => {
-    const d = o.date || 'Unknown';
-    if (!byDay[d]) byDay[d] = {revenue:0, orders:0, date:d};
+    let d, sortTs;
+    if (o.createdAt) {
+      sortTs = o.createdAt;
+      d = new Date(o.createdAt).toLocaleDateString('en-US');
+    } else {
+      sortTs = 0;
+      d = o.date || 'Unknown';
+    }
+    if (!byDay[d]) byDay[d] = {revenue:0, orders:0, date:d, sortTs};
     byDay[d].revenue += parseFloat(o.total||0);
     byDay[d].orders++;
+    if (sortTs > byDay[d].sortTs) byDay[d].sortTs = sortTs;
   });
 
-  const daysSorted = Object.values(byDay).sort((a,b) => {
-    const pa = a.date.split('/'), pb = b.date.split('/');
-    if (pa.length < 3 || pb.length < 3) return 0;
-    return new Date(pb[2],pb[0]-1,pb[1]) - new Date(pa[2],pa[0]-1,pa[1]);
-  });
+  const daysSorted = Object.values(byDay).sort((a,b) => b.sortTs - a.sortTs);
 
   const maxRev = Math.max(...daysSorted.map(d=>d.revenue), 1);
   const dayEl = document.getElementById('finance-by-day');
