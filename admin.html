@@ -451,6 +451,26 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
         </div>
         <div id="bulk-loyalty-result" style="font-size:12px;color:#888"></div>
       </div>
+      <div class="asec" style="border-color:#ef444444;background:#2a1010">
+        <div class="asec-title" style="color:#ef4444">🚫 Banned Emails</div>
+        <div style="font-size:12px;color:#888;margin-bottom:12px">Blocks an email from placing orders on the order screen for a set period (or permanently). They'll see a message telling them to contact the stand — it won't say why. Bans lift automatically once the time's up; you can also lift one early.</div>
+        <div class="arow" style="flex-wrap:wrap">
+          <input type="email" id="new-ban-email" placeholder="Customer email" style="flex:2;min-width:180px">
+          <select id="new-ban-duration">
+            <option value="1">1 day</option>
+            <option value="3">3 days</option>
+            <option value="7" selected>7 days</option>
+            <option value="30">30 days</option>
+            <option value="permanent">Permanent</option>
+          </select>
+          <input type="text" id="new-ban-reason" placeholder="Reason (internal only, optional)" style="flex:2;min-width:180px">
+          <button class="aadd" style="background:#ef4444" onclick="addBan()">Ban</button>
+        </div>
+        <table class="mtable" style="margin-top:14px">
+          <thead><tr><th>Email</th><th>Reason</th><th>Banned</th><th>Expires</th><th></th></tr></thead>
+          <tbody id="banned-emails-body"></tbody>
+        </table>
+      </div>
     </div></div>
   </div>
 
@@ -1091,6 +1111,7 @@ let tapTimers = {}, currentTab = 'orders';
 
 let currentAdminUID = null, currentAdminName = 'Admin';
 let kitchenAlerts = [];
+let bannedEmailsData = {};
 let editingOrderKey = null, editingOrderItems = [];
 
 onAuthStateChanged(auth, async user => {
@@ -1145,6 +1166,7 @@ function showAdmin() {
     updateRmbStaffMirror();
   });
   onValue(ref(db,'kitchenDevice'), snap => { kitchenDeviceData = snap.val() || {}; renderKitchenDeviceSection(); });
+  onValue(ref(db,'bannedEmails'), snap => { bannedEmailsData = snap.val() || {}; if(currentTab==='loyalty') renderBannedEmails(); });
   onValue(ref(db,'adminAlerts'), snap => {
     const d = snap.val() || {};
     kitchenAlerts = Object.entries(d).map(([k,v])=>({fbKey:k,...v})).sort((a,b)=>(b.sentAt||0)-(a.sentAt||0));
@@ -1195,7 +1217,7 @@ window.switchTab = function(t) {
   if (t==='staff') renderRewardStaff();
   if (t==='ratings') initRmbAdmin();
   if (t==='inventory') renderInventory();
-  if (t==='loyalty') { renderLoyaltyAdmin(); renderLoyaltyMilestones(); }
+  if (t==='loyalty') { renderLoyaltyAdmin(); renderLoyaltyMilestones(); renderBannedEmails(); }
   if (t==='delivery') { renderDeliveryLocations(); renderDeliveryOverrideUI(); renderDeliveryFeeInput(); renderDeliveryWindowInputs(); renderPreorderWindowInputs(); renderPreorderFeeInput(); }
   if (t==='lounge') { renderLoungeLogoPreview(); renderLoungeRotationButtons(); renderLoungeTextSizeControls(); renderCustomizeOptions(); populateDrinkPictureItemSelect(); renderDrinkPictures(); }
   if (t==='waittime') initWaitTime();
@@ -2654,6 +2676,53 @@ window.addLoyaltyCredit = async function() {
     document.getElementById('loyalty-credit-input').value = '';
     alert('$' + amount.toFixed(2) + ' credit added! ' + (name || email) + ' now has $' + newCredits.toFixed(2) + ' total.');
   } catch(e) { alert('Error adding credit: ' + e.message); }
+}
+
+// ── BANNED EMAILS ────────────────────────────────────
+function emailToBanKey(email) {
+  return email.trim().toLowerCase().replace(/\./g, ',').replace(/@/g, '_at_');
+}
+
+function renderBannedEmails() {
+  const tbody = document.getElementById('banned-emails-body');
+  if (!tbody) return;
+  const bans = Object.entries(bannedEmailsData).map(([k,v]) => ({fbKey:k,...v}));
+  if (!bans.length) { tbody.innerHTML = '<tr><td colspan="5" style="color:#555;text-align:center;padding:12px;font-size:12px">No bans in place</td></tr>'; return; }
+  const now = Date.now();
+  tbody.innerHTML = bans.map(b => {
+    const isPermanent = !b.expiresAt;
+    const isExpired = !isPermanent && b.expiresAt < now;
+    const expiresLabel = isPermanent ? 'Never (permanent)' : new Date(b.expiresAt).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'});
+    const bannedLabel = b.bannedAt ? new Date(b.bannedAt).toLocaleDateString() : '—';
+    return `<tr${isExpired?' style="opacity:0.5"':''}>
+      <td style="font-weight:700;color:#ef4444">${escMenuHtml(b.email)}</td>
+      <td style="color:#888;font-size:12px">${escMenuHtml(b.reason||'—')}</td>
+      <td style="font-size:12px">${bannedLabel}${b.bannedByName?' by '+escMenuHtml(b.bannedByName):''}</td>
+      <td style="font-size:12px;${isPermanent?'color:#ef4444;font-weight:700':''}">${isExpired?'Expired':expiresLabel}</td>
+      <td><button class="delbtn" onclick="unbanEmail('${b.fbKey}','${escMenuHtml(b.email).replace(/'/g,"\\'")}')">Lift Ban</button></td>
+    </tr>`;
+  }).join('');
+}
+
+window.addBan = async function() {
+  const email = document.getElementById('new-ban-email').value.trim().toLowerCase();
+  const duration = document.getElementById('new-ban-duration').value;
+  const reason = document.getElementById('new-ban-reason').value.trim();
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { alert('Enter a valid email'); return; }
+  const expiresAt = duration === 'permanent' ? null : Date.now() + parseInt(duration) * 24 * 60 * 60 * 1000;
+  try {
+    await set(ref(db, `bannedEmails/${emailToBanKey(email)}`), {
+      email, reason: reason || null, bannedAt: Date.now(), bannedByName: currentAdminName, expiresAt
+    });
+    document.getElementById('new-ban-email').value = '';
+    document.getElementById('new-ban-reason').value = '';
+  } catch(e) { alert('Error banning email: ' + e.message); }
+}
+
+window.unbanEmail = async function(key, email) {
+  if (!confirm(`Lift the ban on ${email}? They'll be able to order again immediately.`)) return;
+  try { await remove(ref(db, `bannedEmails/${key}`)); }
+  catch(e) { alert('Error: ' + e.message); }
 }
 
 window.downloadLoyaltyTemplate = function() {

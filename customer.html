@@ -1009,6 +1009,18 @@ window.placeOrder = async function() {
   if (!email) { alert('Please enter your email'); return; }
   if (!cart.length) { alert('Your cart is empty'); return; }
 
+  try {
+    const banSnap = await get(ref(db, `bannedEmails/${emailToKey(email)}`));
+    if (banSnap.exists()) {
+      const ban = banSnap.val();
+      const stillBanned = !ban.expiresAt || ban.expiresAt > Date.now();
+      if (stillBanned) {
+        alert("We're unable to process orders for this email right now. Please contact the stand directly if you think this is a mistake.");
+        return;
+      }
+    }
+  } catch(e) { console.error('Ban check failed (non-fatal):', e); }
+
   // Re-validate delivery / pre-order windows at the moment of submission (they can expire while the cart is open)
   let deliveryLocationVal = '', deliveryPhoneVal = '';
   if (deliveryOn) {
