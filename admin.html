@@ -1091,6 +1091,7 @@ let tapTimers = {}, currentTab = 'orders';
 
 let currentAdminUID = null, currentAdminName = 'Admin';
 let kitchenAlerts = [];
+let editingOrderKey = null, editingOrderItems = [];
 
 onAuthStateChanged(auth, async user => {
   if (user) {
@@ -1219,7 +1220,7 @@ function renderOrders() {
     const card = document.createElement('div');
     card.className = 'oc'+(order.status==='done'?' done':'');
     card.dataset.key = order.fbKey;
-    card.innerHTML = `<div class="oc-hdr"><span class="oc-num">#${order.fbKey.slice(-4).toUpperCase()}</span><span class="oc-name">${order.name}</span><span class="oc-time">${order.time||''}</span></div><div class="oc-body">${order.delivery?`<div style="font-size:11px;color:#3b82f6;font-weight:700;margin-bottom:4px;padding:4px 8px;background:#0e1a2a;border-radius:5px">🚚 DELIVERY → ${order.deliveryLocation||'—'}${order.deliveryPhone?' · 📞 '+order.deliveryPhone:''}</div>`:''}${order.preorder?`<div style="font-size:11px;color:#a78bfa;font-weight:700;margin-bottom:4px;padding:4px 8px;background:#1a1030;border-radius:5px">⏰ PRE-ORDER</div>`:''}${(order.items||[]).map(i=>`<div class="oc-line"><span>${i.qty}x</span> ${i.name}${i.customizations&&i.customizations.length?` <span style="color:#a78bfa">(${i.customizations.map(o=>(o.type==='remove'?'No '+o.name:'+ '+o.name)).join(', ')})</span>`:''}${i.sauces&&i.sauces.length?` <span style="color:#f59e0b">(${i.sauces.join(', ')})</span>`:''}</div>`).join('')}${order.discount>0?`<div style="font-size:11px;color:#22c55e;margin-top:3px">Disc: -$${parseFloat(order.discount).toFixed(2)}</div>`:''}${order.comments?`<div style="font-size:11px;color:#f59e0b;margin-top:4px;padding:4px 8px;background:#2a1f0e;border-radius:5px">&#128172; ${order.comments}</div>`:''}<div class="oc-total">$${parseFloat(order.total).toFixed(2)}</div></div><div class="oc-foot"><span class="sbadge ${order.status==='done'?'done':'pending'}">${order.status==='done'?'Done':'In Progress'}</span><span class="tap-hint">${order.status==='done'?'Completed':'Double-tap to complete'}</span></div>`;
+    card.innerHTML = `<div class="oc-hdr"><span class="oc-num">#${order.fbKey.slice(-4).toUpperCase()}</span><span class="oc-name">${order.name}</span><span class="oc-time">${order.time||''}</span></div><div class="oc-body">${order.delivery?`<div style="font-size:11px;color:#3b82f6;font-weight:700;margin-bottom:4px;padding:4px 8px;background:#0e1a2a;border-radius:5px">🚚 DELIVERY → ${order.deliveryLocation||'—'}${order.deliveryPhone?' · 📞 '+order.deliveryPhone:''}</div>`:''}${order.preorder?`<div style="font-size:11px;color:#a78bfa;font-weight:700;margin-bottom:4px;padding:4px 8px;background:#1a1030;border-radius:5px">⏰ PRE-ORDER</div>`:''}${(order.items||[]).map(i=>`<div class="oc-line"><span>${i.qty}x</span> ${i.name}${i.customizations&&i.customizations.length?` <span style="color:#a78bfa">(${i.customizations.map(o=>(o.type==='remove'?'No '+o.name:'+ '+o.name)).join(', ')})</span>`:''}${i.sauces&&i.sauces.length?` <span style="color:#f59e0b">(${i.sauces.join(', ')})</span>`:''}</div>`).join('')}${order.discount>0?`<div style="font-size:11px;color:#22c55e;margin-top:3px">Disc: -$${parseFloat(order.discount).toFixed(2)}</div>`:''}${order.loyaltyDiscount>0?`<div style="font-size:11px;color:#facc15;margin-top:2px">${order.loyaltyLabel||'Loyalty Reward'}: -$${parseFloat(order.loyaltyDiscount).toFixed(2)}</div>`:''}${order.comments?`<div style="font-size:11px;color:#f59e0b;margin-top:4px;padding:4px 8px;background:#2a1f0e;border-radius:5px">&#128172; ${order.comments}</div>`:''}<div class="oc-total">$${parseFloat(order.total).toFixed(2)}</div></div><div class="oc-foot"><span class="sbadge ${order.status==='done'?'done':'pending'}">${order.status==='done'?'Done':'In Progress'}</span><button onclick="event.stopPropagation();openEditOrderModal('${order.fbKey}')" style="background:#0e1a2a;border:1px solid #3b82f644;color:#3b82f6;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">✏️ Edit</button><span class="tap-hint">${order.status==='done'?'Completed':'Double-tap to complete'}</span></div>`;
     if (order.status!=='done') card.addEventListener('click',()=>handleTap(order.fbKey,order));
     grid.appendChild(card);
   });
@@ -1278,12 +1279,138 @@ window.renderHistory = function() {
   arr.forEach(order=>{
     const card=document.createElement('div');card.className='hcard';
     const hdr=document.createElement('div');hdr.className='hcard-hdr';
-    hdr.innerHTML=`<div style="display:flex;align-items:center;gap:8px"><span style="font-size:12px;font-weight:700;color:#ff6b35">#${order.fbKey.slice(-4).toUpperCase()}</span><span style="font-size:12px;font-weight:600">${order.name}</span><span class="hbadge ${order.status==='done'?'done':'pending'}">${order.status==='done'?'Done':'Pending'}</span></div><div style="display:flex;align-items:center;gap:8px"><span style="font-size:12px;font-weight:700;color:#ff6b35">$${parseFloat(order.total||0).toFixed(2)}</span><span style="font-size:11px;color:#666">${order.date||''} ${order.time||''}</span><button onclick="event.stopPropagation();deleteOrder('${order.fbKey}','${order.name}')" style="background:#2a1010;border:1px solid #7f1d1d;color:#ef4444;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">Delete</button><span style="color:#555">&#9660;</span></div>`;
+    hdr.innerHTML=`<div style="display:flex;align-items:center;gap:8px"><span style="font-size:12px;font-weight:700;color:#ff6b35">#${order.fbKey.slice(-4).toUpperCase()}</span><span style="font-size:12px;font-weight:600">${order.name}</span><span class="hbadge ${order.status==='done'?'done':'pending'}">${order.status==='done'?'Done':'Pending'}</span></div><div style="display:flex;align-items:center;gap:8px"><span style="font-size:12px;font-weight:700;color:#ff6b35">$${parseFloat(order.total||0).toFixed(2)}</span><span style="font-size:11px;color:#666">${order.date||''} ${order.time||''}</span><button onclick="event.stopPropagation();openEditOrderModal('${order.fbKey}')" style="background:#0e1a2a;border:1px solid #3b82f644;color:#3b82f6;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">Edit</button><button onclick="event.stopPropagation();deleteOrder('${order.fbKey}','${order.name}')" style="background:#2a1010;border:1px solid #7f1d1d;color:#ef4444;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">Delete</button><span style="color:#555">&#9660;</span></div>`;
     const body=document.createElement('div');body.className='hcard-body';
-    body.innerHTML=(order.items||[]).map(i=>`<div style="font-size:12px;color:#ccc;padding:2px 0"><span style="color:#777">${i.qty}x</span> ${i.name}${i.customizations&&i.customizations.length?` <span style="color:#a78bfa">(${i.customizations.map(o=>(o.type==='remove'?'No '+o.name:'+ '+o.name)).join(', ')})</span>`:''}${i.sauces&&i.sauces.length?` <span style="color:#f59e0b">(${i.sauces.join(', ')})</span>`:''} — $${(i.price*i.qty).toFixed(2)}</div>`).join('')+(order.discount>0?`<div style="font-size:11px;color:#22c55e;margin-top:5px">Discount (${order.coupon}): -$${parseFloat(order.discount).toFixed(2)}</div>`:'')+(order.delivery?`<div style="font-size:11px;color:#3b82f6;margin-top:5px">🚚 Delivery (+$${parseFloat(order.deliveryFee||5).toFixed(2)}) → ${order.deliveryLocation||'—'}${order.deliveryPhone?' · 📞 '+order.deliveryPhone:''}</div>`:'')+(order.preorder?`<div style="font-size:11px;color:#a78bfa;margin-top:5px">⏰ Pre-Order (+$${parseFloat(order.preorderFee||1).toFixed(2)})</div>`:'')+`<div style="font-size:11px;color:#888;margin-top:6px">${order.email?'Email: '+order.email:'No email'}${order.coupon?' | Code: '+order.coupon:''}</div>`;
+    body.innerHTML=(order.items||[]).map(i=>`<div style="font-size:12px;color:#ccc;padding:2px 0"><span style="color:#777">${i.qty}x</span> ${i.name}${i.customizations&&i.customizations.length?` <span style="color:#a78bfa">(${i.customizations.map(o=>(o.type==='remove'?'No '+o.name:'+ '+o.name)).join(', ')})</span>`:''}${i.sauces&&i.sauces.length?` <span style="color:#f59e0b">(${i.sauces.join(', ')})</span>`:''} — $${(i.price*i.qty).toFixed(2)}</div>`).join('')+(order.discount>0?`<div style="font-size:11px;color:#22c55e;margin-top:5px">Discount (${order.coupon}): -$${parseFloat(order.discount).toFixed(2)}</div>`:'')+(order.loyaltyDiscount>0?`<div style="font-size:11px;color:#facc15;margin-top:3px">${order.loyaltyLabel||'Loyalty Reward'}: -$${parseFloat(order.loyaltyDiscount).toFixed(2)}</div>`:'')+(order.delivery?`<div style="font-size:11px;color:#3b82f6;margin-top:5px">🚚 Delivery (+$${parseFloat(order.deliveryFee||5).toFixed(2)}) → ${order.deliveryLocation||'—'}${order.deliveryPhone?' · 📞 '+order.deliveryPhone:''}</div>`:'')+(order.preorder?`<div style="font-size:11px;color:#a78bfa;margin-top:5px">⏰ Pre-Order (+$${parseFloat(order.preorderFee||1).toFixed(2)})</div>`:'')+`<div style="font-size:11px;color:#888;margin-top:6px">${order.email?'Email: '+order.email:'No email'}${order.coupon?' | Code: '+order.coupon:''}</div>`;
     hdr.onclick=()=>body.classList.toggle('open');
     card.appendChild(hdr);card.appendChild(body);el.appendChild(card);
   });
+}
+
+// ── EDIT ORDER ──
+window.openEditOrderModal = function(key) {
+  const order = orders[key];
+  if (!order) { alert('Order not found'); return; }
+  editingOrderKey = key;
+  editingOrderItems = (order.items || []).map(i => ({...i}));
+  renderEditOrderModal();
+}
+
+function renderEditOrderModal() {
+  const order = orders[editingOrderKey];
+  if (!order) return;
+  const itemsHtml = editingOrderItems.map((i, idx) => `
+    <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #2a2a2a">
+      <div style="flex:1;font-size:13px;color:#fff">${escMenuHtml(i.name)}${i.customizations&&i.customizations.length?`<div style="font-size:11px;color:#a78bfa">${i.customizations.map(o=>(o.type==='remove'?'No '+o.name:'+ '+o.name)).join(', ')}</div>`:''}${i.sauces&&i.sauces.length?`<div style="font-size:11px;color:#f59e0b">🥫 ${i.sauces.join(', ')}</div>`:''}</div>
+      <input type="number" min="0" value="${i.qty}" onchange="updateEditItemQty(${idx}, this.value)" style="width:55px;background:#1a1a1a;border:1px solid #444;border-radius:5px;padding:5px 7px;font-size:12px;color:#fff;text-align:center">
+      <span style="font-size:12px;color:#888;width:60px;text-align:right">$${(i.price*i.qty).toFixed(2)}</span>
+      <button onclick="removeEditItem(${idx})" style="background:#2a1010;border:1px solid #7f1d1d;color:#ef4444;border-radius:5px;padding:4px 9px;font-size:12px;cursor:pointer">✕</button>
+    </div>`).join('') || '<div style="color:#666;font-size:12px;padding:10px 0">No items left — add at least one, or delete this order instead.</div>';
+
+  const itemsSubtotal = editingOrderItems.reduce((s,i)=>s+i.price*i.qty,0);
+
+  showModal(`
+    <h3 style="margin-bottom:12px">✏️ Edit Order #${editingOrderKey.slice(-4).toUpperCase()}</h3>
+    <label style="font-size:11px;color:#888;display:block;margin-bottom:3px">Name</label>
+    <input type="text" id="edit-order-name" value="${escMenuHtml(order.name||'')}" style="width:100%;background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:7px 9px;font-size:13px;color:#fff;margin-bottom:10px;box-sizing:border-box">
+    <label style="font-size:11px;color:#888;display:block;margin-bottom:3px">Email</label>
+    <input type="email" id="edit-order-email" value="${escMenuHtml(order.email||'')}" style="width:100%;background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:7px 9px;font-size:13px;color:#fff;margin-bottom:10px;box-sizing:border-box">
+    <label style="font-size:11px;color:#888;display:block;margin-bottom:3px">Comments</label>
+    <textarea id="edit-order-comments" style="width:100%;min-height:50px;background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:7px 9px;font-size:13px;color:#fff;margin-bottom:14px;box-sizing:border-box;font-family:inherit">${escMenuHtml(order.comments||'')}</textarea>
+
+    <div style="font-size:12px;font-weight:700;color:#aaa;margin-bottom:6px">Items</div>
+    <div style="max-height:180px;overflow-y:auto;margin-bottom:10px">${itemsHtml}</div>
+    <div style="font-size:12px;color:#888;text-align:right;margin-bottom:14px">Items subtotal: $${itemsSubtotal.toFixed(2)}</div>
+
+    <div style="display:flex;gap:10px;margin-bottom:10px">
+      <label style="flex:1;font-size:12px;color:#ccc"><input type="checkbox" id="edit-order-delivery" ${order.delivery?'checked':''} onchange="toggleEditDeliveryFields()"> Delivery</label>
+      <label style="flex:1;font-size:12px;color:#ccc"><input type="checkbox" id="edit-order-preorder" ${order.preorder?'checked':''}> Pre-Order</label>
+    </div>
+    <div id="edit-delivery-fields" style="display:${order.delivery?'block':'none'};margin-bottom:10px">
+      <input type="text" id="edit-order-delivloc" placeholder="Delivery location" value="${escMenuHtml(order.deliveryLocation||'')}" style="width:100%;background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:7px 9px;font-size:13px;color:#fff;margin-bottom:6px;box-sizing:border-box">
+      <input type="text" id="edit-order-delivphone" placeholder="Delivery phone" value="${escMenuHtml(order.deliveryPhone||'')}" style="width:100%;background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:7px 9px;font-size:13px;color:#fff;box-sizing:border-box">
+    </div>
+
+    <label style="font-size:11px;color:#888;display:block;margin-bottom:3px">Coupon Code (shown on receipt)</label>
+    <input type="text" id="edit-order-coupon" value="${escMenuHtml(order.coupon||'')}" placeholder="Leave blank if no coupon was used" style="width:100%;background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:7px 9px;font-size:13px;color:#fff;margin-bottom:10px;box-sizing:border-box">
+    <label style="font-size:11px;color:#888;display:block;margin-bottom:3px">Coupon Discount ($)</label>
+    <input type="number" min="0" step="0.01" id="edit-order-discount" value="${parseFloat(order.discount||0).toFixed(2)}" style="width:100%;background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:7px 9px;font-size:13px;color:#fff;margin-bottom:10px;box-sizing:border-box">
+    <label style="font-size:11px;color:#888;display:block;margin-bottom:3px">Loyalty Discount / Credit ($)</label>
+    <input type="number" min="0" step="0.01" id="edit-order-loydisc" value="${parseFloat(order.loyaltyDiscount||0).toFixed(2)}" style="width:100%;background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:7px 9px;font-size:13px;color:#fff;margin-bottom:10px;box-sizing:border-box">
+    <label style="font-size:11px;color:#888;display:block;margin-bottom:3px">Loyalty Label (shown on receipt, e.g. "5th Order (50% off)")</label>
+    <input type="text" id="edit-order-loylabel" value="${escMenuHtml(order.loyaltyLabel||'')}" placeholder="Leave blank if no loyalty reward applied" style="width:100%;background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:7px 9px;font-size:13px;color:#fff;margin-bottom:16px;box-sizing:border-box">
+
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <label style="font-size:12px;font-weight:700;color:#fff">Total</label>
+      <button onclick="recalcEditOrderTotal()" style="background:#1a1a1a;border:1px solid #444;color:#ccc;border-radius:5px;padding:3px 9px;font-size:11px;cursor:pointer">Recalculate from items</button>
+    </div>
+    <input type="number" min="0" step="0.01" id="edit-order-total" value="${parseFloat(order.total||0).toFixed(2)}" style="width:100%;background:#1a1a1a;border:1px solid #ff6b35;border-radius:6px;padding:9px 11px;font-size:15px;font-weight:700;color:#ff6b35;margin-bottom:16px;box-sizing:border-box">
+
+    <div class="mbtns"><button class="mbtn cancel" onclick="closeModal()">Cancel</button><button class="mbtn" style="background:#ff6b35" onclick="saveOrderEdit()">Save Changes</button></div>
+  `);
+}
+
+window.updateEditItemQty = function(idx, val) {
+  const qty = parseInt(val) || 0;
+  if (qty <= 0) { editingOrderItems.splice(idx,1); }
+  else { editingOrderItems[idx].qty = qty; }
+  renderEditOrderModal();
+}
+
+window.removeEditItem = function(idx) {
+  editingOrderItems.splice(idx,1);
+  renderEditOrderModal();
+}
+
+window.toggleEditDeliveryFields = function() {
+  const box = document.getElementById('edit-order-delivery');
+  const fields = document.getElementById('edit-delivery-fields');
+  if (box && fields) fields.style.display = box.checked ? 'block' : 'none';
+}
+
+window.recalcEditOrderTotal = function() {
+  const order = orders[editingOrderKey] || {};
+  const sub = editingOrderItems.reduce((s,i)=>s+i.price*i.qty,0);
+  const disc = parseFloat(document.getElementById('edit-order-discount').value) || 0;
+  const loyDisc = parseFloat(document.getElementById('edit-order-loydisc').value) || 0;
+  const deliveryOn = document.getElementById('edit-order-delivery').checked;
+  const preorderOn = document.getElementById('edit-order-preorder').checked;
+  const deliveryFee = deliveryOn ? parseFloat(order.deliveryFee || deliverySettingsData.deliveryFee || 5) : 0;
+  const preorderFee = preorderOn ? parseFloat(order.preorderFee || deliverySettingsData.preorderFee || 1) : 0;
+  const total = Math.max(0, sub - disc - loyDisc) + deliveryFee + preorderFee;
+  document.getElementById('edit-order-total').value = total.toFixed(2);
+}
+
+window.saveOrderEdit = async function() {
+  if (!editingOrderKey) return;
+  const name = document.getElementById('edit-order-name').value.trim();
+  const email = document.getElementById('edit-order-email').value.trim().toLowerCase();
+  const comments = document.getElementById('edit-order-comments').value.trim();
+  const deliveryOn = document.getElementById('edit-order-delivery').checked;
+  const preorderOn = document.getElementById('edit-order-preorder').checked;
+  const deliveryLocEl = document.getElementById('edit-order-delivloc');
+  const deliveryPhoneEl = document.getElementById('edit-order-delivphone');
+  const coupon = document.getElementById('edit-order-coupon').value.trim();
+  const discount = parseFloat(document.getElementById('edit-order-discount').value) || 0;
+  const loyaltyDiscount = parseFloat(document.getElementById('edit-order-loydisc').value) || 0;
+  const loyaltyLabel = document.getElementById('edit-order-loylabel').value.trim();
+  const total = parseFloat(document.getElementById('edit-order-total').value) || 0;
+  if (!name) { alert('Name is required'); return; }
+  if (!editingOrderItems.length) { alert('An order needs at least one item — delete the order instead if it should be removed entirely.'); return; }
+  const updates = {
+    name, email, comments,
+    items: editingOrderItems,
+    delivery: deliveryOn,
+    deliveryLocation: deliveryOn && deliveryLocEl ? (deliveryLocEl.value.trim() || null) : null,
+    deliveryPhone: deliveryOn && deliveryPhoneEl ? (deliveryPhoneEl.value.trim() || null) : null,
+    preorder: preorderOn,
+    discount, coupon: coupon || null, loyaltyDiscount, loyaltyLabel: loyaltyLabel || null, total,
+    editedAt: Date.now(), editedBy: currentAdminName
+  };
+  try {
+    await update(ref(db, `orders/${editingOrderKey}`), updates);
+    closeModal();
+  } catch(e) { alert('Error saving order: ' + e.message); }
 }
 
 // MENU
