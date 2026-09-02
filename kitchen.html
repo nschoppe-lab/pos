@@ -622,6 +622,7 @@ function renderOrders() {
         ${order.preorder?`<div style="font-size:11px;color:#a78bfa;font-weight:700;margin-bottom:5px;padding:5px 8px;background:#1a1030;border-radius:5px">⏰ PRE-ORDER</div>`:''}
         ${(order.items||[]).map(i=>`<div class="oc-line"><span>${i.qty}x</span> ${i.name}</div>${i.customizations&&i.customizations.length?`<div style="font-size:11px;color:#a78bfa;padding-left:18px">${i.customizations.map(o=>(o.type==='remove'?'No '+o.name:'+ '+o.name)).join(', ')}</div>`:''}${i.sauces&&i.sauces.length?`<div style="font-size:11px;color:#f59e0b;padding-left:18px">🥫 Side: ${i.sauces.join(', ')}</div>`:''}`).join('')}
         ${order.discount>0?`<div style="font-size:11px;color:#22c55e;margin-top:4px">Disc: -$${parseFloat(order.discount).toFixed(2)}</div>`:''}
+        ${order.loyaltyDiscount>0?`<div style="font-size:11px;color:#facc15;margin-top:2px">${order.loyaltyLabel||'Loyalty Reward'}: -$${parseFloat(order.loyaltyDiscount).toFixed(2)}</div>`:''}
         ${order.comments?`<div style="font-size:11px;color:#f59e0b;margin-top:5px;padding:5px 8px;background:#2a1f0e;border-radius:5px">&#128172; ${order.comments}</div>`:''}
         <div class="oc-total">$${parseFloat(order.total).toFixed(2)}</div>
       </div>
@@ -737,6 +738,15 @@ function buildTicketHtml(order) {
   const couponHtml = order.coupon
     ? `<div class="pt-coupon">Coupon used: ${escapeHtml(order.coupon)}${order.discount ? ' (-$' + parseFloat(order.discount).toFixed(2) + ')' : ''}</div>`
     : '';
+  const loyaltyHtml = (order.loyaltyDiscount && parseFloat(order.loyaltyDiscount) > 0)
+    ? `<div class="pt-coupon">${escapeHtml(order.loyaltyLabel || 'Loyalty Reward')} (-$${parseFloat(order.loyaltyDiscount).toFixed(2)})</div>`
+    : '';
+  const creditEarnedHtml = (order.creditEarned && parseFloat(order.creditEarned) > 0)
+    ? `<div class="pt-coupon">🎉 Earned $${parseFloat(order.creditEarned).toFixed(2)} credit for next visit!</div>`
+    : '';
+  const creditBalanceHtml = (order.remainingCredit !== undefined && order.remainingCredit !== null && parseFloat(order.remainingCredit) > 0)
+    ? `<div class="pt-msg-label">Credit Balance</div><div class="pt-msg">$${parseFloat(order.remainingCredit).toFixed(2)} on file for ${escapeHtml(order.email||'this email')}</div>`
+    : '';
   const totalHtml = `<div class="pt-total">Total: $${parseFloat(order.total||0).toFixed(2)}</div>`;
   return `
     <div class="pt-wrap" style="--receipt-scale:${receiptScale}">
@@ -744,7 +754,10 @@ function buildTicketHtml(order) {
       <div class="pt-items">${itemsHtml}</div>
       ${deliveryHtml}
       ${couponHtml}
+      ${loyaltyHtml}
+      ${creditEarnedHtml}
       ${totalHtml}
+      ${creditBalanceHtml}
       ${msgHtml}
     </div>`;
 }

@@ -1030,11 +1030,14 @@ window.placeOrder = async function() {
   }
 
   const t = updateTotals();
+  const loyaltyLabelEl = document.getElementById('loyalty-label');
+  const orderLoyaltyLabel = (t.loyDisc > 0 && loyaltyLabelEl) ? loyaltyLabelEl.textContent : null;
   const loyaltyKey = emailToKey(email);
   let currentLoyalty = { orderCount: 0, credits: 0 };
   let loyaltyMsg = '';
   let newOrderCount = 0;
   let newCredits = 0;
+  let earnedCreditThisOrder = 0;
   const LOYALTY_MIN = 5.00;
   const qualifiesForLoyalty = t.sub >= LOYALTY_MIN;
 
@@ -1067,6 +1070,7 @@ window.placeOrder = async function() {
       }
       if (earnedCredit > 0) {
         newCredits = Math.round((newCredits + earnedCredit)*100)/100;
+        earnedCreditThisOrder = earnedCredit;
         loyaltyMsg = `🎉 You've reached order #${newOrderCount}! $${earnedCredit.toFixed(2)} credit added for your next visit!` + (earnedPercent > 0 ? ` Plus ${earnedPercent}% off applied to this order!` : '');
       }
     }
@@ -1076,7 +1080,8 @@ window.placeOrder = async function() {
   const order = {
     name, email, comments,
     items: cart.map(c => ({ id: c.id, name: c.name, price: c.price, qty: c.qty, customizations: c.customizations || [], sauces: c.sauces || [], isSpecial: !!c.isSpecial })),
-    subtotal: t.sub, discount: t.disc, loyaltyDiscount: t.loyDisc,
+    subtotal: t.sub, discount: t.disc, loyaltyDiscount: t.loyDisc, loyaltyLabel: orderLoyaltyLabel,
+    creditEarned: earnedCreditThisOrder || null, remainingCredit: newCredits,
     delivery: !!deliveryOn,
     deliveryLocation: deliveryOn ? deliveryLocationVal : null,
     deliveryPhone: deliveryOn ? deliveryPhoneVal : null,
