@@ -461,7 +461,8 @@ function renderPromos() {
   const wrap = document.getElementById('promo-wrap');
   const container = document.getElementById('promo-section');
   if (!wrap || !container) return;
-  const active = Object.values(coupons).filter(c => c && !c.singleUse && !c.assignedEmail);
+  const now = Date.now();
+  const active = Object.values(coupons).filter(c => c && !c.singleUse && !c.assignedEmail && (!c.activeFrom || now >= c.activeFrom) && (!c.activeUntil || now <= c.activeUntil));
   if (!active.length) {
     wrap.style.display = 'none';
     container.innerHTML = '';
@@ -474,9 +475,11 @@ function renderPromos() {
       const reward = c.type === 'percent' ? `${c.value}% off${cap}` : `$${parseFloat(c.value).toFixed(2)} off`;
       const min = c.minOrder ? ` (min $${parseFloat(c.minOrder).toFixed(2)})` : '';
       const restriction = (c.itemRestriction && c.itemRestriction.length) ? ` — ${c.itemRestriction.map(escapeHtml).join(', ')} only` : '';
-      return `<div class="promo-item"><span class="promo-code">${escapeHtml(c.code)}</span> — ${reward}${min}${restriction}</div>`;
+      const until = c.activeUntil ? ` (ends ${new Date(c.activeUntil).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'})})` : '';
+      return `<div class="promo-item"><span class="promo-code">${escapeHtml(c.code)}</span> — ${reward}${min}${restriction}${until}</div>`;
     }).join('');
 }
+setInterval(renderPromos, 30000); // catches time-windowed codes starting/ending while the screen is up
 
 function escapeHtml(str) {
   return String(str||'').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));

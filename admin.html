@@ -274,6 +274,14 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
         </div>
         <div style="font-size:11px;color:#666;margin-top:2px">Assigning a code to a customer reserves it — only that email can redeem it, and it won't show on the public promo list. Check "Single-use only" separately if you also want it to only work once; leave it unchecked to let that customer reuse the code every time (e.g. a standing discount for them).</div>
         <div style="margin-top:14px;padding-top:14px;border-top:1px solid #333">
+          <label style="font-size:12px;color:#aaa;font-weight:600;display:block;margin-bottom:8px">Active window (optional)</label>
+          <div class="arow" style="align-items:center">
+            <label style="font-size:12px;color:#ccc;display:flex;align-items:center;gap:6px">From <input type="datetime-local" id="new-cfrom" style="background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:7px 9px;font-size:12px;color:#fff"></label>
+            <label style="font-size:12px;color:#ccc;display:flex;align-items:center;gap:6px">Until <input type="datetime-local" id="new-cuntil" style="background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:7px 9px;font-size:12px;color:#fff"></label>
+          </div>
+          <div style="font-size:11px;color:#666;margin-top:6px">Leave both blank for a code that's always active. Set just one side for an open-ended window (e.g. only "From" for a code that starts working at a specific moment and never expires). Set both for a window inside one day (like 3:00–6:00 PM) or spanning several days — down to the exact minute. Times are your device's local time.</div>
+        </div>
+        <div style="margin-top:14px;padding-top:14px;border-top:1px solid #333">
           <label style="font-size:12px;color:#aaa;font-weight:600;display:block;margin-bottom:8px">Restrict to specific items (optional)</label>
           <div id="new-citems" style="display:flex;flex-wrap:wrap;gap:6px 14px;max-height:160px;overflow-y:auto;padding:10px;background:#1a1a1a;border:1px solid #333;border-radius:6px"></div>
           <div style="font-size:11px;color:#666;margin-top:6px">Leave everything unchecked to discount the whole order, like normal. Check specific items to make the discount only apply to those — e.g. "20% off quesadillas" won't touch drinks or sides in the same order.</div>
@@ -281,7 +289,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
       </div>
       <div class="asec">
         <div class="asec-title">Active Codes</div>
-        <table class="mtable"><thead><tr><th>Code</th><th>Discount</th><th>Max Off</th><th>Applies To</th><th>Min</th><th>Assigned To</th><th>Uses</th><th>Single-use</th><th></th></tr></thead>
+        <table class="mtable"><thead><tr><th>Code</th><th>Discount</th><th>Max Off</th><th>Applies To</th><th>Active Window</th><th>Min</th><th>Assigned To</th><th>Uses</th><th>Single-use</th><th></th></tr></thead>
         <tbody id="coupon-body"></tbody></table>
       </div>
     </div></div>
@@ -1692,13 +1700,24 @@ function populateCouponItemPicker() {
 
 function renderCoupons() {
   const tbody=document.getElementById('coupon-body');tbody.innerHTML='';
-  if(!coupons.length){const r=document.createElement('tr');r.innerHTML='<td colspan="8" style="color:#555;text-align:center;padding:12px;font-size:12px">No codes yet</td>';tbody.appendChild(r);return;}
+  if(!coupons.length){const r=document.createElement('tr');r.innerHTML='<td colspan="9" style="color:#555;text-align:center;padding:12px;font-size:12px">No codes yet</td>';tbody.appendChild(r);return;}
+  const now = Date.now();
+  const fmtDT = (ts) => new Date(ts).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'});
   coupons.forEach(cp=>{
     const r=document.createElement('tr');
     const items = cp.itemRestriction && cp.itemRestriction.length ? cp.itemRestriction : null;
     const appliesToFull = items ? items.join(', ') : 'Whole order';
     const appliesToShort = items && appliesToFull.length > 34 ? items[0] + ` +${items.length-1} more` : appliesToFull;
-    r.innerHTML=`<td style="font-weight:700;color:#ff6b35">${cp.code}</td><td>${cp.type==='percent'?cp.value+'%':'$'+parseFloat(cp.value).toFixed(2)} off</td><td>${cp.type==='percent'&&cp.maxOff?'$'+parseFloat(cp.maxOff).toFixed(2):'—'}</td><td title="${appliesToFull.replace(/"/g,'&quot;')}" style="${items?'color:#a78bfa':'color:#666'}">${appliesToShort}</td><td>${cp.minOrder?'$'+parseFloat(cp.minOrder).toFixed(2):'—'}</td><td>${cp.assignedEmail?`<span style="color:#f59e0b">${cp.assignedEmail}</span>`:'—'}</td><td>${cp.useCount||0}</td><td>${cp.singleUse?`<span style="color:#f59e0b">Yes${cp.used?' (used)':''}</span>`:'No'}</td><td><button class="delbtn" onclick="deleteCoupon('${cp.fbKey}')">Delete</button></td>`;
+    let windowHtml = '<span style="color:#666">Always</span>';
+    if (cp.activeFrom || cp.activeUntil) {
+      const notYet = cp.activeFrom && now < cp.activeFrom;
+      const expired = cp.activeUntil && now > cp.activeUntil;
+      const rangeText = (cp.activeFrom ? fmtDT(cp.activeFrom) : 'now') + ' → ' + (cp.activeUntil ? fmtDT(cp.activeUntil) : 'no end');
+      const statusColor = notYet ? '#a78bfa' : expired ? '#666' : '#22c55e';
+      const statusLabel = notYet ? ' (upcoming)' : expired ? ' (expired)' : ' (live)';
+      windowHtml = `<span style="color:${statusColor};font-size:11px">${rangeText}${statusLabel}</span>`;
+    }
+    r.innerHTML=`<td style="font-weight:700;color:#ff6b35">${cp.code}</td><td>${cp.type==='percent'?cp.value+'%':'$'+parseFloat(cp.value).toFixed(2)} off</td><td>${cp.type==='percent'&&cp.maxOff?'$'+parseFloat(cp.maxOff).toFixed(2):'—'}</td><td title="${appliesToFull.replace(/"/g,'&quot;')}" style="${items?'color:#a78bfa':'color:#666'}">${appliesToShort}</td><td>${windowHtml}</td><td>${cp.minOrder?'$'+parseFloat(cp.minOrder).toFixed(2):'—'}</td><td>${cp.assignedEmail?`<span style="color:#f59e0b">${cp.assignedEmail}</span>`:'—'}</td><td>${cp.useCount||0}</td><td>${cp.singleUse?`<span style="color:#f59e0b">Yes${cp.used?' (used)':''}</span>`:'No'}</td><td><button class="delbtn" onclick="deleteCoupon('${cp.fbKey}')">Delete</button></td>`;
     tbody.appendChild(r);
   });
 }
@@ -1722,12 +1741,17 @@ window.addCoupon = async function() {
   const assignedEmail=document.getElementById('new-cemail').value.trim().toLowerCase();
   const single=document.getElementById('new-csingle').checked;
   const itemRestriction = Array.from(document.querySelectorAll('#new-citems input[type=checkbox]:checked')).map(el => el.value);
+  const fromRaw = document.getElementById('new-cfrom').value;
+  const untilRaw = document.getElementById('new-cuntil').value;
+  const activeFrom = fromRaw ? new Date(fromRaw).getTime() : null;
+  const activeUntil = untilRaw ? new Date(untilRaw).getTime() : null;
   if(!code||isNaN(val)||val<=0){alert('Enter a code and value');return;}
   if(coupons.find(c=>c.code===code)){alert('Code already exists');return;}
   if(assignedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(assignedEmail)){alert('Enter a valid customer email, or leave it blank');return;}
   if(maxOff!==null && (isNaN(maxOff)||maxOff<=0)){alert('Max $ off must be a positive number, or leave it blank for no cap');return;}
-  await push(ref(db,'coupons'),{code,type,value:val,singleUse:single,minOrder:min,maxOff:maxOff,useCount:0,used:false,assignedEmail:assignedEmail||null,itemRestriction:itemRestriction.length?itemRestriction:null});
-  document.getElementById('new-ccode').value='';document.getElementById('new-cval').value='';document.getElementById('new-cmin').value='';document.getElementById('new-cmax').value='';document.getElementById('new-csingle').checked=false;document.getElementById('new-cemail').value='';
+  if(activeFrom && activeUntil && activeFrom>=activeUntil){alert('The "Until" time must be after the "From" time.');return;}
+  await push(ref(db,'coupons'),{code,type,value:val,singleUse:single,minOrder:min,maxOff:maxOff,useCount:0,used:false,assignedEmail:assignedEmail||null,itemRestriction:itemRestriction.length?itemRestriction:null,activeFrom,activeUntil});
+  document.getElementById('new-ccode').value='';document.getElementById('new-cval').value='';document.getElementById('new-cmin').value='';document.getElementById('new-cmax').value='';document.getElementById('new-csingle').checked=false;document.getElementById('new-cemail').value='';document.getElementById('new-cfrom').value='';document.getElementById('new-cuntil').value='';
   document.querySelectorAll('#new-citems input[type=checkbox]:checked').forEach(el => el.checked = false);
 }
 

@@ -350,7 +350,8 @@ onValue(ref(db, 'sauces'), snap => {
 function renderPromoBanner() {
   const el = document.getElementById('promo-banner');
   if (!el) return;
-  const active = coupons.filter(c => !c.singleUse && !c.assignedEmail);
+  const now = Date.now();
+  const active = coupons.filter(c => !c.singleUse && !c.assignedEmail && (!c.activeFrom || now >= c.activeFrom) && (!c.activeUntil || now <= c.activeUntil));
   if (!active.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
   el.style.display = 'block';
   el.innerHTML = '<div class="promo-banner-title">🎉 Active Promo Codes</div>' +
@@ -358,7 +359,8 @@ function renderPromoBanner() {
       const reward = c.type === 'percent' ? `${c.value}% off` : `$${parseFloat(c.value).toFixed(2)} off`;
       const min = c.minOrder ? ` (min $${parseFloat(c.minOrder).toFixed(2)})` : '';
       const restriction = (c.itemRestriction && c.itemRestriction.length) ? ` — ${c.itemRestriction.map(escapeHtmlAttr).join(', ')} only` : '';
-      return `<div class="promo-item"><span class="promo-code">${escapeHtmlAttr(c.code)}</span> — ${reward}${min}${restriction}</div>`;
+      const until = c.activeUntil ? ` (ends ${new Date(c.activeUntil).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'})})` : '';
+      return `<div class="promo-item"><span class="promo-code">${escapeHtmlAttr(c.code)}</span> — ${reward}${min}${restriction}${until}</div>`;
     }).join('') +
     '<div class="promo-banner-note">You must enter the code above at checkout — it is not applied automatically.</div>';
 }
@@ -684,7 +686,7 @@ window.onPreorderToggle = function(checked) {
 };
 
 refreshOrderOptionAvailability();
-setInterval(refreshOrderOptionAvailability, 20000);
+setInterval(() => { refreshOrderOptionAvailability(); renderPromoBanner(); }, 20000);
 
 function renderLoyaltyBanner() {
   if (!loyaltyData) { hideLoyaltyBanner(); return; }
@@ -972,6 +974,17 @@ window.applyDiscount = function() {
   const cp = coupons.find(c => c.code===code);
   if (!cp) { msg.className='disc-msg err'; msg.textContent='Code not found.'; return; }
   if (cp.singleUse && cp.used) { msg.className='disc-msg err'; msg.textContent='This code has already been used.'; return; }
+  const now = Date.now();
+  if (cp.activeFrom && now < cp.activeFrom) {
+    msg.className='disc-msg err';
+    msg.textContent = `This code isn't active yet — it starts ${new Date(cp.activeFrom).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'})}.`;
+    return;
+  }
+  if (cp.activeUntil && now > cp.activeUntil) {
+    msg.className='disc-msg err';
+    msg.textContent = 'This code has expired.';
+    return;
+  }
   if (cp.assignedEmail) {
     const enteredEmail = (document.getElementById('cust-email').value || '').trim().toLowerCase();
     if (!enteredEmail) { msg.className='disc-msg err'; msg.textContent='Enter your email above first — this code is reserved for a specific customer.'; return; }
@@ -1008,6 +1021,14 @@ window.placeOrder = async function() {
   if (!firstName || !lastName) { alert('Please enter your first and last name'); return; }
   if (!email) { alert('Please enter your email'); return; }
   if (!cart.length) { alert('Your cart is empty'); return; }
+
+  if (appliedCoupon) {
+    const now = Date.now();
+    if ((appliedCoupon.activeFrom && now < appliedCoupon.activeFrom) || (appliedCoupon.activeUntil && now > appliedCoupon.activeUntil)) {
+      alert(`The code "${appliedCoupon.code}" is no longer active. Please remove it to continue, or apply a different code.`);
+      return;
+    }
+  }
 
   try {
     const banSnap = await get(ref(db, `bannedEmails/${emailToKey(email)}`));
