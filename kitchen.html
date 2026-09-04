@@ -72,6 +72,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 .admin-alert-overlay{display:none;position:fixed;inset:0;z-index:99999;background:#7f1d1d;flex-direction:column;align-items:center;justify-content:center;padding:30px;text-align:center;animation:alert-flash 1.4s infinite}
 .admin-alert-overlay.show{display:flex}
 @keyframes alert-flash{0%,100%{background:#7f1d1d}50%{background:#991b1b}}
+@keyframes pulse-pill{0%,100%{opacity:1}50%{opacity:0.55}}
 .admin-alert-title{font-size:15px;font-weight:800;letter-spacing:2px;color:#fecaca;text-transform:uppercase;margin-bottom:14px}
 .admin-alert-icon{font-size:56px;margin-bottom:6px}
 .admin-alert-message{font-size:28px;font-weight:700;color:#fff;max-width:820px;line-height:1.35;margin-bottom:10px;word-break:break-word}
@@ -169,6 +170,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
       <button class="logout-btn" id="mute-btn" onclick="toggleAlertMute()" style="background:#1a1a1a;border-color:#22c55e44;color:#22c55e">🔔 Alerts On</button>
       <button class="logout-btn" onclick="showStaffLeaderboard()" style="background:#1a1a1a;border-color:#f59e0b44;color:#f59e0b">🏆 Leaderboard</button>
       <button class="logout-btn" onclick="showCompletedOrders()" style="background:#1a1a1a;border-color:#22c55e44;color:#22c55e">✅ Completed</button>
+      <button class="logout-btn" id="voice-memo-btn" onclick="showVoiceMemoModal()" style="background:#1a1a1a;border-color:#a78bfa44;color:#a78bfa">🎤 Message Admin</button>
       <button class="logout-btn" id="reopen-btn" onclick="reopenTemporarily()" style="display:none;background:#0e2a1a;border-color:#22c55e44;color:#22c55e">🔓 Reopen 5 Min</button>
       <button class="logout-btn" onclick="doLogout()" style="background:#2a1010;border-color:#7f1d1d;color:#ef4444">🔴 Clock Out</button>
     </div>
@@ -620,6 +622,7 @@ function renderOrders() {
       <div class="oc-body">
         ${order.delivery?`<div style="font-size:11px;color:#3b82f6;font-weight:700;margin-bottom:5px;padding:5px 8px;background:#0e1a2a;border-radius:5px">🚚 DELIVERY → ${order.deliveryLocation||'—'}${order.deliveryPhone?' · 📞 '+order.deliveryPhone:''}</div>`:''}
         ${order.preorder?`<div style="font-size:11px;color:#a78bfa;font-weight:700;margin-bottom:5px;padding:5px 8px;background:#1a1030;border-radius:5px">⏰ PRE-ORDER</div>`:''}
+        ${order.paymentMethod==='paypal'?`<div style="font-size:11px;color:#22c55e;font-weight:700;margin-bottom:5px;padding:5px 8px;background:#052e16;border-radius:5px">💳 PAID VIA PAYPAL</div>`:''}
         ${(order.items||[]).map(i=>`<div class="oc-line"><span>${i.qty}x</span> ${i.name}</div>${i.customizations&&i.customizations.length?`<div style="font-size:11px;color:#a78bfa;padding-left:18px">${i.customizations.map(o=>(o.type==='remove'?'No '+o.name:'+ '+o.name)).join(', ')}</div>`:''}${i.sauces&&i.sauces.length?`<div style="font-size:11px;color:#f59e0b;padding-left:18px">🥫 Side: ${i.sauces.join(', ')}</div>`:''}`).join('')}
         ${order.discount>0?`<div style="font-size:11px;color:#22c55e;margin-top:4px">Disc: -$${parseFloat(order.discount).toFixed(2)}</div>`:''}
         ${order.loyaltyDiscount>0?`<div style="font-size:11px;color:#facc15;margin-top:2px">${order.loyaltyLabel||'Loyalty Reward'}: -$${parseFloat(order.loyaltyDiscount).toFixed(2)}</div>`:''}
@@ -735,6 +738,9 @@ function buildTicketHtml(order) {
   const deliveryHtml = order.delivery
     ? `<div class="pt-msg-label">🚚 Delivery</div><div class="pt-msg">${escapeHtml(order.deliveryLocation || '—')}${order.deliveryPhone ? '<br>Phone: ' + escapeHtml(order.deliveryPhone) : ''}</div>`
     : '';
+  const paypalHtml = order.paymentMethod === 'paypal'
+    ? `<div class="pt-paid">PAID VIA PAYPAL</div>`
+    : '';
   const couponHtml = order.coupon
     ? `<div class="pt-coupon">Coupon used: ${escapeHtml(order.coupon)}${order.discount ? ' (-$' + parseFloat(order.discount).toFixed(2) + ')' : ''}</div>`
     : '';
@@ -757,6 +763,7 @@ function buildTicketHtml(order) {
       ${loyaltyHtml}
       ${creditEarnedHtml}
       ${totalHtml}
+      ${paypalHtml}
       ${creditBalanceHtml}
       ${msgHtml}
     </div>`;
@@ -808,7 +815,7 @@ window.showStaffLeaderboard = function() {
     <div class="mbtns"><button class="mbtn cancel" onclick="closeModal()">Close</button></div>
   `);
 }
-window.closeModal = function() { document.getElementById('modal').style.display='none'; }
+window.closeModal = function() { document.getElementById('modal').style.display='none'; stopVoiceMemoStream(); }
 
 window.showCompletedOrders = function() {
   const completed = Object.entries(orders)
@@ -835,6 +842,116 @@ window.showCompletedOrders = function() {
     <div style="max-height:60vh;overflow-y:auto">${rowsHtml}</div>
     <div class="mbtns"><button class="mbtn cancel" onclick="closeModal()">Close</button></div>
   `, true);
+}
+
+// ── VOICE MEMOS TO ADMIN (record a short message, sent whether or not an admin is currently online) ──
+let vmMediaRecorder = null;
+let vmChunks = [];
+let vmStream = null;
+let vmTimerInterval = null;
+let vmSeconds = 0;
+let vmAudioBlob = null;
+const VM_MAX_SECONDS = 60;
+
+window.showVoiceMemoModal = function() {
+  vmAudioBlob = null;
+  showModal(`
+    <h3 style="margin-bottom:4px;color:#a78bfa">🎤 Message Admin</h3>
+    <p style="font-size:12px;color:#aaa;margin-bottom:16px">Record a quick voice message. It's sent straight to the admin panel — if nobody's logged into admin right now, it'll just be waiting there next time someone is.</p>
+    <div id="vm-body" style="text-align:center">
+      <div id="vm-timer" style="font-size:32px;font-weight:800;color:#a78bfa;margin-bottom:16px">0:00</div>
+      <button id="vm-record-btn" onclick="startVoiceMemoRecording()" style="background:#a78bfa;color:#1a0f2e;border:none;border-radius:50%;width:72px;height:72px;font-size:28px;cursor:pointer;margin-bottom:16px">⏺</button>
+      <div style="font-size:12px;color:#666">Tap to start recording (up to ${VM_MAX_SECONDS}s)</div>
+    </div>
+    <div class="mbtns"><button class="mbtn cancel" onclick="closeVoiceMemoModal()">Cancel</button></div>
+  `);
+}
+
+window.closeVoiceMemoModal = function() {
+  stopVoiceMemoStream();
+  closeModal();
+}
+
+function stopVoiceMemoStream() {
+  if (vmTimerInterval) { clearInterval(vmTimerInterval); vmTimerInterval = null; }
+  if (vmMediaRecorder && vmMediaRecorder.state !== 'inactive') { try { vmMediaRecorder.stop(); } catch(e) {} }
+  if (vmStream) { vmStream.getTracks().forEach(t => t.stop()); vmStream = null; }
+  vmMediaRecorder = null;
+}
+
+window.startVoiceMemoRecording = async function() {
+  try {
+    vmStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch(e) {
+    alert("Couldn't access the microphone. Check that this device allows mic access for this page.");
+    return;
+  }
+  vmChunks = [];
+  vmSeconds = 0;
+  vmMediaRecorder = new MediaRecorder(vmStream);
+  vmMediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) vmChunks.push(e.data); };
+  vmMediaRecorder.onstop = () => {
+    vmAudioBlob = new Blob(vmChunks, { type: vmMediaRecorder.mimeType || 'audio/webm' });
+    renderVoiceMemoPreview();
+  };
+  vmMediaRecorder.start();
+
+  const body = document.getElementById('vm-body');
+  if (body) {
+    body.innerHTML = `
+      <div id="vm-timer" style="font-size:32px;font-weight:800;color:#ef4444;margin-bottom:16px">0:00</div>
+      <button onclick="stopVoiceMemoRecording()" style="background:#ef4444;color:#fff;border:none;border-radius:50%;width:72px;height:72px;font-size:22px;cursor:pointer;margin-bottom:16px;animation:pulse-pill 1.2s infinite">⏹</button>
+      <div style="font-size:12px;color:#666">Recording... tap to stop</div>
+    `;
+  }
+  vmTimerInterval = setInterval(() => {
+    vmSeconds++;
+    const timerEl = document.getElementById('vm-timer');
+    if (timerEl) timerEl.textContent = Math.floor(vmSeconds/60) + ':' + String(vmSeconds%60).padStart(2,'0');
+    if (vmSeconds >= VM_MAX_SECONDS) window.stopVoiceMemoRecording();
+  }, 1000);
+}
+
+window.stopVoiceMemoRecording = function() {
+  if (vmTimerInterval) { clearInterval(vmTimerInterval); vmTimerInterval = null; }
+  if (vmMediaRecorder && vmMediaRecorder.state !== 'inactive') vmMediaRecorder.stop();
+  if (vmStream) { vmStream.getTracks().forEach(t => t.stop()); vmStream = null; }
+}
+
+function renderVoiceMemoPreview() {
+  const body = document.getElementById('vm-body');
+  if (!body || !vmAudioBlob) return;
+  const url = URL.createObjectURL(vmAudioBlob);
+  body.innerHTML = `
+    <audio controls src="${url}" style="width:100%;margin-bottom:16px"></audio>
+    <div style="display:flex;gap:10px">
+      <button onclick="startVoiceMemoRecording()" style="flex:1;background:#2a2a2a;color:#ccc;border:none;border-radius:8px;padding:12px;font-size:14px;font-weight:700;cursor:pointer">🔄 Re-record</button>
+      <button onclick="sendVoiceMemo()" style="flex:1;background:#a78bfa;color:#1a0f2e;border:none;border-radius:8px;padding:12px;font-size:14px;font-weight:700;cursor:pointer">📤 Send</button>
+    </div>
+  `;
+}
+
+window.sendVoiceMemo = async function() {
+  if (!vmAudioBlob) return;
+  const body = document.getElementById('vm-body');
+  if (body) body.innerHTML = '<div style="color:#888;font-size:13px;padding:20px 0">Sending...</div>';
+  try {
+    const base64 = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(vmAudioBlob);
+    });
+    await push(ref(db, 'voiceMemos'), {
+      audioData: base64, durationSec: vmSeconds,
+      sentAt: Date.now(), sentByName: currentWorkerName || 'Kitchen',
+      heard: false, heardAt: null, heardByName: null
+    });
+    closeModal();
+  } catch(e) {
+    alert('Error sending voice memo: ' + e.message);
+    if (body) renderVoiceMemoPreview();
+  }
 }
 
 window.undoDoneFromModal = async function(key, btnEl) {

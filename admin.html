@@ -174,6 +174,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
       <button class="tb" onclick="switchTab('leaderboard')">🏆 Leaderboard</button>
     </div>
     <button class="logout-btn" id="kitchen-alert-btn" onclick="showKitchenAlertModal()" style="background:#2a1010;border:1.5px solid #ef4444;color:#ef4444;position:relative">🚨 Alert Kitchen<span id="kitchen-alert-badge" style="display:none;position:absolute;top:-7px;right:-7px;background:#ef4444;color:#fff;border-radius:20px;font-size:10px;font-weight:800;padding:2px 6px;line-height:1"></span></button>
+    <button class="logout-btn" id="voice-memo-btn" onclick="showVoiceMemoInbox()" style="background:#1a1030;border:1.5px solid #a78bfa;color:#a78bfa;position:relative">🎤 Voice Memos<span id="voice-memo-badge" style="display:none;position:absolute;top:-7px;right:-7px;background:#a78bfa;color:#1a0f2e;border-radius:20px;font-size:10px;font-weight:800;padding:2px 6px;line-height:1"></span></button>
     <button class="logout-btn" onclick="doLogout()">Sign out</button>
   </div>
 
@@ -1120,6 +1121,7 @@ let tapTimers = {}, currentTab = 'orders';
 let currentAdminUID = null, currentAdminName = 'Admin';
 let kitchenAlerts = [];
 let bannedEmailsData = {};
+let voiceMemos = [];
 let editingOrderKey = null, editingOrderItems = [];
 
 onAuthStateChanged(auth, async user => {
@@ -1180,6 +1182,12 @@ function showAdmin() {
     kitchenAlerts = Object.entries(d).map(([k,v])=>({fbKey:k,...v})).sort((a,b)=>(b.sentAt||0)-(a.sentAt||0));
     updateKitchenAlertBadge();
     renderKitchenAlertModalIfOpen();
+  });
+  onValue(ref(db,'voiceMemos'), snap => {
+    const d = snap.val() || {};
+    voiceMemos = Object.entries(d).map(([k,v])=>({fbKey:k,...v})).sort((a,b)=>(b.sentAt||0)-(a.sentAt||0));
+    updateVoiceMemoBadge();
+    renderVoiceMemoInboxIfOpen();
   });
   onValue(ref(db,'loyalty'), snap => { loyaltyRecords = snap.val()||{}; if(currentTab==='loyalty') renderLoyaltyAdmin(); });
   onValue(ref(db,'loyaltyMilestones'), snap => { loyaltyMilestonesData = snap.val()||{}; if(currentTab==='loyalty') renderLoyaltyMilestones(); });
@@ -4595,7 +4603,60 @@ window.sendKitchenAlert = async function() {
     if (input) input.value = '';
   } catch(e) { alert('Error sending alert: ' + e.message); }
 }
-window.closeModal = function(){document.getElementById('modal').style.display='none';kitchenAlertModalOpen=false;}
+
+// ── VOICE MEMOS FROM KITCHEN ──────────────────────────────────
+function updateVoiceMemoBadge() {
+  const badge = document.getElementById('voice-memo-badge');
+  if (!badge) return;
+  const unheard = voiceMemos.filter(m => !m.heard).length;
+  badge.style.display = unheard ? 'inline-block' : 'none';
+  badge.textContent = unheard;
+}
+
+let voiceMemoInboxOpen = false;
+
+window.showVoiceMemoInbox = function() {
+  voiceMemoInboxOpen = true;
+  renderVoiceMemoInbox();
+}
+
+function renderVoiceMemoInboxIfOpen() {
+  if (voiceMemoInboxOpen && document.getElementById('modal').style.display === 'flex') renderVoiceMemoInbox();
+}
+
+function renderVoiceMemoInbox() {
+  const rowsHtml = voiceMemos.length ? voiceMemos.slice(0, 30).map(m => {
+    const sentTime = m.sentAt ? new Date(m.sentAt).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}) : '';
+    const dur = m.durationSec ? Math.floor(m.durationSec/60) + ':' + String(m.durationSec%60).padStart(2,'0') : '';
+    const heardHtml = m.heard
+      ? `<span style="color:#22c55e;font-weight:700;font-size:11px;white-space:nowrap">✅ Heard${m.heardByName?' by '+escMenuHtml(m.heardByName):''}</span>`
+      : `<span style="color:#a78bfa;font-weight:700;font-size:11px;white-space:nowrap">⏺ New</span>`;
+    return `<div style="padding:10px 0;border-bottom:1px solid #2a2a2a">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <div style="font-size:12px;color:#888">${sentTime}${m.sentByName?' — '+escMenuHtml(m.sentByName):''}${dur?' · '+dur:''}</div>
+        ${heardHtml}
+      </div>
+      <audio controls src="${m.audioData}" style="width:100%" onplay="markVoiceMemoHeard('${m.fbKey}')"></audio>
+    </div>`;
+  }).join('') : '<div style="color:#666;font-size:12px;text-align:center;padding:16px">No voice memos yet</div>';
+
+  showModal(`
+    <h3 style="margin-bottom:4px;color:#a78bfa">🎤 Voice Memos from Kitchen</h3>
+    <p style="font-size:12px;color:#aaa;margin-bottom:14px">Sent whether or not anyone's logged into admin — they just wait here. Marked heard automatically once you press play.</p>
+    <div style="max-height:min(420px,60vh);overflow-y:auto">${rowsHtml}</div>
+    <div class="mbtns"><button class="mbtn cancel" onclick="voiceMemoInboxOpen=false;closeModal()">Close</button></div>
+  `);
+}
+
+window.markVoiceMemoHeard = async function(key) {
+  const memo = voiceMemos.find(m => m.fbKey === key);
+  if (!memo || memo.heard) return; // don't overwrite the original heard timestamp on repeat listens
+  try {
+    await update(ref(db, `voiceMemos/${key}`), { heard: true, heardAt: Date.now(), heardByName: currentAdminName });
+  } catch(e) { console.error('Could not mark memo heard:', e); }
+}
+
+window.closeModal = function(){document.getElementById('modal').style.display='none';kitchenAlertModalOpen=false;voiceMemoInboxOpen=false;}
 
 window.addExpense = async function() {
   const week   = (document.getElementById('exp-week')   || {}).value.trim();
