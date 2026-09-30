@@ -278,7 +278,7 @@ body{
   text-align:center;
 }
 
-/* LEADERBOARD (top 5, no dollar amounts — matches the public leaderboard page) */
+/* LEADERBOARD (top 5 by lifetime spend, no dollar amounts — matches the public leaderboard page) */
 .leaderboard-title{
   font-family:'Baloo 2',sans-serif;
   font-weight:800;
@@ -700,11 +700,13 @@ function renderLeaderboard(allOrders) {
   allOrders.forEach(o => {
     if (!o.email) return;
     const key = o.email.toLowerCase();
-    if (!byEmail[key]) byEmail[key] = { name: o.name || '', orderCount: 0 };
+    if (!byEmail[key]) byEmail[key] = { name: o.name || '', orderCount: 0, totalSpent: 0 };
     byEmail[key].orderCount += 1;
+    byEmail[key].totalSpent += parseFloat(o.total) || 0; // what they actually paid (matches admin "Lifetime Spent")
     if (o.name) byEmail[key].name = o.name;
   });
-  const ranked = Object.values(byEmail).sort((a,b) => b.orderCount - a.orderCount).slice(0, 5);
+  // Rank by lifetime dollars spent; ties broken by order count. Dollar amounts are never displayed.
+  const ranked = Object.values(byEmail).sort((a,b) => (b.totalSpent - a.totalSpent) || (b.orderCount - a.orderCount)).slice(0, 5);
 
   if (!ranked.length) {
     wrap.style.display = 'none';

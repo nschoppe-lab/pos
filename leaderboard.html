@@ -46,7 +46,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 <div class="wrap">
   <div class="hero">
     <div class="hero-title">🏆 Leaderboard</div>
-    <div class="hero-sub">Our most loyal regulars, ranked by total orders</div>
+    <div class="hero-sub">Our most loyal regulars, ranked by lifetime spending</div>
   </div>
 
   <div id="board-content" class="loading">Loading leaderboard...</div>
@@ -85,11 +85,13 @@ function buildLeaderboard(ordersObj) {
   all.forEach(o => {
     if (!o.email) return;
     const key = o.email.toLowerCase();
-    if (!byEmail[key]) byEmail[key] = { name: o.name || '', orderCount: 0 };
+    if (!byEmail[key]) byEmail[key] = { name: o.name || '', orderCount: 0, totalSpent: 0 };
     byEmail[key].orderCount += 1;
+    byEmail[key].totalSpent += parseFloat(o.total) || 0; // what they actually paid (matches admin "Lifetime Spent")
     if (o.name) byEmail[key].name = o.name; // keep the most recent name used
   });
-  return Object.values(byEmail).sort((a,b) => b.orderCount - a.orderCount);
+  // Rank by lifetime dollars spent; ties broken by order count. Dollar amounts are never displayed.
+  return Object.values(byEmail).sort((a,b) => (b.totalSpent - a.totalSpent) || (b.orderCount - a.orderCount));
 }
 
 function renderLeaderboard(entries) {

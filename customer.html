@@ -702,29 +702,41 @@ function renderLoyaltyBanner() {
   document.getElementById('loyalty-bar').style.width = `${Math.min(100, pct)}%`;
   const rewardEl = document.getElementById('loyalty-reward');
   rewardEl.className = 'loyalty-reward';
-  if (credits > 0) {
+  const cartSub = cart.reduce((s,c)=>s+c.price*c.qty,0);
+  const nextOrder = count + 1;
+  const ord = `${nextOrder}${ordinalSuffix(nextOrder)}`;
+  const pctReward = getPercentRewardForOrder(nextOrder);
+  const pending = getLoyaltyPlan(cartSub, true); // reward they'd get if no code were applied
+  const nextEl = document.getElementById('loyalty-next');
+  if (appliedCoupon && pending.type) {
+    // A discount code is applied, so the loyalty reward is on hold
+    rewardEl.className = 'loyalty-reward half';
+    const what = pending.type === 'credit' ? `your $${credits.toFixed(2)} credit (it stays saved)` : `your ${ord}-order ${pending.percent}% off`;
+    nextEl.textContent = `Loyalty rewards can't be combined with discount codes.`;
+    rewardEl.innerHTML = `🏷️ Code ${escapeHtmlAttr(appliedCoupon.code)} is applied, so ${what} isn't being used on this order. <button type="button" class="credit-toggle-btn" onclick="switchToLoyaltyReward()">Use my reward instead</button>`;
+  } else if (credits > 0) {
     rewardEl.className = 'loyalty-reward credit';
     if (useCredit) {
-      document.getElementById('loyalty-next').textContent = `$${credits.toFixed(2)} credit will be applied to this order.`;
-      rewardEl.innerHTML = `🎉 $${credits.toFixed(2)} credit will be used on this order. <button type="button" class="credit-toggle-btn" onclick="toggleUseCredit()">Save it for later instead</button>`;
-      loyaltyDiscount = Math.min(credits, cart.reduce((s,c)=>s+c.price*c.qty,0));
+      nextEl.textContent = `$${credits.toFixed(2)} credit will be applied to this order.` + (pctReward > 0 ? ` Your ${ord}-order ${pctReward}% off can't be combined with it.` : '');
+      rewardEl.innerHTML = `🎉 $${credits.toFixed(2)} credit will be used on this order. <button type="button" class="credit-toggle-btn" onclick="toggleUseCredit()">${pctReward > 0 ? `Use ${pctReward}% off instead` : 'Save it for later instead'}</button>`;
     } else {
-      document.getElementById('loyalty-next').textContent = `You're saving your $${credits.toFixed(2)} credit for a future order.`;
+      nextEl.textContent = pctReward > 0
+        ? `You're saving your $${credits.toFixed(2)} credit — your ${pctReward}% off applies to this order instead.`
+        : `You're saving your $${credits.toFixed(2)} credit for a future order.`;
       rewardEl.innerHTML = `💾 $${credits.toFixed(2)} credit saved — not used on this order. <button type="button" class="credit-toggle-btn" onclick="toggleUseCredit()">Use it now instead</button>`;
-      loyaltyDiscount = 0;
     }
-  } else if (getPercentRewardForOrder(count + 1) > 0) {
-    const p = getPercentRewardForOrder(count + 1);
-    document.getElementById('loyalty-next').textContent = `🎉 Your next order is your ${count+1}${ordinalSuffix(count+1)} — you get ${p}% off!`;
-  } else if (getCreditRewardForOrder(count + 1) > 0) {
-    const c = getCreditRewardForOrder(count + 1);
-    document.getElementById('loyalty-next').textContent = `🎉 Your next order is your ${count+1}${ordinalSuffix(count+1)} — you get a free $${c.toFixed(2)} credit!`;
+  } else if (pctReward > 0) {
+    nextEl.textContent = `🎉 Your next order is your ${ord} — you get ${pctReward}% off! (Can't be combined with discount codes.)`;
+  } else if (getCreditRewardForOrder(nextOrder) > 0) {
+    const c = getCreditRewardForOrder(nextOrder);
+    nextEl.textContent = `🎉 Your next order is your ${ord} — you get a free $${c.toFixed(2)} credit!`;
   } else {
-    document.getElementById('loyalty-next').textContent = `${remaining} more order${remaining !== 1 ? 's' : ''} until your next reward`;
-    if (cart.reduce((s,c)=>s+c.price*c.qty,0) < 5) {
-      document.getElementById('loyalty-next').textContent += ' — orders must be $5+ to count';
+    nextEl.textContent = `${remaining} more order${remaining !== 1 ? 's' : ''} until your next reward`;
+    if (cartSub < 5) {
+      nextEl.textContent += ' — orders must be $5+ to count';
     }
   }
+  loyaltyDiscount = getLoyaltyPlan(cartSub).amount;
   updateTotals();
 }
 
@@ -733,6 +745,10 @@ function hideLoyaltyBanner() {
 }
 
 window.toggleUseCredit = function() {
+  if (!useCredit && appliedCoupon) {
+    if (!confirm(`Loyalty credit can't be combined with a discount code. Remove code ${appliedCoupon.code} and use your credit instead?`)) return;
+    removeAppliedCoupon();
+  }
   useCredit = !useCredit;
   renderLoyaltyBanner();
 }
@@ -915,6 +931,38 @@ function getCouponEligibleSubtotal(coupon) {
   return cart.reduce((s,c) => restrictedSet.has(c.name) ? s + c.price * c.qty : s, 0);
 }
 
+// Which loyalty reward (if any) applies to this cart.
+// RULE: a loyalty reward (stored $ credit OR a 5th/10th/milestone % off) can never be combined
+// with a discount code, and a credit and a % reward can't be combined with each other.
+// ignoreCoupon=true answers "what reward would they get if no code were applied?"
+function getLoyaltyPlan(sub, ignoreCoupon) {
+  const none = { type: null, amount: 0, percent: 0, label: '' };
+  if (!loyaltyData) return none;
+  if (appliedCoupon && !ignoreCoupon) return none;
+  const credits = loyaltyData.credits || 0;
+  const nextOrder = (loyaltyData.orderCount || 0) + 1;
+  const pct = getPercentRewardForOrder(nextOrder);
+  if (credits > 0 && useCredit) {
+    return { type: 'credit', amount: Math.round(Math.min(credits, sub) * 100) / 100, percent: 0, label: '⭐ Loyalty Credit' };
+  }
+  if (pct > 0) {
+    return { type: 'percent', amount: Math.round(sub * (pct / 100) * 100) / 100, percent: pct,
+             label: `⭐ ${nextOrder}${ordinalSuffix(nextOrder)} Order (${pct}% off)` };
+  }
+  return none;
+}
+
+function removeAppliedCoupon() {
+  appliedCoupon = null;
+  const codeEl = document.getElementById('disc-code'); if (codeEl) codeEl.value = '';
+  const msgEl = document.getElementById('disc-msg'); if (msgEl) msgEl.className = 'disc-msg';
+}
+
+window.switchToLoyaltyReward = function() {
+  removeAppliedCoupon();
+  renderLoyaltyBanner();
+}
+
 function updateTotals() {
   const sub = cart.reduce((s,c) => s + c.price * c.qty, 0);
   let disc = 0;
@@ -933,26 +981,13 @@ function updateTotals() {
     document.getElementById('disc-label').textContent = `${appliedCoupon.code} (${appliedCoupon.type==='percent'?appliedCoupon.value+'% off':'$'+appliedCoupon.value+' off'}${restrictionNote})`;
     document.getElementById('disc-amt').textContent = `-$${disc.toFixed(2)}`;
   } else { dr.style.display = 'none'; }
-  let loyDisc = 0;
+  const plan = getLoyaltyPlan(sub);
+  const loyDisc = plan.amount;
   const lr = document.getElementById('loyalty-row');
-  if (loyaltyData) {
-    const count = loyaltyData.orderCount || 0;
-    const credits = loyaltyData.credits || 0;
-    const nextOrder = count + 1;
-    const percentReward = getPercentRewardForOrder(nextOrder);
-    if (credits > 0 && useCredit) {
-      loyDisc = Math.round(Math.min(credits, sub)*100)/100;
-      lr.style.display = 'flex';
-      document.getElementById('loyalty-label').textContent = `⭐ Loyalty Credit`;
-      document.getElementById('loyalty-amt').textContent = `-$${loyDisc.toFixed(2)}`;
-    } else if (credits > 0 && !useCredit) {
-      lr.style.display = 'none';
-    } else if (percentReward > 0) {
-      loyDisc = Math.round(sub*(percentReward/100)*100)/100;
-      lr.style.display = 'flex';
-      document.getElementById('loyalty-label').textContent = `⭐ ${nextOrder}${ordinalSuffix(nextOrder)} Order (${percentReward}% off)`;
-      document.getElementById('loyalty-amt').textContent = `-$${loyDisc.toFixed(2)}`;
-    } else { lr.style.display = 'none'; }
+  if (plan.type) {
+    lr.style.display = 'flex';
+    document.getElementById('loyalty-label').textContent = plan.label;
+    document.getElementById('loyalty-amt').textContent = `-$${loyDisc.toFixed(2)}`;
   } else { lr.style.display = 'none'; }
   document.getElementById('subtotal').textContent = `$${sub.toFixed(2)}`;
   const baseTotal = Math.max(0, sub-disc-loyDisc);
@@ -964,7 +999,7 @@ function updateTotals() {
   const preRow = document.getElementById('preorder-fee-row');
   if (preRow) preRow.style.display = preorderFee > 0 ? 'flex' : 'none';
   document.getElementById('cart-total').textContent = `$${grandTotal.toFixed(2)}`;
-  return {sub, disc, loyDisc, deliveryFee, preorderFee, total: grandTotal};
+  return {sub, disc, loyDisc, plan, deliveryFee, preorderFee, total: grandTotal};
 }
 
 window.applyDiscount = function() {
@@ -998,6 +1033,19 @@ window.applyDiscount = function() {
     msg.textContent = `This code only applies to: ${cp.itemRestriction.join(', ')} — add one to your cart to use it.`;
     return;
   }
+  // Discount codes can't be combined with loyalty rewards — make the customer pick one
+  const pendingLoy = getLoyaltyPlan(sub, true);
+  if (pendingLoy.type) {
+    const nxt = (loyaltyData.orderCount || 0) + 1;
+    const what = pendingLoy.type === 'credit'
+      ? `your $${(loyaltyData.credits || 0).toFixed(2)} loyalty credit (the credit stays saved for a future order)`
+      : `your ${nxt}${ordinalSuffix(nxt)}-order ${pendingLoy.percent}% off (this order still counts toward your loyalty progress, but the ${pendingLoy.percent}% off will not be applied)`;
+    if (!confirm(`Discount codes can't be combined with loyalty rewards.\n\nUse code ${cp.code} instead of ${what}?`)) {
+      msg.className = 'disc-msg err';
+      msg.textContent = "Code not applied — loyalty rewards can't be combined with discount codes.";
+      return;
+    }
+  }
   appliedCoupon = cp;
   let disc;
   if (cp.type==='percent') {
@@ -1010,6 +1058,7 @@ window.applyDiscount = function() {
   const restrictionNote = (cp.itemRestriction && cp.itemRestriction.length) ? ` · applies to ${cp.itemRestriction.join(', ')}` : '';
   msg.className='disc-msg ok'; msg.textContent=`Applied! ${cp.type==='percent'?cp.value+'% off'+cappedNote:'$'+cp.value.toFixed(2)+' off'}${restrictionNote} (-$${(Math.round(disc*100)/100).toFixed(2)})`;
   updateTotals();
+  if (loyaltyData) renderLoyaltyBanner();
 }
 
 window.placeOrder = async function() {
@@ -1063,6 +1112,7 @@ window.placeOrder = async function() {
   }
 
   const t = updateTotals();
+  const plan = t.plan; // loyalty reward actually applied to this order (none if a code is used)
   const loyaltyLabelEl = document.getElementById('loyalty-label');
   const orderLoyaltyLabel = (t.loyDisc > 0 && loyaltyLabelEl) ? loyaltyLabelEl.textContent : null;
   const loyaltyKey = emailToKey(email);
@@ -1083,7 +1133,7 @@ window.placeOrder = async function() {
     if (!qualifiesForLoyalty) {
       // Order doesn't meet minimum — don't count it, but still spend credits if they have any and chose to use them
       newOrderCount = currentLoyalty.orderCount || 0;
-      if (newCredits > 0 && useCredit) {
+      if (plan.type === 'credit') {
         const used = Math.round(Math.min(newCredits, t.sub)*100)/100;
         newCredits = Math.max(0, Math.round((newCredits-used)*100)/100);
         loyaltyMsg = `$${used.toFixed(2)} loyalty credit used!`;
@@ -1091,12 +1141,12 @@ window.placeOrder = async function() {
     } else {
       // Qualifies — count the order and apply rewards
       newOrderCount = (currentLoyalty.orderCount || 0) + 1;
-      if (newCredits > 0 && useCredit) {
+      if (plan.type === 'credit') {
         const used = Math.round(Math.min(newCredits, t.sub)*100)/100;
         newCredits = Math.max(0, Math.round((newCredits-used)*100)/100);
         loyaltyMsg = `$${used.toFixed(2)} loyalty credit used!`;
       }
-      const earnedPercent = getPercentRewardForOrder(newOrderCount);
+      const earnedPercent = plan.type === 'percent' ? plan.percent : 0;
       const earnedCredit = getCreditRewardForOrder(newOrderCount);
       if (earnedPercent > 0) {
         loyaltyMsg = `🎉 ${newOrderCount}${ordinalSuffix(newOrderCount)} order — ${earnedPercent}% off applied!`;
