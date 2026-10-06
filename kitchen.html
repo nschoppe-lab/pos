@@ -624,6 +624,7 @@ function renderOrders() {
         ${order.preorder?`<div style="font-size:11px;color:#a78bfa;font-weight:700;margin-bottom:5px;padding:5px 8px;background:#1a1030;border-radius:5px">⏰ PRE-ORDER</div>`:''}
         ${order.paymentMethod==='paypal'?`<div style="font-size:11px;color:#22c55e;font-weight:700;margin-bottom:5px;padding:5px 8px;background:#052e16;border-radius:5px">💳 PAID VIA PAYPAL</div>`:''}
         ${(order.items||[]).map(i=>`<div class="oc-line"><span>${i.qty}x</span> ${i.name}</div>${i.customizations&&i.customizations.length?`<div style="font-size:11px;color:#a78bfa;padding-left:18px">${i.customizations.map(o=>(o.type==='remove'?'No '+o.name:'+ '+o.name)).join(', ')}</div>`:''}${i.sauces&&i.sauces.length?`<div style="font-size:11px;color:#f59e0b;padding-left:18px">🥫 Side: ${i.sauces.join(', ')}</div>`:''}`).join('')}
+        ${(order.donations&&order.donations.length)?order.donations.map(d=>`<div class="oc-line" style="color:#f472b6;display:flex;justify-content:space-between"><span>💝 Donation – ${escapeHtml(d.fundraiserName)}</span><span>$${parseFloat(d.amount).toFixed(2)}</span></div>`).join(''):''}
         ${order.discount>0?`<div style="font-size:11px;color:#22c55e;margin-top:4px">Disc: -$${parseFloat(order.discount).toFixed(2)}</div>`:''}
         ${order.loyaltyDiscount>0?`<div style="font-size:11px;color:#facc15;margin-top:2px">${order.loyaltyLabel||'Loyalty Reward'}: -$${parseFloat(order.loyaltyDiscount).toFixed(2)}</div>`:''}
         ${order.comments?`<div style="font-size:11px;color:#f59e0b;margin-top:5px;padding:5px 8px;background:#2a1f0e;border-radius:5px">&#128172; ${order.comments}</div>`:''}
@@ -732,6 +733,9 @@ function buildTicketHtml(order) {
     const sauceNote = (i.sauces && i.sauces.length) ? `<div class="pt-sauce">🥫 Side: ${escapeHtml(i.sauces.join(', '))}</div>` : '';
     return `<div class="pt-line">${escapeHtml(i.qty)}x ${escapeHtml(i.name)}${specialTag}</div>${modNote}${sauceNote}`;
   }).join('');
+  const donationLinesHtml = (order.donations && order.donations.length)
+    ? order.donations.map(d => `<div class="pt-line" style="display:flex;justify-content:space-between;gap:6px"><span>💝 Donation – ${escapeHtml(d.fundraiserName)}</span><span>$${parseFloat(d.amount).toFixed(2)}</span></div>`).join('')
+    : '';
   const msgHtml = order.comments
     ? `<div class="pt-msg-label">Message</div><div class="pt-msg">${escapeHtml(order.comments)}</div>`
     : '';
@@ -757,7 +761,7 @@ function buildTicketHtml(order) {
   return `
     <div class="pt-wrap" style="--receipt-scale:${receiptScale}">
       <div class="pt-name">${escapeHtml(order.name)}</div>
-      <div class="pt-items">${itemsHtml}</div>
+      <div class="pt-items">${itemsHtml}${donationLinesHtml}</div>
       ${deliveryHtml}
       ${couponHtml}
       ${loyaltyHtml}
@@ -1065,7 +1069,7 @@ async function computeNightlyStats(dateKey) {
   const todays = allOrders.filter(o => typeof o.createdAt === 'number' && o.createdAt >= start && o.createdAt <= end);
 
   const totalOrders = todays.length;
-  const totalRevenue = round2(todays.reduce((s,o) => s + (parseFloat(o.total)||0), 0));
+  const totalRevenue = round2(todays.reduce((s,o) => s + (parseFloat(o.total)||0) - (parseFloat(o.donationTotal)||0), 0)); // donations excluded — they're passed through to the fundraiser
   const avgOrder = totalOrders ? round2(totalRevenue/totalOrders) : 0;
   const deliveryCount = todays.filter(o => o.delivery).length;
   const preorderCount = todays.filter(o => o.preorder).length;

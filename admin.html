@@ -172,6 +172,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
       <button class="tb" onclick="switchTab('lounge')">🖥️ Lounge Display</button>
       <button class="tb" onclick="switchTab('reports')">📊 Reports</button>
       <button class="tb" onclick="switchTab('leaderboard')">🏆 Leaderboard</button>
+      <button class="tb" onclick="switchTab('fundraisers')">💝 Fundraisers</button>
     </div>
     <button class="logout-btn" id="kitchen-alert-btn" onclick="showKitchenAlertModal()" style="background:#2a1010;border:1.5px solid #ef4444;color:#ef4444;position:relative">🚨 Alert Kitchen<span id="kitchen-alert-badge" style="display:none;position:absolute;top:-7px;right:-7px;background:#ef4444;color:#fff;border-radius:20px;font-size:10px;font-weight:800;padding:2px 6px;line-height:1"></span></button>
     <button class="logout-btn" id="voice-memo-btn" onclick="showVoiceMemoInbox()" style="background:#1a1030;border:1.5px solid #a78bfa;color:#a78bfa;position:relative">🎤 Voice Memos<span id="voice-memo-badge" style="display:none;position:absolute;top:-7px;right:-7px;background:#a78bfa;color:#1a0f2e;border-radius:20px;font-size:10px;font-weight:800;padding:2px 6px;line-height:1"></span></button>
@@ -273,7 +274,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
             <input type="email" id="new-cemail" placeholder="customer@email.com — leave blank for a public code" style="flex:1;min-width:220px;background:#1a1a1a;border:1px solid #444;border-radius:5px;padding:6px 9px;font-size:12px;color:#fff">
           </label>
         </div>
-        <div style="font-size:11px;color:#666;margin-top:2px">Assigning a code to a customer reserves it — only that email can redeem it, and it won't show on the public promo list. Check "Single-use only" separately if you also want it to only work once; leave it unchecked to let that customer reuse the code every time (e.g. a standing discount for them).</div>
+        <div style="font-size:11px;color:#666;margin-top:2px">Assigning a code to a customer reserves it — only that email can redeem it, it won't show on the public promo list, and that customer can use it once per day (resets at midnight ET). Check "Single-use only" separately if you also want it to only work once; leave it unchecked to let that customer reuse the code every time (e.g. a standing discount for them).</div>
         <div style="margin-top:14px;padding-top:14px;border-top:1px solid #333">
           <label style="font-size:12px;color:#aaa;font-weight:600;display:block;margin-bottom:8px">Active window (optional)</label>
           <div class="arow" style="align-items:center">
@@ -599,6 +600,16 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
       <div class="asec" style="margin-bottom:14px">
         <div class="asec-title">Revenue by Day</div>
         <div id="finance-by-day"></div>
+      </div>
+
+      <!-- Fundraiser donations -->
+      <div class="asec" style="margin-bottom:14px;border-color:#f472b644">
+        <div class="asec-title" style="color:#f472b6">💝 Fundraiser Donations</div>
+        <div style="font-size:12px;color:#888;margin-bottom:10px">Money collected on behalf of each fundraiser for the range selected above. Donations are not counted in Total Revenue or Net Profit.</div>
+        <table class="mtable">
+          <thead><tr><th>Fundraiser</th><th>Donations</th><th>Amount Collected</th></tr></thead>
+          <tbody id="finance-fundraisers"></tbody>
+        </table>
       </div>
 
       <!-- Item breakdown -->
@@ -1034,6 +1045,32 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
   </div></div>
 </div>
 
+<!-- FUNDRAISERS TAB -->
+<div class="tab-content" id="tab-fundraisers">
+  <div class="admin-scroll"><div class="admin-wrap">
+    <div class="admin-title">💝 Fundraisers</div>
+    <div class="admin-sub">Active fundraisers appear on the ordering page as an optional "Give Back" line. Donations are added to the order total, shown on the kitchen screen and receipt, and tracked separately from sales revenue.</div>
+    <div class="asec">
+      <div class="asec-title">Add Fundraiser</div>
+      <div class="arow">
+        <input type="text" id="new-fr-name" placeholder="Name shown to customers (e.g. Duncan Hall Food Drive)" maxlength="60" style="flex:2">
+        <input type="text" id="new-fr-amounts" placeholder="Amounts, e.g. 1, 2, 5" value="1" style="flex:1">
+        <button class="aadd" onclick="addFundraiser()">Add</button>
+      </div>
+      <div class="arow">
+        <input type="text" id="new-fr-desc" placeholder="Short description (optional) — e.g. 100% of donations go to ..." maxlength="140">
+      </div>
+      <div style="font-size:11px;color:#666;margin-top:2px">Amounts are the buttons customers can pick from. Use a single amount (e.g. <b>1</b>) for a simple "add a dollar" prompt, or several (<b>1, 2, 5</b>) to give them a choice. Customers always get a "No thanks" option.</div>
+    </div>
+    <div class="asec">
+      <div class="asec-title">Your Fundraisers</div>
+      <table class="mtable"><thead><tr><th>Fundraiser</th><th>Amounts</th><th>Raised Today</th><th>Raised All-Time</th><th>Donations</th><th>Status</th><th></th></tr></thead>
+      <tbody id="fundraiser-body"></tbody></table>
+      <div style="font-size:11px;color:#666;margin-top:10px">Totals count every order placed with a donation. Deleting a fundraiser stops it appearing to customers, but past donations stay in your orders and Finance report.</div>
+    </div>
+  </div></div>
+</div>
+
 <!-- LEADERBOARD TAB -->
 <div class="tab-content" id="tab-leaderboard">
   <div class="admin-scroll"><div class="admin-wrap">
@@ -1115,7 +1152,7 @@ emailjs.init("yoxsvEb1uuAA4Ytcd");
 const auth = getAuth(app);
 const db = getDatabase(app);
 
-let orders = {}, menu = [], coupons = [], staffList = [], usersList = [], kitchenDeviceData = {}, loyaltyRecords = {}, loyaltyMilestonesData = {}, waittimeData = {}, brandingData = {}, expensesData = {}, rewardStaffData = {}, specialsData = {}, ratingsData = {}, rmbWorkersData = {}, deliveryLocationsData = {}, deliverySettingsData = {}, loungeDisplayData = {}, drinkPicturesData = {}, saucesData = [], reportsConfigData = {}, nightlyReportsData = {}, weeklyReportsData = {}, monthlyReportsData = {}, customerTiersData = {}, printSettingsData = {};
+let orders = {}, menu = [], coupons = [], staffList = [], usersList = [], kitchenDeviceData = {}, loyaltyRecords = {}, loyaltyMilestonesData = {}, waittimeData = {}, brandingData = {}, expensesData = {}, rewardStaffData = {}, specialsData = {}, ratingsData = {}, rmbWorkersData = {}, deliveryLocationsData = {}, deliverySettingsData = {}, loungeDisplayData = {}, drinkPicturesData = {}, saucesData = [], reportsConfigData = {}, nightlyReportsData = {}, weeklyReportsData = {}, monthlyReportsData = {}, customerTiersData = {}, printSettingsData = {}, fundraisersData = {};
 let tapTimers = {}, currentTab = 'orders';
 
 let currentAdminUID = null, currentAdminName = 'Admin';
@@ -1157,7 +1194,8 @@ function showLoginErr(msg) { const e = document.getElementById('login-err'); e.s
 function showAdmin() {
   document.getElementById('login-wrap').style.display = 'none';
   document.getElementById('admin-app').style.display = 'flex';
-  onValue(ref(db,'orders'), snap => { orders = snap.val()||{}; renderOrders(); renderHistory(); updateBadge(); if(currentTab==='waittime') updateWaitTimeUI(); if(currentTab==='finance') renderFinance(); if(currentTab==='leaderboard') { renderLeaderboard(); renderStaffLeaderboard(); } });
+  onValue(ref(db,'orders'), snap => { orders = snap.val()||{}; renderOrders(); renderHistory(); updateBadge(); if(currentTab==='waittime') updateWaitTimeUI(); if(currentTab==='finance') renderFinance(); if(currentTab==='leaderboard') { renderLeaderboard(); renderStaffLeaderboard(); } if(currentTab==='fundraisers') renderFundraisersAdmin(); });
+  onValue(ref(db,'fundraisers'), snap => { fundraisersData = snap.val()||{}; if(currentTab==='fundraisers') renderFundraisersAdmin(); if(currentTab==='finance') renderFinance(); });
   onValue(ref(db,'menu'), snap => { const d = snap.val(); menu = d ? Object.values(d) : []; renderMenuAdmin(); renderInventory(); populateCouponItemPicker(); if(currentTab==='lounge'){ populateDrinkPictureItemSelect(); renderDrinkPictures(); } });
   onValue(ref(db,'inventorySettings'), snap => { inventorySettingsData = snap.val()||{}; renderInventory(); });
   onValue(ref(db,'sauces'), snap => { const d = snap.val(); saucesData = d ? Object.values(d) : []; if(currentTab==='menu') renderSauces(); });
@@ -1227,7 +1265,7 @@ window.switchTab = function(t) {
   currentTab = t;
   document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
   document.getElementById('tab-'+t).classList.add('active');
-  document.querySelectorAll('.tb').forEach((b,i) => b.classList.toggle('active', ['orders','history','menu','coupons','staff','inventory','loyalty','waittime','finance','branding','specials','ratings','delivery','lounge','reports','leaderboard'][i]===t));
+  document.querySelectorAll('.tb').forEach((b,i) => b.classList.toggle('active', ['orders','history','menu','coupons','staff','inventory','loyalty','waittime','finance','branding','specials','ratings','delivery','lounge','reports','leaderboard','fundraisers'][i]===t));
   if (t==='menu') renderSauces();
   if (t==='specials') renderSpecialsAdmin();
   if (t==='staff') renderRewardStaff();
@@ -1242,6 +1280,7 @@ window.switchTab = function(t) {
   if (t==='history') renderHistory();
   if (t==='reports') { renderReportsSettings(); renderReportsHistory(); renderWeeklyReportsHistory(); renderMonthlyReportsHistory(); }
   if (t==='leaderboard') { renderTierSettings(); renderLeaderboard(); renderStaffLeaderboard(); }
+  if (t==='fundraisers') renderFundraisersAdmin();
 }
 
 // ORDERS
@@ -1258,7 +1297,7 @@ function renderOrders() {
     const card = document.createElement('div');
     card.className = 'oc'+(order.status==='done'?' done':'');
     card.dataset.key = order.fbKey;
-    card.innerHTML = `<div class="oc-hdr"><span class="oc-num">#${order.fbKey.slice(-4).toUpperCase()}</span><span class="oc-name">${order.name}</span><span class="oc-time">${order.time||''}</span></div><div class="oc-body">${order.delivery?`<div style="font-size:11px;color:#3b82f6;font-weight:700;margin-bottom:4px;padding:4px 8px;background:#0e1a2a;border-radius:5px">🚚 DELIVERY → ${order.deliveryLocation||'—'}${order.deliveryPhone?' · 📞 '+order.deliveryPhone:''}</div>`:''}${order.preorder?`<div style="font-size:11px;color:#a78bfa;font-weight:700;margin-bottom:4px;padding:4px 8px;background:#1a1030;border-radius:5px">⏰ PRE-ORDER</div>`:''}${(order.items||[]).map(i=>`<div class="oc-line"><span>${i.qty}x</span> ${i.name}${i.customizations&&i.customizations.length?` <span style="color:#a78bfa">(${i.customizations.map(o=>(o.type==='remove'?'No '+o.name:'+ '+o.name)).join(', ')})</span>`:''}${i.sauces&&i.sauces.length?` <span style="color:#f59e0b">(${i.sauces.join(', ')})</span>`:''}</div>`).join('')}${order.discount>0?`<div style="font-size:11px;color:#22c55e;margin-top:3px">Disc: -$${parseFloat(order.discount).toFixed(2)}</div>`:''}${order.loyaltyDiscount>0?`<div style="font-size:11px;color:#facc15;margin-top:2px">${order.loyaltyLabel||'Loyalty Reward'}: -$${parseFloat(order.loyaltyDiscount).toFixed(2)}</div>`:''}${order.comments?`<div style="font-size:11px;color:#f59e0b;margin-top:4px;padding:4px 8px;background:#2a1f0e;border-radius:5px">&#128172; ${order.comments}</div>`:''}<div class="oc-total">$${parseFloat(order.total).toFixed(2)}</div></div><div class="oc-foot"><span class="sbadge ${order.status==='done'?'done':'pending'}">${order.status==='done'?'Done':'In Progress'}</span><button onclick="event.stopPropagation();openEditOrderModal('${order.fbKey}')" style="background:#0e1a2a;border:1px solid #3b82f644;color:#3b82f6;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">✏️ Edit</button><span class="tap-hint">${order.status==='done'?'Completed':'Double-tap to complete'}</span></div>`;
+    card.innerHTML = `<div class="oc-hdr"><span class="oc-num">#${order.fbKey.slice(-4).toUpperCase()}</span><span class="oc-name">${order.name}</span><span class="oc-time">${order.time||''}</span></div><div class="oc-body">${order.delivery?`<div style="font-size:11px;color:#3b82f6;font-weight:700;margin-bottom:4px;padding:4px 8px;background:#0e1a2a;border-radius:5px">🚚 DELIVERY → ${order.deliveryLocation||'—'}${order.deliveryPhone?' · 📞 '+order.deliveryPhone:''}</div>`:''}${order.preorder?`<div style="font-size:11px;color:#a78bfa;font-weight:700;margin-bottom:4px;padding:4px 8px;background:#1a1030;border-radius:5px">⏰ PRE-ORDER</div>`:''}${(order.items||[]).map(i=>`<div class="oc-line"><span>${i.qty}x</span> ${i.name}${i.customizations&&i.customizations.length?` <span style="color:#a78bfa">(${i.customizations.map(o=>(o.type==='remove'?'No '+o.name:'+ '+o.name)).join(', ')})</span>`:''}${i.sauces&&i.sauces.length?` <span style="color:#f59e0b">(${i.sauces.join(', ')})</span>`:''}</div>`).join('')}${(order.donations&&order.donations.length)?order.donations.map(d=>`<div class="oc-line" style="color:#f472b6">💝 Donation – ${escMenuHtml(d.fundraiserName)}: $${parseFloat(d.amount).toFixed(2)}</div>`).join(''):''}${order.discount>0?`<div style="font-size:11px;color:#22c55e;margin-top:3px">Disc: -$${parseFloat(order.discount).toFixed(2)}</div>`:''}${order.loyaltyDiscount>0?`<div style="font-size:11px;color:#facc15;margin-top:2px">${order.loyaltyLabel||'Loyalty Reward'}: -$${parseFloat(order.loyaltyDiscount).toFixed(2)}</div>`:''}${order.comments?`<div style="font-size:11px;color:#f59e0b;margin-top:4px;padding:4px 8px;background:#2a1f0e;border-radius:5px">&#128172; ${order.comments}</div>`:''}<div class="oc-total">$${parseFloat(order.total).toFixed(2)}</div></div><div class="oc-foot"><span class="sbadge ${order.status==='done'?'done':'pending'}">${order.status==='done'?'Done':'In Progress'}</span><button onclick="event.stopPropagation();openEditOrderModal('${order.fbKey}')" style="background:#0e1a2a;border:1px solid #3b82f644;color:#3b82f6;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">✏️ Edit</button><span class="tap-hint">${order.status==='done'?'Completed':'Double-tap to complete'}</span></div>`;
     if (order.status!=='done') card.addEventListener('click',()=>handleTap(order.fbKey,order));
     grid.appendChild(card);
   });
@@ -1319,7 +1358,7 @@ window.renderHistory = function() {
     const hdr=document.createElement('div');hdr.className='hcard-hdr';
     hdr.innerHTML=`<div style="display:flex;align-items:center;gap:8px"><span style="font-size:12px;font-weight:700;color:#ff6b35">#${order.fbKey.slice(-4).toUpperCase()}</span><span style="font-size:12px;font-weight:600">${order.name}</span><span class="hbadge ${order.status==='done'?'done':'pending'}">${order.status==='done'?'Done':'Pending'}</span></div><div style="display:flex;align-items:center;gap:8px"><span style="font-size:12px;font-weight:700;color:#ff6b35">$${parseFloat(order.total||0).toFixed(2)}</span><span style="font-size:11px;color:#666">${order.date||''} ${order.time||''}</span><button onclick="event.stopPropagation();openEditOrderModal('${order.fbKey}')" style="background:#0e1a2a;border:1px solid #3b82f644;color:#3b82f6;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">Edit</button><button onclick="event.stopPropagation();deleteOrder('${order.fbKey}','${order.name}')" style="background:#2a1010;border:1px solid #7f1d1d;color:#ef4444;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">Delete</button><span style="color:#555">&#9660;</span></div>`;
     const body=document.createElement('div');body.className='hcard-body';
-    body.innerHTML=(order.items||[]).map(i=>`<div style="font-size:12px;color:#ccc;padding:2px 0"><span style="color:#777">${i.qty}x</span> ${i.name}${i.customizations&&i.customizations.length?` <span style="color:#a78bfa">(${i.customizations.map(o=>(o.type==='remove'?'No '+o.name:'+ '+o.name)).join(', ')})</span>`:''}${i.sauces&&i.sauces.length?` <span style="color:#f59e0b">(${i.sauces.join(', ')})</span>`:''} — $${(i.price*i.qty).toFixed(2)}</div>`).join('')+(order.discount>0?`<div style="font-size:11px;color:#22c55e;margin-top:5px">Discount (${order.coupon}): -$${parseFloat(order.discount).toFixed(2)}</div>`:'')+(order.loyaltyDiscount>0?`<div style="font-size:11px;color:#facc15;margin-top:3px">${order.loyaltyLabel||'Loyalty Reward'}: -$${parseFloat(order.loyaltyDiscount).toFixed(2)}</div>`:'')+(order.delivery?`<div style="font-size:11px;color:#3b82f6;margin-top:5px">🚚 Delivery (+$${parseFloat(order.deliveryFee||5).toFixed(2)}) → ${order.deliveryLocation||'—'}${order.deliveryPhone?' · 📞 '+order.deliveryPhone:''}</div>`:'')+(order.preorder?`<div style="font-size:11px;color:#a78bfa;margin-top:5px">⏰ Pre-Order (+$${parseFloat(order.preorderFee||1).toFixed(2)})</div>`:'')+`<div style="font-size:11px;color:#888;margin-top:6px">${order.email?'Email: '+order.email:'No email'}${order.coupon?' | Code: '+order.coupon:''}</div>`;
+    body.innerHTML=(order.items||[]).map(i=>`<div style="font-size:12px;color:#ccc;padding:2px 0"><span style="color:#777">${i.qty}x</span> ${i.name}${i.customizations&&i.customizations.length?` <span style="color:#a78bfa">(${i.customizations.map(o=>(o.type==='remove'?'No '+o.name:'+ '+o.name)).join(', ')})</span>`:''}${i.sauces&&i.sauces.length?` <span style="color:#f59e0b">(${i.sauces.join(', ')})</span>`:''} — $${(i.price*i.qty).toFixed(2)}</div>`).join('')+(order.discount>0?`<div style="font-size:11px;color:#22c55e;margin-top:5px">Discount (${order.coupon}): -$${parseFloat(order.discount).toFixed(2)}</div>`:'')+(order.loyaltyDiscount>0?`<div style="font-size:11px;color:#facc15;margin-top:3px">${order.loyaltyLabel||'Loyalty Reward'}: -$${parseFloat(order.loyaltyDiscount).toFixed(2)}</div>`:'')+((order.donations&&order.donations.length)?order.donations.map(d=>`<div style="font-size:11px;color:#f472b6;margin-top:3px">💝 Donation – ${escMenuHtml(d.fundraiserName)}: +$${parseFloat(d.amount).toFixed(2)}</div>`).join(''):'')+(order.delivery?`<div style="font-size:11px;color:#3b82f6;margin-top:5px">🚚 Delivery (+$${parseFloat(order.deliveryFee||5).toFixed(2)}) → ${order.deliveryLocation||'—'}${order.deliveryPhone?' · 📞 '+order.deliveryPhone:''}</div>`:'')+(order.preorder?`<div style="font-size:11px;color:#a78bfa;margin-top:5px">⏰ Pre-Order (+$${parseFloat(order.preorderFee||1).toFixed(2)})</div>`:'')+`<div style="font-size:11px;color:#888;margin-top:6px">${order.email?'Email: '+order.email:'No email'}${order.coupon?' | Code: '+order.coupon:''}</div>`;
     hdr.onclick=()=>body.classList.toggle('open');
     card.appendChild(hdr);card.appendChild(body);el.appendChild(card);
   });
@@ -1379,7 +1418,7 @@ function renderEditOrderModal() {
     <input type="text" id="edit-order-loylabel" value="${escMenuHtml(order.loyaltyLabel||'')}" placeholder="Leave blank if no loyalty reward applied" style="width:100%;background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:7px 9px;font-size:13px;color:#fff;margin-bottom:16px;box-sizing:border-box">
 
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-      <label style="font-size:12px;font-weight:700;color:#fff">Total</label>
+      <label style="font-size:12px;font-weight:700;color:#fff">Total${parseFloat(order.donationTotal||0) > 0 ? ` <span style="font-weight:400;color:#f472b6;font-size:11px">(includes $${parseFloat(order.donationTotal).toFixed(2)} donation)</span>` : ''}</label>
       <button onclick="recalcEditOrderTotal()" style="background:#1a1a1a;border:1px solid #444;color:#ccc;border-radius:5px;padding:3px 9px;font-size:11px;cursor:pointer">Recalculate from items</button>
     </div>
     <input type="number" min="0" step="0.01" id="edit-order-total" value="${parseFloat(order.total||0).toFixed(2)}" style="width:100%;background:#1a1a1a;border:1px solid #ff6b35;border-radius:6px;padding:9px 11px;font-size:15px;font-weight:700;color:#ff6b35;margin-bottom:16px;box-sizing:border-box">
@@ -1415,7 +1454,8 @@ window.recalcEditOrderTotal = function() {
   const preorderOn = document.getElementById('edit-order-preorder').checked;
   const deliveryFee = deliveryOn ? parseFloat(order.deliveryFee || deliverySettingsData.deliveryFee || 5) : 0;
   const preorderFee = preorderOn ? parseFloat(order.preorderFee || deliverySettingsData.preorderFee || 1) : 0;
-  const total = Math.max(0, sub - disc - loyDisc) + deliveryFee + preorderFee;
+  const donation = parseFloat(order.donationTotal || 0); // donations stay on the order when it's edited
+  const total = Math.max(0, sub - disc - loyDisc) + deliveryFee + preorderFee + donation;
   document.getElementById('edit-order-total').value = total.toFixed(2);
 }
 
@@ -1764,6 +1804,77 @@ window.addCoupon = async function() {
 }
 
 window.deleteCoupon = async function(key) { await remove(ref(db,`coupons/${key}`)); }
+
+// FUNDRAISERS
+function fundraiserTotalsFromOrders(orderList) {
+  // Groups donations by fundraiser id. Uses the name saved on the order so history survives a rename/delete.
+  const out = {};
+  orderList.forEach(o => (o.donations || []).forEach(d => {
+    const id = d.fundraiserId || ('name:' + (d.fundraiserName || 'Unknown'));
+    if (!out[id]) out[id] = { id, name: d.fundraiserName || 'Unknown', count: 0, total: 0 };
+    out[id].count += 1;
+    out[id].total += parseFloat(d.amount) || 0;
+  }));
+  return out;
+}
+
+window.renderFundraisersAdmin = function() {
+  const body = document.getElementById('fundraiser-body');
+  if (!body) return;
+  const all = Object.values(orders);
+  const startToday = new Date(); startToday.setHours(0,0,0,0);
+  const todays = all.filter(o => typeof o.createdAt === 'number' && o.createdAt >= startToday.getTime());
+  const allTotals = fundraiserTotalsFromOrders(all);
+  const todayTotals = fundraiserTotalsFromOrders(todays);
+  const entries = Object.entries(fundraisersData);
+  if (!entries.length) {
+    body.innerHTML = '<tr><td colspan="7" style="color:#555;text-align:center;padding:16px">No fundraisers yet — add one above.</td></tr>';
+    return;
+  }
+  body.innerHTML = '';
+  entries.sort((a,b) => (b[1].createdAt||0) - (a[1].createdAt||0)).forEach(([key, f]) => {
+    const t = allTotals[key] || { total: 0, count: 0 };
+    const td = todayTotals[key] || { total: 0 };
+    const active = f.active !== false;
+    const amounts = (Array.isArray(f.amounts) ? f.amounts : [1]).map(a => '$' + parseFloat(a).toFixed(2).replace(/\.00$/, '')).join(', ');
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td><div style="font-weight:700;color:#f472b6">${escMenuHtml(f.name)}</div>${f.description ? `<div style="font-size:11px;color:#888;margin-top:2px">${escMenuHtml(f.description)}</div>` : ''}</td>
+      <td>${amounts}</td>
+      <td style="color:#22c55e;font-weight:700">$${td.total.toFixed(2)}</td>
+      <td style="color:#22c55e;font-weight:700">$${t.total.toFixed(2)}</td>
+      <td>${t.count}</td>
+      <td><button onclick="toggleFundraiser('${key}')" style="background:${active ? '#052e16' : '#2a2a2a'};border:1px solid ${active ? '#22c55e66' : '#444'};color:${active ? '#22c55e' : '#888'};border-radius:12px;padding:3px 11px;font-size:11px;font-weight:700;cursor:pointer">${active ? 'Live' : 'Off'}</button></td>
+      <td><button onclick="deleteFundraiser('${key}')" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:12px">Delete</button></td>`;
+    body.appendChild(tr);
+  });
+};
+
+window.addFundraiser = async function() {
+  const name = document.getElementById('new-fr-name').value.trim();
+  const description = document.getElementById('new-fr-desc').value.trim();
+  const amounts = [...new Set(document.getElementById('new-fr-amounts').value.split(',').map(x => parseFloat(x.replace(/[^0-9.]/g,''))).filter(n => n > 0 && n <= 1000).map(n => Math.round(n*100)/100))].sort((a,b) => a-b);
+  if (!name) { alert('Give the fundraiser a name'); return; }
+  if (!amounts.length) { alert('Enter at least one donation amount, e.g. 1 or 1, 2, 5'); return; }
+  if (amounts.length > 5) { alert('Please use 5 amounts or fewer'); return; }
+  try {
+    await push(ref(db, 'fundraisers'), { name, description: description || null, amounts, active: true, createdAt: Date.now() });
+    ['new-fr-name','new-fr-desc'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('new-fr-amounts').value = '1';
+  } catch(e) { alert('Could not save fundraiser: ' + e.message); }
+};
+
+window.toggleFundraiser = async function(key) {
+  const f = fundraisersData[key]; if (!f) return;
+  try { await update(ref(db, 'fundraisers/' + key), { active: f.active === false }); }
+  catch(e) { alert('Could not update fundraiser: ' + e.message); }
+};
+
+window.deleteFundraiser = async function(key) {
+  const f = fundraisersData[key]; if (!f) return;
+  if (!confirm(`Delete "${f.name}"?\n\nIt will disappear from the ordering page. Donations already collected stay in your orders and Finance report. (Use the Live/Off button instead if you may run it again.)`)) return;
+  try { await remove(ref(db, 'fundraisers/' + key)); }
+  catch(e) { alert('Could not delete fundraiser: ' + e.message); }
+};
 
 // STAFF
 // PIN-based kitchen login — the shared kitchen touchscreen signs in once as one device
@@ -3076,7 +3187,7 @@ async function computeNightlyStats(dateKey) {
   const todays = allOrders.filter(o => typeof o.createdAt === 'number' && o.createdAt >= start && o.createdAt <= end);
 
   const totalOrders = todays.length;
-  const totalRevenue = round2(todays.reduce((s,o) => s + (parseFloat(o.total)||0), 0));
+  const totalRevenue = round2(todays.reduce((s,o) => s + (parseFloat(o.total)||0) - (parseFloat(o.donationTotal)||0), 0)); // donations excluded — passed through to the fundraiser
   const avgOrder = totalOrders ? round2(totalRevenue/totalOrders) : 0;
   const deliveryCount = todays.filter(o => o.delivery).length;
   const preorderCount = todays.filter(o => o.preorder).length;
@@ -3692,7 +3803,9 @@ window.renderFinance = function() {
     });
   }
 
-  const totalRev = arr.reduce((s,o) => s + parseFloat(o.total||0), 0);
+  // Donations ride along in order.total but belong to the fundraiser, so keep them out of revenue / profit
+  const donationsTotal = arr.reduce((s,o) => s + parseFloat(o.donationTotal||0), 0);
+  const totalRev = arr.reduce((s,o) => s + parseFloat(o.total||0), 0) - donationsTotal;
   const totalOrders = arr.length;
   const totalDisc = arr.reduce((s,o) => s + parseFloat(o.discount||0) + parseFloat(o.loyaltyDiscount||0), 0);
   const couponDisc = arr.reduce((s,o) => s + parseFloat(o.discount||0), 0);
@@ -3706,6 +3819,7 @@ window.renderFinance = function() {
     {label:'Total Orders', val:totalOrders, color:'#ff6b35'},
     {label:'Avg Order', val:'$'+avgOrder.toFixed(2), color:'#f59e0b'},
     {label:'Discounts Given', val:'-$'+totalDisc.toFixed(2), color:'#ef4444'},
+    {label:'Donations Collected', val:'$'+donationsTotal.toFixed(2), color:'#f472b6'},
   ].map(s => `<div style="background:#1e1e1e;border:1px solid #2a2a2a;border-radius:10px;padding:14px 16px">
     <div style="font-size:10px;color:#666;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">${s.label}</div>
     <div style="font-size:22px;font-weight:800;color:${s.color}">${s.val}</div>
@@ -3725,7 +3839,7 @@ window.renderFinance = function() {
       d = o.date || 'Unknown';
     }
     if (!byDay[d]) byDay[d] = {revenue:0, orders:0, date:d, sortTs};
-    byDay[d].revenue += parseFloat(o.total||0);
+    byDay[d].revenue += parseFloat(o.total||0) - parseFloat(o.donationTotal||0);
     byDay[d].orders++;
     if (sortTs > byDay[d].sortTs) byDay[d].sortTs = sortTs;
   });
@@ -3747,6 +3861,18 @@ window.renderFinance = function() {
         <div style="font-size:12px;font-weight:700;color:#22c55e;width:70px;text-align:right">$${d.revenue.toFixed(2)}</div>
         <div style="font-size:11px;color:#555;width:60px;text-align:right">${d.orders} order${d.orders!==1?'s':''}</div>
       </div>`).join('');
+  }
+
+  // Fundraiser donations for this range (includes live fundraisers that haven't collected anything yet)
+  const frTotals = fundraiserTotalsFromOrders(arr);
+  Object.entries(fundraisersData).forEach(([id, f]) => { if (!frTotals[id]) frTotals[id] = { id, name: f.name, count: 0, total: 0 }; });
+  const frEl = document.getElementById('finance-fundraisers');
+  if (frEl) {
+    const rows = Object.values(frTotals).sort((a,b) => b.total - a.total);
+    frEl.innerHTML = rows.length
+      ? rows.map(r => `<tr><td style="font-weight:600;color:#f472b6">${escMenuHtml((fundraisersData[r.id] && fundraisersData[r.id].name) || r.name)}</td><td>${r.count}</td><td style="color:#22c55e;font-weight:700">$${r.total.toFixed(2)}</td></tr>`).join('')
+        + `<tr><td style="font-weight:700;color:#fff">Total</td><td style="font-weight:700">${rows.reduce((a,r)=>a+r.count,0)}</td><td style="color:#22c55e;font-weight:800">$${donationsTotal.toFixed(2)}</td></tr>`
+      : '<tr><td colspan="3" style="color:#555;text-align:center;padding:16px;font-size:12px">No fundraisers or donations in this range</td></tr>';
   }
 
   // Item breakdown

@@ -69,6 +69,14 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 .loyalty-reward.credit{display:block;background:#052e16;color:#22c55e}
 .credit-toggle-btn{background:none;border:1px solid currentColor;color:inherit;border-radius:5px;padding:2px 8px;font-size:10px;font-weight:700;cursor:pointer;margin-left:6px}
 .credit-toggle-btn:hover{opacity:0.8}
+.fundraiser-box{padding:12px 14px;border-top:1px solid #2a2a2a}
+.fr-card{background:#1f1620;border:1px solid #f472b655;border-radius:10px;padding:11px 12px;margin-top:8px}
+.fr-name{font-size:13px;font-weight:700;color:#f9a8d4}
+.fr-desc{font-size:11px;color:#aaa;margin:3px 0 9px;line-height:1.4}
+.fr-chips{display:flex;flex-wrap:wrap;gap:6px}
+.fr-chip{background:#1a1a1a;border:1.5px solid #444;color:#ccc;border-radius:18px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s}
+.fr-chip:hover{border-color:#f472b6}
+.fr-chip.on{background:#f472b6;border-color:#f472b6;color:#1a1a1a}
 .place-btn{width:100%;background:#ff6b35;color:#fff;border:none;border-radius:8px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;margin-top:10px;transition:all 0.15s}
 .place-btn:hover{background:#e55a2b}
 .place-btn:active{transform:scale(0.98)}
@@ -218,12 +226,14 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
         </label>
       </div>
     </div>
+    <div class="fundraiser-box" id="fundraiser-box" style="display:none"></div>
     <div class="cart-footer">
       <div class="tr"><span>Subtotal</span><span id="subtotal">$0.00</span></div>
       <div class="tr disc" id="disc-row" style="display:none"><span id="disc-label">Discount</span><span id="disc-amt">-$0.00</span></div>
       <div class="tr loyalty" id="loyalty-row" style="display:none"><span id="loyalty-label">Loyalty</span><span id="loyalty-amt">-$0.00</span></div>
       <div class="tr" id="delivery-fee-row" style="display:none;color:#ff6b35"><span>🚚 Delivery Fee</span><span>+$5.00</span></div>
       <div class="tr" id="preorder-fee-row" style="display:none;color:#ff6b35"><span>⏰ Pre-Order Fee</span><span>+$1.00</span></div>
+      <div id="donation-rows"></div>
       <div class="tr total"><span>Total</span><span id="cart-total">$0.00</span></div>
       <button class="place-btn" onclick="placeOrder()">Place Order</button>
     </div>
@@ -255,7 +265,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getDatabase, ref, push, onValue, serverTimestamp, get, update, set, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+import { getDatabase, ref, push, onValue, serverTimestamp, get, update, set, runTransaction, query, orderByChild, equalTo } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCG5nhzdAHBTGg2eXXmhqH8pF8S8qFqM7o",
@@ -277,6 +287,7 @@ let ordersModalLookupMode = false;
 
 let menu = [], coupons = [], cart = [], appliedCoupon = null, activeBranding = {}, openOrderCount = 0;
 let loyaltyData = null, loyaltyDiscount = 0, useCredit = true;
+let fundraisers = [], donationSelections = {}; // donationSelections: fundraiser key -> chosen $ amount
 let customMilestones = {};
 let deliveryLocations = {};
 let deliveryOn = false, preorderOn = false;
@@ -898,7 +909,7 @@ window.changeQty = function(cartKey, d) {
 }
 
 window.clearCart = function() {
-  cart = []; appliedCoupon = null;
+  cart = []; appliedCoupon = null; donationSelections = {}; renderFundraiserBox();
   document.getElementById('disc-code').value = '';
   document.getElementById('disc-msg').className = 'disc-msg';
   renderCart();
@@ -993,16 +1004,85 @@ function updateTotals() {
   const baseTotal = Math.max(0, sub-disc-loyDisc);
   const deliveryFee = (deliveryOn && isDeliveryWindowOpen()) ? deliveryFeeAmount : 0;
   const preorderFee = (preorderOn && isPreorderWindowOpen()) ? preorderFeeAmount : 0;
-  const grandTotal = Math.round((baseTotal + deliveryFee + preorderFee) * 100) / 100;
+  // Optional fundraiser donations (only count once there's something in the cart)
+  const donations = cart.length
+    ? fundraisers.filter(f => donationSelections[f.fbKey] > 0).map(f => ({
+        fundraiserId: f.fbKey, fundraiserName: f.name, amount: Math.round(donationSelections[f.fbKey] * 100) / 100 }))
+    : [];
+  const donationTotal = Math.round(donations.reduce((a, d) => a + d.amount, 0) * 100) / 100;
+  const donoEl = document.getElementById('donation-rows');
+  if (donoEl) donoEl.innerHTML = donations.map(d =>
+    `<div class="tr" style="color:#f472b6"><span>💝 ${escapeHtmlAttr(d.fundraiserName)}</span><span>+$${d.amount.toFixed(2)}</span></div>`).join('');
+  const grandTotal = Math.round((baseTotal + deliveryFee + preorderFee + donationTotal) * 100) / 100;
   const delivRow = document.getElementById('delivery-fee-row');
   if (delivRow) delivRow.style.display = deliveryFee > 0 ? 'flex' : 'none';
   const preRow = document.getElementById('preorder-fee-row');
   if (preRow) preRow.style.display = preorderFee > 0 ? 'flex' : 'none';
   document.getElementById('cart-total').textContent = `$${grandTotal.toFixed(2)}`;
-  return {sub, disc, loyDisc, plan, deliveryFee, preorderFee, total: grandTotal};
+  return {sub, disc, loyDisc, plan, deliveryFee, preorderFee, donations, donationTotal, total: grandTotal};
 }
 
-window.applyDiscount = function() {
+// ── FUNDRAISERS (admin-managed "round up / add a dollar" donations) ──
+onValue(ref(db, 'fundraisers'), snap => {
+  const raw = snap.val() || {};
+  fundraisers = Object.entries(raw)
+    .map(([k, v]) => {
+      const amounts = (Array.isArray(v.amounts) ? v.amounts : [1]).map(a => parseFloat(a)).filter(a => a > 0);
+      return { fbKey: k, name: v.name || 'Fundraiser', description: v.description || '', active: v.active !== false, amounts: amounts.length ? amounts : [1], createdAt: v.createdAt || 0 };
+    })
+    .filter(f => f.active)
+    .sort((a, b) => a.createdAt - b.createdAt);
+  // Drop any selection whose fundraiser was switched off / removed, or whose amount is no longer offered
+  Object.keys(donationSelections).forEach(k => {
+    const f = fundraisers.find(x => x.fbKey === k);
+    if (!f || !f.amounts.includes(donationSelections[k])) delete donationSelections[k];
+  });
+  renderFundraiserBox();
+  updateTotals();
+});
+
+function renderFundraiserBox() {
+  const box = document.getElementById('fundraiser-box');
+  if (!box) return;
+  if (!fundraisers.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  box.style.display = 'block';
+  box.innerHTML = '<div class="oo-title">💝 Give Back</div>' + fundraisers.map(f => {
+    const sel = donationSelections[f.fbKey] || 0;
+    const chips = [`<button type="button" class="fr-chip${sel ? '' : ' on'}" onclick="setDonation('${f.fbKey}',0)">No thanks</button>`]
+      .concat(f.amounts.map(a => `<button type="button" class="fr-chip${sel === a ? ' on' : ''}" onclick="setDonation('${f.fbKey}',${a})">+$${a.toFixed(2)}</button>`)).join('');
+    return `<div class="fr-card">
+      <div class="fr-name">${escapeHtmlAttr(f.name)}</div>
+      ${f.description ? `<div class="fr-desc">${escapeHtmlAttr(f.description)}</div>` : '<div style="height:8px"></div>'}
+      <div class="fr-chips">${chips}</div>
+    </div>`;
+  }).join('');
+}
+
+window.setDonation = function(key, amt) {
+  amt = parseFloat(amt) || 0;
+  if (amt > 0) donationSelections[key] = amt; else delete donationSelections[key];
+  renderFundraiserBox();
+  updateTotals();
+};
+
+// ── ASSIGNED CODES: one use per customer per day ──
+// "Day" is the stand's local day (America/New_York) so it matches the delivery/pre-order windows.
+const COUPON_DAY_TZ = 'America/New_York';
+function couponDayKey(ms) { return new Date(ms).toLocaleDateString('en-CA', { timeZone: COUPON_DAY_TZ }); } // YYYY-MM-DD
+async function assignedCouponUsedToday(code, email) {
+  email = (email || '').trim().toLowerCase();
+  let snap;
+  try { snap = await get(query(ref(db, 'orders'), orderByChild('email'), equalTo(email))); }
+  catch (e) { snap = await get(ref(db, 'orders')); } // fall back to scanning everything if the filtered query isn't allowed
+  const today = couponDayKey(Date.now());
+  const rows = snap.val() ? Object.values(snap.val()) : [];
+  return rows.some(o => (o.email || '').toLowerCase() === email
+    && String(o.coupon || '').toUpperCase() === String(code).toUpperCase()
+    && typeof o.createdAt === 'number' && couponDayKey(o.createdAt) === today);
+}
+const COUPON_USED_TODAY_MSG = "You've already used this code today. Assigned codes can be used once per day — it'll work again tomorrow.";
+
+window.applyDiscount = async function() {
   const code = document.getElementById('disc-code').value.trim().toUpperCase();
   const msg = document.getElementById('disc-msg');
   if (!code) { msg.className='disc-msg err'; msg.textContent='Enter a code first.'; return; }
@@ -1024,6 +1104,10 @@ window.applyDiscount = function() {
     const enteredEmail = (document.getElementById('cust-email').value || '').trim().toLowerCase();
     if (!enteredEmail) { msg.className='disc-msg err'; msg.textContent='Enter your email above first — this code is reserved for a specific customer.'; return; }
     if (enteredEmail !== cp.assignedEmail) { msg.className='disc-msg err'; msg.textContent='This code is reserved for another customer.'; return; }
+    try {
+      msg.className='disc-msg'; msg.textContent='Checking code...';
+      if (await assignedCouponUsedToday(cp.code, enteredEmail)) { msg.className='disc-msg err'; msg.textContent=COUPON_USED_TODAY_MSG; return; }
+    } catch(e) { console.error('Daily coupon check failed:', e); msg.className='disc-msg err'; msg.textContent="Couldn't verify this code right now. Please try again."; return; }
   }
   const sub = cart.reduce((s,c)=>s+c.price*c.qty,0);
   if (cp.minOrder && sub < cp.minOrder) { msg.className='disc-msg err'; msg.textContent=`Minimum order $${cp.minOrder.toFixed(2)} required.`; return; }
@@ -1076,6 +1160,23 @@ window.placeOrder = async function() {
     if ((appliedCoupon.activeFrom && now < appliedCoupon.activeFrom) || (appliedCoupon.activeUntil && now > appliedCoupon.activeUntil)) {
       alert(`The code "${appliedCoupon.code}" is no longer active. Please remove it to continue, or apply a different code.`);
       return;
+    }
+    if (appliedCoupon.assignedEmail) {
+      // Email may have been edited after the code was applied, so re-check who is actually ordering
+      if (email !== appliedCoupon.assignedEmail) {
+        alert(`The code "${appliedCoupon.code}" is reserved for another customer. Please remove it to continue.`);
+        return;
+      }
+      try {
+        if (await assignedCouponUsedToday(appliedCoupon.code, email)) {
+          alert(`${COUPON_USED_TODAY_MSG}\n\nPlease remove the code to continue.`);
+          return;
+        }
+      } catch(e) {
+        console.error('Daily coupon check failed:', e);
+        alert("Couldn't verify your discount code right now. Please try again in a moment.");
+        return;
+      }
     }
   }
 
@@ -1171,6 +1272,7 @@ window.placeOrder = async function() {
     deliveryFee: t.deliveryFee,
     preorder: !!preorderOn,
     preorderFee: t.preorderFee,
+    donations: t.donations.length ? t.donations : null, donationTotal: t.donationTotal || 0,
     loyaltyOrderNum: newOrderCount, total: t.total,
     coupon: appliedCoupon ? appliedCoupon.code : null,
     waitTime: currentWaitTime || '',
@@ -1195,7 +1297,7 @@ window.placeOrder = async function() {
       const token = { name, email, ts: Date.now() };
       localStorage.setItem('rmbOrderToken', JSON.stringify(token));
     } catch(e) {}
-    cart = []; appliedCoupon = null; loyaltyData = null; loyaltyDiscount = 0; useCredit = true;
+    cart = []; appliedCoupon = null; loyaltyData = null; loyaltyDiscount = 0; useCredit = true; donationSelections = {}; renderFundraiserBox();
     deliveryOn = false; preorderOn = false;
     ['delivery-toggle','preorder-toggle'].forEach(function(id) {
       var el = document.getElementById(id); if (el) el.checked = false;
