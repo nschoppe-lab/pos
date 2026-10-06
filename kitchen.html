@@ -38,7 +38,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 .hint{font-size:11px;color:#666}
 .logout-btn{background:none;border:1px solid #333;color:#888;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer}
 .logout-btn:hover{border-color:#555;color:#ccc}
-.orders-grid{flex:1;padding:12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;align-content:start;overflow-y:auto}
+.orders-grid{flex:1;padding:12px 12px 96px;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;align-content:start;overflow-y:auto}
 .empty{text-align:center;padding:60px;color:#555;grid-column:1/-1}
 .oc{background:#1e1e1e;border:1.5px solid #333;border-radius:10px;overflow:hidden;cursor:pointer;user-select:none;transition:border-color 0.15s;position:relative}
 .oc:hover{border-color:#ff6b35}
@@ -50,6 +50,13 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 .oc-timer.alert{color:#ef4444}
 .oc-hdr{padding:10px 14px;background:#252525;display:flex;justify-content:space-between;align-items:center}
 .oc-num{font-size:13px;font-weight:700;color:#ff6b35}
+.clock-widget{position:fixed;right:14px;bottom:14px;z-index:50;background:#111111ee;border:1.5px solid #333;border-radius:12px;padding:10px 16px;text-align:right;pointer-events:none;box-shadow:0 4px 18px #0008}
+.clock-time{font-size:30px;font-weight:800;color:#fff;line-height:1.1;font-variant-numeric:tabular-nums;white-space:nowrap}
+.clock-tz{font-size:12px;font-weight:700;color:#888;margin-left:6px}
+.clock-close{font-size:14px;font-weight:700;color:#9ca3af;margin-top:4px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.clock-close.soon{color:#f59e0b}
+.clock-close.urgent{color:#ef4444}
+.clock-close.off{color:#666}
 .oc-bignum{font-size:38px;font-weight:900;line-height:1;color:#fff;background:#ff6b35;border-radius:9px;min-width:58px;padding:4px 10px;text-align:center;font-variant-numeric:tabular-nums}
 .oc.working .oc-bignum{background:#ff2fb0}
 .oc-bignum.none{background:#333;color:#888}
@@ -180,6 +187,10 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
     </div>
   </div>
   <div class="orders-grid" id="orders-grid"><div class="empty">No open orders</div></div>
+  <div class="clock-widget" id="clock-widget">
+    <div><span class="clock-time" id="clock-time">--:--:--</span><span class="clock-tz" id="clock-tz">ET</span></div>
+    <div class="clock-close off" id="clock-close"></div>
+  </div>
 </div>
 
 <div class="modal-bg" id="modal" style="display:none" onclick="if(event.target===this)closeModal()">
@@ -1037,6 +1048,63 @@ function updateReopenUI() {
     btn.style.display = (w.closed === true) ? 'inline-flex' : 'none';
   }
 }
+
+// ── CLOCK (Eastern time) + COUNTDOWN TO CLOSING ──
+const CLOCK_TZ = 'America/New_York';
+const clockFmt = new Intl.DateTimeFormat('en-US', { timeZone: CLOCK_TZ, hourCycle: 'h23', weekday: 'long', hour: 'numeric', minute: 'numeric', second: 'numeric' });
+const clockTzFmt = new Intl.DateTimeFormat('en-US', { timeZone: CLOCK_TZ, timeZoneName: 'short' });
+
+function fmtCountdown(totalSecs) {
+  totalSecs = Math.max(0, totalSecs);
+  const h = Math.floor(totalSecs / 3600), m = Math.floor((totalSecs % 3600) / 60), sec = totalSecs % 60;
+  return (h > 0 ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(sec).padStart(2, '0');
+}
+function fmtClock12(hhmm) {
+  const [h, m] = (hhmm || '').split(':').map(Number);
+  return `${((h + 11) % 12) + 1}:${String(m || 0).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
+}
+
+function updateClock() {
+  const timeEl = document.getElementById('clock-time');
+  const closeEl = document.getElementById('clock-close');
+  if (!timeEl || !closeEl) return;
+  const now = new Date();
+  const p = {}; clockFmt.formatToParts(now).forEach(x => { p[x.type] = x.value; });
+  const hr = parseInt(p.hour, 10), mn = parseInt(p.minute, 10), sc = parseInt(p.second, 10);
+  timeEl.textContent = `${((hr + 11) % 12) + 1}:${String(mn).padStart(2, '0')}:${String(sc).padStart(2, '0')} ${hr >= 12 ? 'PM' : 'AM'}`;
+  const tz = (clockTzFmt.formatToParts(now).find(x => x.type === 'timeZoneName') || {}).value || 'ET';
+  document.getElementById('clock-tz').textContent = tz;
+
+  const w = waittimeSettings || {};
+  const nowSecs = hr * 3600 + mn * 60 + sc;
+  let text = '', cls = 'off';
+  const reopenLeft = (w.tempReopenUntil && w.closed === false) ? Math.round((w.tempReopenUntil - now.getTime()) / 1000) : 0;
+  const h = w['hours_' + p.weekday];
+  if (reopenLeft > 0) {
+    // "Reopen 5 minutes" grace period overrides the normal schedule
+    text = `Closes in ${fmtCountdown(reopenLeft)}`;
+    cls = reopenLeft <= 300 ? 'urgent' : 'soon';
+  } else if (!h || h.enabled !== true) {
+    text = 'Closed today';
+  } else {
+    const [sh, sm] = (h.open || '10:00').split(':').map(Number);
+    const [eh, em] = (h.close || '22:00').split(':').map(Number);
+    const openSecs = sh * 3600 + sm * 60, closeSecs = eh * 3600 + em * 60;
+    if (nowSecs < openSecs) {
+      text = `Opens at ${fmtClock12(h.open || '10:00')}`;
+    } else if (nowSecs < closeSecs) {
+      const left = closeSecs - nowSecs;
+      text = `Closes in ${fmtCountdown(left)}`;
+      cls = left <= 300 ? 'urgent' : left <= 900 ? 'soon' : '';
+    } else {
+      text = 'Closed for the night';
+    }
+  }
+  closeEl.textContent = text;
+  closeEl.className = 'clock-close' + (cls ? ' ' + cls : '');
+}
+setInterval(updateClock, 1000);
+updateClock();
 
 // ── SCHEDULE ENFORCEMENT + NIGHTLY REPORT TRIGGER ────────────────
 // Runs every 15s so the ordering page reliably closes/reopens on schedule (not just on
