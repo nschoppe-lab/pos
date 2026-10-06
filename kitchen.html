@@ -178,6 +178,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
     </div>
     <div style="display:flex;align-items:center;gap:8px">
       <span class="logout-btn" id="reopen-status" style="display:none;background:#0e2a1a;border-color:#22c55e44;color:#22c55e;cursor:default"></span>
+      <button class="logout-btn" id="usb-printer-btn" onclick="connectUsbPrinter()" style="background:#1a1a1a;border-color:#f59e0b66;color:#f59e0b">🔌 Connect Printer</button>
       <button class="logout-btn" id="print-station-btn" onclick="togglePrintStation()" style="background:#1a1a1a;border-color:#444;color:#888">🖨️ Print Station: Off</button>
       <button class="logout-btn" id="mute-btn" onclick="toggleAlertMute()" style="background:#1a1a1a;border-color:#22c55e44;color:#22c55e">🔔 Alerts On</button>
       <button class="logout-btn" onclick="showStaffLeaderboard()" style="background:#1a1a1a;border-color:#f59e0b44;color:#f59e0b">🏆 Leaderboard</button>
@@ -950,7 +951,227 @@ function buildTicketHtml(order) {
     </div>`;
 }
 
+// ── DIRECT USB RECEIPT PRINTING (WebUSB + ESC/POS, no driver needed) ──
+// Paper width in characters at normal size. 80mm paper = 48 (use 42 if your printer's print area is 72mm, 32 for 58mm paper).
+const ESCPOS_COLS = 48;
+let usbPrinter = null; // { device, ifaceNum, ep } once connected
+let usbWriteChain = Promise.resolve();
+
+function updateUsbBtn() {
+  const b = document.getElementById('usb-printer-btn');
+  if (!b) return;
+  if (!navigator.usb) { b.style.display = 'none'; return; }
+  const on = !!usbPrinter;
+  b.textContent = on ? '🔌 Printer: Connected' : '🔌 Connect Printer';
+  b.style.background = on ? '#0e2a1a' : '#1a1a1a';
+  b.style.borderColor = on ? '#22c55e' : '#f59e0b66';
+  b.style.color = on ? '#22c55e' : '#f59e0b';
+}
+
+function flashPrintError(text) {
+  flashPrintNote(text);
+  const el = document.getElementById('print-note');
+  if (!el) return;
+  el.style.background = '#2a0e0e'; el.style.borderColor = '#ef444466'; el.style.color = '#ef4444';
+  clearTimeout(window._printNoteTimer);
+  window._printNoteTimer = setTimeout(() => {
+    el.style.display = 'none';
+    el.style.background = '#0e2a1a'; el.style.borderColor = '#22c55e66'; el.style.color = '#22c55e';
+  }, 15000);
+}
+
+async function openUsbDevice(device) {
+  if (!device.opened) await device.open();
+  if (device.configuration === null) await device.selectConfiguration(1);
+  let found = null;
+  // Prefer a standard USB printer-class interface (7); fall back to vendor-specific (255)
+  for (const cls of [7, 255]) {
+    for (const iface of device.configuration.interfaces) {
+      for (const alt of iface.alternates) {
+        if (alt.interfaceClass !== cls) continue;
+        const out = alt.endpoints.find(e => e.direction === 'out' && e.type === 'bulk');
+        if (out) { found = { num: iface.interfaceNumber, alt: alt.alternateSetting, ep: out.endpointNumber }; break; }
+      }
+      if (found) break;
+    }
+    if (found) break;
+  }
+  if (!found) throw new Error('No printer interface found on this USB device');
+  await device.claimInterface(found.num);
+  if (found.alt) await device.selectAlternateInterface(found.num, found.alt);
+  usbPrinter = { device, ifaceNum: found.num, ep: found.ep };
+  updateUsbBtn();
+}
+
+window.connectUsbPrinter = async function() {
+  if (!navigator.usb) { alert('This browser does not support WebUSB. Use Chrome on a Chromebook, PC, or Mac.'); return; }
+  try {
+    const device = await navigator.usb.requestDevice({ filters: [{ classCode: 7 }, { classCode: 255 }] });
+    await openUsbDevice(device);
+    flashPrintNote('🔌 Printer connected — sending test ticket');
+    await usbSend(escposTicket({
+      orderNumber: 'TEST', name: 'Printer Test',
+      items: [{ qty: 1, name: 'Test Burger', customizations: [{ type: 'remove', name: 'Onions' }, { type: 'add', name: 'Cheese' }], sauces: ['Ranch'] }],
+      total: 0, comments: 'If you can read this, printing works!'
+    }));
+  } catch (e) {
+    if (e && e.name === 'NotFoundError') return; // person closed the picker
+    console.error('USB printer connect failed:', e);
+    usbPrinter = null; updateUsbBtn();
+    alert('Could not connect to the printer: ' + (e && e.message ? e.message : e) +
+      '\n\nIf it says the interface could not be claimed, remove the printer from ChromeOS Settings → Printers (and unplug/replug it), then try again.');
+  }
+};
+
+function usbSend(bytes) {
+  const job = usbWriteChain.then(async () => {
+    if (!usbPrinter) throw new Error('Printer not connected');
+    for (let i = 0; i < bytes.length; i += 4096) {
+      const res = await usbPrinter.device.transferOut(usbPrinter.ep, bytes.slice(i, i + 4096));
+      if (res.status !== 'ok') throw new Error('USB transfer ' + res.status);
+    }
+  });
+  usbWriteChain = job.catch(() => {});
+  return job;
+}
+
+async function autoReconnectUsb() {
+  if (!navigator.usb || usbPrinter) return;
+  try {
+    const devs = await navigator.usb.getDevices(); // previously-approved devices, no click needed
+    for (const d of devs) { try { await openUsbDevice(d); return; } catch (e) { /* try next */ } }
+  } catch (e) { /* ignore */ }
+}
+if (navigator.usb) {
+  navigator.usb.addEventListener('disconnect', ev => {
+    if (usbPrinter && ev.device === usbPrinter.device) {
+      usbPrinter = null; updateUsbBtn();
+      flashPrintError('⚠️ USB printer disconnected');
+    }
+  });
+  navigator.usb.addEventListener('connect', () => autoReconnectUsb());
+}
+updateUsbBtn();
+autoReconnectUsb();
+
+// Builds the ticket as raw ESC/POS bytes. Mirrors buildTicketHtml, using the admin "Receipt Text Size" slider.
+function escposTicket(order) {
+  const enc = new TextEncoder();
+  const out = [];
+  const raw = (...b) => { for (const x of b) out.push(x); };
+  const clean = s => String(s == null ? '' : s)
+    .replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2013\u2014]/g, '-').replace(/\u2605/g, '*')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\x20-\x7E\n]/g, '');
+  const text = s => { for (const x of enc.encode(clean(s))) out.push(x); };
+  const size = (w, h) => raw(0x1D, 0x21, ((w - 1) << 4) | (h - 1));
+  const bold = on => raw(0x1B, 0x45, on ? 1 : 0);
+  const align = n => raw(0x1B, 0x61, n);
+  const reverse = on => raw(0x1D, 0x42, on ? 1 : 0);
+  const lf = () => raw(0x0A);
+  const money = v => '$' + (parseFloat(v) || 0).toFixed(2);
+
+  const wrap = (str, width) => {
+    const lines = [];
+    clean(str).split('\n').forEach(para => {
+      let line = '';
+      para.split(/\s+/).filter(Boolean).forEach(word => {
+        while (word.length > width) { // break very long words
+          if (line) { lines.push(line); line = ''; }
+          lines.push(word.slice(0, width)); word = word.slice(width);
+        }
+        if (!line) line = word;
+        else if ((line + ' ' + word).length <= width) line += ' ' + word;
+        else { lines.push(line); line = word; }
+      });
+      lines.push(line);
+    });
+    return lines;
+  };
+  // Print wrapped text at a size multiplier, with optional first-line prefix and hanging indent
+  const para = (str, m = 1, indent = '', first = indent) => {
+    size(m, m);
+    const width = Math.floor(ESCPOS_COLS / m);
+    const lines = wrap(str, Math.max(4, width - indent.length));
+    lines.forEach((l, i) => { text((i === 0 ? first : indent) + l); lf(); });
+    size(1, 1);
+  };
+  const rule = () => { text('-'.repeat(ESCPOS_COLS)); lf(); };
+  const sc = receiptScale; // 0 – 2 (from the admin slider)
+  const numM = sc >= 1.5 ? 4 : sc >= 0.7 ? 3 : 2;
+  const nameM = sc >= 0.7 ? 2 : 1;
+  const bodyM = sc >= 1.5 ? 2 : 1;
+
+  raw(0x1B, 0x40); // init
+  align(0);
+  if (order.orderNumber) { bold(true); para('#' + order.orderNumber, numM); bold(false); }
+  bold(true); para(order.name || '', nameM); bold(false);
+  rule();
+
+  (order.items || []).forEach(i => {
+    bold(true);
+    para(`${i.qty}x ${i.name}${i.isSpecial ? ' *SPECIAL*' : ''}`, bodyM, '   ', '');
+    bold(false);
+    if (i.customizations && i.customizations.length) {
+      para(i.customizations.map(o => (o.type === 'remove' ? 'No ' + o.name : '+ ' + o.name)).join(', '), bodyM, '   ');
+    }
+    if (i.sauces && i.sauces.length) para('Side: ' + i.sauces.join(', '), bodyM, '   ');
+  });
+  (order.donations || []).forEach(d => {
+    const amt = money(d.amount);
+    const left = clean('Donation - ' + d.fundraiserName).slice(0, Math.max(1, ESCPOS_COLS - amt.length - 1));
+    text(left + ' '.repeat(Math.max(1, ESCPOS_COLS - left.length - amt.length)) + amt); lf();
+  });
+
+  if (order.delivery) {
+    lf(); bold(true); text('DELIVERY'); bold(false); lf();
+    para(order.deliveryLocation || '-', 1);
+    if (order.deliveryPhone) para('Phone: ' + order.deliveryPhone, 1);
+  }
+  if (order.coupon) para('Coupon used: ' + order.coupon + (order.discount ? ' (-' + money(order.discount) + ')' : ''), 1);
+  if (order.loyaltyDiscount && parseFloat(order.loyaltyDiscount) > 0) para((order.loyaltyLabel || 'Loyalty Reward') + ' (-' + money(order.loyaltyDiscount) + ')', 1);
+  if (order.creditEarned && parseFloat(order.creditEarned) > 0) para('Earned ' + money(order.creditEarned) + ' credit for next visit!', 1);
+
+  rule();
+  bold(true); para('Total: ' + money(order.total), 1); bold(false);
+
+  if (order.paymentMethod === 'paypal') {
+    lf(); align(1); reverse(true); bold(true); size(2, 1);
+    text(' PAID VIA PAYPAL '); lf();
+    size(1, 1); bold(false); reverse(false); align(0);
+  }
+  if (order.remainingCredit !== undefined && order.remainingCredit !== null && parseFloat(order.remainingCredit) > 0) {
+    lf(); bold(true); text('CREDIT BALANCE'); bold(false); lf();
+    para(money(order.remainingCredit) + ' on file for ' + (order.email || 'this email'), 1);
+  }
+  if (order.comments) {
+    lf(); bold(true); text('MESSAGE'); bold(false); lf();
+    para(order.comments, 1);
+  }
+
+  raw(0x1B, 0x64, 4); // feed 4 lines
+  raw(0x1D, 0x56, 0x01); // partial cut (ignored by printers without a cutter)
+  return new Uint8Array(out);
+}
+
 function printOrderTicket(order, background) {
+  // Preferred path: send the ticket straight to the USB receipt printer, no dialog and no driver.
+  if (usbPrinter) {
+    const bytes = escposTicket(order);
+    usbSend(bytes).catch(async err => {
+      console.error('USB print failed, retrying once:', err);
+      try {
+        const d = usbPrinter && usbPrinter.device;
+        usbPrinter = null;
+        if (d) { await openUsbDevice(d); await usbSend(bytes); return; }
+      } catch (e2) { console.error('Retry failed:', e2); }
+      usbPrinter = null; updateUsbBtn();
+      flashPrintError(`⚠️ PRINTER ERROR — ticket${order.orderNumber ? ' #' + order.orderNumber : ''} did not print. Check the printer, then click Connect Printer.`);
+    });
+    return;
+  }
+  // Fallback: the original browser print dialog (needs a working system printer)
   const innerHtml = buildTicketHtml(order);
   const ticket = document.getElementById('print-ticket');
   if (!ticket) return;
