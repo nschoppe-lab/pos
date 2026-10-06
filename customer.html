@@ -1145,6 +1145,23 @@ window.applyDiscount = async function() {
   if (loyaltyData) renderLoyaltyBanner();
 }
 
+// ── ORDER NUMBERS (1–99, cycling) ──
+// A shared counter hands out the next number; we skip any number still attached to an open order.
+async function getNextOrderNumber() {
+  let inUse = new Set();
+  try {
+    const openSnap = await get(query(ref(db, 'orders'), orderByChild('status'), equalTo('pending')));
+    if (openSnap.val()) Object.values(openSnap.val()).forEach(o => { if (o.orderNumber) inUse.add(Number(o.orderNumber)); });
+  } catch(e) { console.error('Open-order lookup failed (non-fatal):', e); }
+  let n = null;
+  for (let tries = 0; tries < 99; tries++) {
+    const res = await runTransaction(ref(db, 'orderCounter'), cur => ((parseInt(cur) || 0) % 99) + 1);
+    n = res.snapshot.val();
+    if (!inUse.has(n)) break;
+  }
+  return n;
+}
+
 window.placeOrder = async function() {
   const firstName = document.getElementById('cust-fname').value.trim();
   const lastName = document.getElementById('cust-lname').value.trim();
@@ -1261,8 +1278,12 @@ window.placeOrder = async function() {
     await update(ref(db, `loyalty/${loyaltyKey}`), { email, name, orderCount: newOrderCount, credits: newCredits, lastOrder: new Date().toISOString() });
   } catch(e) { console.error('Loyalty error (non-fatal):', e); }
 
+  // Wrap in try/catch so a counter/rules problem never blocks an order from being placed
+  let orderNumber = null;
+  try { orderNumber = await getNextOrderNumber(); } catch(e) { console.error('Order number error (non-fatal):', e); }
+
   const order = {
-    name, email, comments,
+    orderNumber, name, email, comments,
     items: cart.map(c => ({ id: c.id, name: c.name, price: c.price, qty: c.qty, customizations: c.customizations || [], sauces: c.sauces || [], isSpecial: !!c.isSpecial })),
     subtotal: t.sub, discount: t.disc, loyaltyDiscount: t.loyDisc, loyaltyLabel: orderLoyaltyLabel,
     creditEarned: earnedCreditThisOrder || null, remainingCredit: newCredits,
@@ -1319,8 +1340,9 @@ window.placeOrder = async function() {
     var discMsg = document.getElementById('disc-msg');
     if (discMsg) discMsg.className = 'disc-msg';
     hideLoyaltyBanner(); renderCart();
-    var toastMsg = loyaltyMsg ? 'Order placed! ' + loyaltyMsg : "Order placed! We'll email you when it's ready.";
-    showToast(toastMsg, loyaltyMsg ? 6000 : 4000);
+    var numPart = orderNumber ? ' Your order number is #' + orderNumber + '.' : '';
+    var toastMsg = loyaltyMsg ? 'Order placed!' + numPart + ' ' + loyaltyMsg : "Order placed!" + numPart + " We'll email you when it's ready.";
+    showToast(toastMsg, loyaltyMsg ? 7000 : 6000);
   } catch(e) { alert('Error placing order. Please try again.'); console.error(e); }
 }
 
@@ -1429,7 +1451,7 @@ function orderHistoryCardHtml(o, isActive) {
     : '<span style="color:#f59e0b;font-weight:700;font-size:11px;white-space:nowrap">🧑\u200d🍳 Being Prepared</span>';
   return `<div class="order-hist-item"${isActive ? ' style="border-color:#f59e0b66;background:#1f1a0e"' : ''}>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
-      <div class="order-hist-date">${escapeHtmlAttr(dateLabel)}${o.time ? ' · ' + escapeHtmlAttr(o.time) : ''}</div>
+      <div class="order-hist-date">${o.orderNumber ? '<strong style="color:#ff6b35">#' + escapeHtmlAttr(String(o.orderNumber)) + '</strong> · ' : ''}${escapeHtmlAttr(dateLabel)}${o.time ? ' · ' + escapeHtmlAttr(o.time) : ''}</div>
       ${statusHtml}
     </div>
     <div class="order-hist-items">${itemsText}</div>

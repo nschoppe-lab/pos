@@ -50,6 +50,9 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 .oc-timer.alert{color:#ef4444}
 .oc-hdr{padding:10px 14px;background:#252525;display:flex;justify-content:space-between;align-items:center}
 .oc-num{font-size:13px;font-weight:700;color:#ff6b35}
+.oc-bignum{font-size:38px;font-weight:900;line-height:1;color:#fff;background:#ff6b35;border-radius:9px;min-width:58px;padding:4px 10px;text-align:center;font-variant-numeric:tabular-nums}
+.oc.working .oc-bignum{background:#ff2fb0}
+.oc-bignum.none{background:#333;color:#888}
 .oc-name{font-size:13px;font-weight:600}
 .oc-time{font-size:11px;color:#888}
 .oc-body{padding:10px 14px}
@@ -95,6 +98,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
   body > *:not(#print-ticket){display:none!important}
   #print-ticket{display:block;position:static;width:80mm}
   .pt-wrap{width:80mm;padding:6mm 4mm;font-family:'Courier New',monospace;color:#000;text-align:center;box-sizing:border-box}
+  .pt-num{font-size:calc(54px * var(--receipt-scale,1));font-weight:900;line-height:1;text-align:left;margin-bottom:2mm}
   .pt-name{font-size:calc(15px * var(--receipt-scale,1));font-weight:700;margin-bottom:3mm;word-break:break-word}
   .pt-items{font-size:calc(13px * var(--receipt-scale,1));margin-bottom:3mm;text-align:left;width:100%}
   .pt-line{padding:1mm 0;border-bottom:1px dashed #000}
@@ -615,7 +619,7 @@ function renderOrders() {
     card.innerHTML = `
       <span class="oc-timer" data-created="${order.createdAt||''}">--:--</span>
       <div class="oc-hdr">
-        <span class="oc-num">#${order.fbKey.slice(-4).toUpperCase()}</span>
+        <span style="display:flex;align-items:center;gap:9px"><span class="oc-bignum${order.orderNumber ? '' : ' none'}">${order.orderNumber || '—'}</span><span class="oc-num">#${order.fbKey.slice(-4).toUpperCase()}</span></span>
         <span class="oc-name">${order.name}</span>
         <span class="oc-time">${order.time||''}</span>
       </div>
@@ -679,12 +683,53 @@ async function sendOrderReadyEmail(order) {
       order_details: itemsList + (order.comments ? `\nNote: ${order.comments}` : ''),
       reply_to: "duncan@nd.edu"
     });
-    showModal(`<h3 style="color:#22c55e">&#10003; Order done!</h3><p style="font-size:13px;color:#aaa">Email sent to <strong style="color:#fff">${order.name}</strong> at ${order.email}</p><div class="mbtns"><button class="mbtn cancel" onclick="closeModal()">Close</button></div>`);
   } catch(e) {
     showModal(`<h3 style="color:#22c55e">&#10003; Order marked done!</h3><p style="font-size:12px;color:#aaa">Could not send email automatically. You can notify ${order.name} manually.</p><div class="mbtns"><button class="mbtn cancel" onclick="closeModal()">Close</button></div>`);
     console.error('EmailJS error:', e);
   }
 }
+
+// ── START AN ORDER BY NUMBER (press Enter on the keypad) ──
+function openStartByNumberModal() {
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  showModal(`<h3>Enter order number to put order in progress</h3>
+    <input id="start-num-input" type="tel" inputmode="numeric" maxlength="2" autocomplete="off" placeholder="1–99"
+      oninput="this.value=this.value.replace(/\\D/g,'');document.getElementById('start-num-err').textContent=''"
+      onkeydown="if(event.key==='Enter'){event.preventDefault();event.stopPropagation();submitStartByNumber();}else if(event.key==='Escape'){closeModal();}"
+      style="width:100%;margin:12px 0 6px;background:#111;border:2px solid #ff6b35;border-radius:9px;padding:12px;font-size:34px;font-weight:900;text-align:center;color:#fff;letter-spacing:3px">
+    <div id="start-num-err" style="min-height:18px;font-size:12px;font-weight:700;color:#ef4444;text-align:center;margin-bottom:8px"></div>
+    <div class="mbtns"><button class="mbtn cancel" onclick="closeModal()">Cancel</button><button class="mbtn" style="background:#ff6b35" onclick="submitStartByNumber()">Start</button></div>`);
+  setTimeout(() => { const i = document.getElementById('start-num-input'); if (i) i.focus(); }, 30);
+}
+
+window.submitStartByNumber = async function() {
+  const input = document.getElementById('start-num-input');
+  const errEl = document.getElementById('start-num-err');
+  if (!input || !errEl) return;
+  const fail = msg => { errEl.textContent = msg; input.select(); };
+  const n = parseInt(input.value, 10);
+  if (!(n >= 1 && n <= 99)) { fail('Enter a number from 1 to 99'); return; }
+  const matches = Object.entries(orders)
+    .map(([k, v]) => ({ fbKey: k, ...v }))
+    .filter(o => o.status !== 'done' && Number(o.orderNumber) === n)
+    .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+  if (!matches.length) { fail(`No open order #${n}`); return; }
+  const target = matches.find(o => !o.inProgress);
+  if (!target) { fail(`Order #${n} is already in progress`); return; }
+  closeModal();
+  await startOrder(target.fbKey);
+};
+
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return; // the keypad Enter key also reports "Enter"
+  if (!currentWorkerId) return; // only once a worker is clocked in
+  if (document.getElementById('modal').style.display !== 'none') return;
+  if (document.getElementById('admin-alert-overlay').classList.contains('show')) return;
+  const t = e.target;
+  if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+  e.preventDefault(); // stops Enter from re-clicking a button that still has focus
+  openStartByNumberModal();
+});
 
 window.undoInProgress = async function(key) {
   const order = orders[key];
@@ -760,6 +805,7 @@ function buildTicketHtml(order) {
   const totalHtml = `<div class="pt-total">Total: $${parseFloat(order.total||0).toFixed(2)}</div>`;
   return `
     <div class="pt-wrap" style="--receipt-scale:${receiptScale}">
+      ${order.orderNumber ? `<div class="pt-num">#${escapeHtml(order.orderNumber)}</div>` : ''}
       <div class="pt-name">${escapeHtml(order.name)}</div>
       <div class="pt-items">${itemsHtml}${donationLinesHtml}</div>
       ${deliveryHtml}
