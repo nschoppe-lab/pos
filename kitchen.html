@@ -708,7 +708,8 @@ function openStartByNumberModal() {
       oninput="this.value=this.value.replace(/\\D/g,'');document.getElementById('start-num-err').textContent=''"
       onkeydown="if(event.key==='Enter'){event.preventDefault();event.stopPropagation();submitStartByNumber();}else if(event.key==='Escape'){closeModal();}"
       style="width:100%;margin:12px 0 6px;background:#111;border:2px solid #ff6b35;border-radius:9px;padding:12px;font-size:34px;font-weight:900;text-align:center;color:#fff;letter-spacing:3px">
-    <div id="start-num-err" style="min-height:18px;font-size:12px;font-weight:700;color:#ef4444;text-align:center;margin-bottom:8px"></div>
+    <div style="font-size:11px;color:#888;text-align:center">If the order is already in progress, it will be marked done.</div>
+    <div id="start-num-err" style="min-height:18px;margin-top:6px;font-size:12px;font-weight:700;color:#ef4444;text-align:center;margin-bottom:8px"></div>
     <div class="mbtns"><button class="mbtn cancel" onclick="closeModal()">Cancel</button><button class="mbtn" style="background:#ff6b35" onclick="submitStartByNumber()">Start</button></div>`);
   setTimeout(() => { const i = document.getElementById('start-num-input'); if (i) i.focus(); }, 30);
 }
@@ -726,9 +727,16 @@ window.submitStartByNumber = async function() {
     .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
   if (!matches.length) { fail(`No open order #${n}`); return; }
   const target = matches.find(o => !o.inProgress);
-  if (!target) { fail(`Order #${n} is already in progress`); return; }
+  if (target) {
+    // Not started yet -> put it in progress (prints the ticket, same as the button)
+    closeModal();
+    await startOrder(target.fbKey);
+    return;
+  }
+  // Already in progress -> entering the number again marks it done
+  const inProg = matches[0];
   closeModal();
-  await startOrder(target.fbKey);
+  await markDone(inProg.fbKey, inProg);
 };
 
 document.addEventListener('keydown', e => {
