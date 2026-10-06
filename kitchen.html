@@ -178,6 +178,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
     </div>
     <div style="display:flex;align-items:center;gap:8px">
       <span class="logout-btn" id="reopen-status" style="display:none;background:#0e2a1a;border-color:#22c55e44;color:#22c55e;cursor:default"></span>
+      <button class="logout-btn" id="print-station-btn" onclick="togglePrintStation()" style="background:#1a1a1a;border-color:#444;color:#888">🖨️ Print Station: Off</button>
       <button class="logout-btn" id="mute-btn" onclick="toggleAlertMute()" style="background:#1a1a1a;border-color:#22c55e44;color:#22c55e">🔔 Alerts On</button>
       <button class="logout-btn" onclick="showStaffLeaderboard()" style="background:#1a1a1a;border-color:#f59e0b44;color:#f59e0b">🏆 Leaderboard</button>
       <button class="logout-btn" onclick="showCompletedOrders()" style="background:#1a1a1a;border-color:#22c55e44;color:#22c55e">✅ Completed</button>
@@ -213,7 +214,7 @@ emailjs.init("yoxsvEb1uuAA4Ytcd");
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getDatabase, ref, onValue, update, get, set, push, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+import { getDatabase, ref, onValue, update, get, set, push, remove, runTransaction, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCG5nhzdAHBTGg2eXXmhqH8pF8S8qFqM7o",
@@ -230,6 +231,12 @@ const auth = getAuth(app);
 const db = getDatabase(app);
 
 let orders = {};
+// Print station: one kitchen screen (the one wired to the printer) prints every ticket, no matter which screen started the order
+let isPrintStation = false;
+try { isPrintStation = localStorage.getItem('buffPrintStation') === '1'; } catch(e) {}
+let printStationData = {};
+const printClaims = new Set();
+let printQueue = [], printQueueRunning = false;
 let tapTimers = {};
 let waittimeSettings = {};
 let receiptScale = 1;
@@ -375,6 +382,7 @@ function setupDeviceListeners() {
     }
     orders = data;
     renderOrders();
+    checkPrintQueue();
   });
   onValue(ref(db, 'adminAlerts'), snap => {
     const d = snap.val() || {};
@@ -394,6 +402,11 @@ function setupDeviceListeners() {
     printSettings = snap.val() || {};
     receiptScale = ((printSettings.receiptScale === undefined || printSettings.receiptScale === null) ? 100 : printSettings.receiptScale) / 100;
   });
+  onValue(ref(db, 'printStation'), snap => { printStationData = snap.val() || {}; });
+  if (!window._printHeartbeat) {
+    window._printHeartbeat = setInterval(sendPrintHeartbeat, 20000);
+    sendPrintHeartbeat();
+  }
   if (!window._scheduleInterval) {
     window._scheduleInterval = setInterval(checkScheduleAndReport, 15000);
   }
@@ -750,6 +763,95 @@ document.addEventListener('keydown', e => {
   openStartByNumberModal();
 });
 
+// ── PRINT STATION ──
+function isPrintStationOnline() {
+  const hb = printStationData && printStationData.heartbeat;
+  return typeof hb === 'number' && Date.now() - hb < 90000;
+}
+
+function sendPrintHeartbeat() {
+  if (!isPrintStation) return;
+  update(ref(db, 'printStation'), { heartbeat: serverTimestamp() }).catch(e => console.error('Print station heartbeat failed:', e));
+}
+
+function updatePrintStationBtn() {
+  const b = document.getElementById('print-station-btn');
+  if (!b) return;
+  b.textContent = isPrintStation ? '🖨️ Print Station: ON' : '🖨️ Print Station: Off';
+  b.style.background = isPrintStation ? '#0e2a1a' : '#1a1a1a';
+  b.style.borderColor = isPrintStation ? '#22c55e' : '#444';
+  b.style.color = isPrintStation ? '#22c55e' : '#888';
+}
+
+window.togglePrintStation = function() {
+  isPrintStation = !isPrintStation;
+  try { localStorage.setItem('buffPrintStation', isPrintStation ? '1' : '0'); } catch(e) {}
+  updatePrintStationBtn();
+  if (isPrintStation) {
+    sendPrintHeartbeat();
+    checkPrintQueue();
+    flashPrintNote('🖨️ This screen will now print all tickets');
+  } else {
+    update(ref(db, 'printStation'), { heartbeat: null }).catch(() => {});
+    flashPrintNote('🖨️ This screen will no longer print tickets');
+  }
+};
+updatePrintStationBtn();
+
+function flashPrintNote(text) {
+  let el = document.getElementById('print-note');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'print-note';
+    el.style.cssText = 'position:fixed;left:14px;bottom:14px;z-index:60;background:#0e2a1a;border:1px solid #22c55e66;color:#22c55e;border-radius:10px;padding:10px 16px;font-size:13px;font-weight:700;pointer-events:none;display:none';
+    document.body.appendChild(el);
+  }
+  el.textContent = text;
+  el.style.display = 'block';
+  clearTimeout(window._printNoteTimer);
+  window._printNoteTimer = setTimeout(() => { el.style.display = 'none'; }, 4000);
+}
+
+// The print station watches for orders that were put in progress (on any screen) but haven't printed yet.
+function checkPrintQueue() {
+  if (!isPrintStation) return;
+  Object.entries(orders).forEach(([key, o]) => {
+    if (!o || o.status === 'done' || !o.inProgress || !o.printRequestedAt || o.printedAt) return;
+    if (Date.now() - o.printRequestedAt > 2 * 3600 * 1000) return; // ignore anything stale
+    const claimId = key + ':' + o.printRequestedAt;
+    if (printClaims.has(claimId)) return;
+    printClaims.add(claimId);
+    claimAndQueuePrint(key, claimId);
+  });
+}
+
+async function claimAndQueuePrint(key, claimId) {
+  try {
+    // Transaction so that if two screens are set as print stations, only one of them prints each ticket
+    const res = await runTransaction(ref(db, `orders/${key}/printedAt`), cur => cur ? undefined : Date.now());
+    if (!res.committed) return;
+    printQueue.push(key);
+    runPrintQueue();
+  } catch(e) {
+    console.error('Could not claim print job:', e);
+    printClaims.delete(claimId);
+  }
+}
+
+async function runPrintQueue() {
+  if (printQueueRunning) return;
+  printQueueRunning = true;
+  while (printQueue.length) {
+    const key = printQueue.shift();
+    const o = orders[key];
+    if (!o) continue;
+    printOrderTicket({ ...o, fbKey: key }, true);
+    flashPrintNote(`🖨️ Printing ticket${o.orderNumber ? ' #' + o.orderNumber : ''} — ${o.name || ''}`);
+    await new Promise(r => setTimeout(r, 3000)); // give the previous job time to finish before the next
+  }
+  printQueueRunning = false;
+}
+
 window.undoInProgress = async function(key) {
   const order = orders[key];
   if (!confirm(`Undo "In Progress" for ${order ? '#'+key.slice(-4).toUpperCase() : 'this order'}?\nThe ticket already printed and the customer may have already gotten the "order started" email — this only resets the status so you can re-press Mark In Progress if needed (which will print and email again).`)) return;
@@ -761,11 +863,21 @@ window.undoInProgress = async function(key) {
 window.startOrder = async function(key) {
   const order = orders[key];
   if (!order || order.inProgress) return; // guard against double-fire (already started, or stale data)
-  printOrderTicket(order);
+  // Print here if this screen is the print station, or if no print station is currently online (fallback).
+  // Otherwise just flag the order and let the print station pick it up.
+  const stationUp = isPrintStationOnline();
+  const printHere = isPrintStation || !stationUp;
+  if (printHere) {
+    printOrderTicket(order);
+    if (!isPrintStation) flashPrintNote('🖨️ No print station online — printing on this screen');
+  } else {
+    flashPrintNote('🖨️ Ticket sent to the print station');
+  }
   try {
     await update(ref(db, `orders/${key}`), {
       inProgress: true, paid: true,
-      inProgressBy: currentWorkerId || null, inProgressByName: currentWorkerName || 'Unknown', inProgressAt: Date.now()
+      inProgressBy: currentWorkerId || null, inProgressByName: currentWorkerName || 'Unknown', inProgressAt: Date.now(),
+      printRequestedAt: Date.now(), printedAt: printHere ? Date.now() : null
     });
   } catch(e) { alert('Error: ' + e.message); return; }
   if (order.email) sendOrderStartedEmail(order);
@@ -838,7 +950,7 @@ function buildTicketHtml(order) {
     </div>`;
 }
 
-function printOrderTicket(order) {
+function printOrderTicket(order, background) {
   const innerHtml = buildTicketHtml(order);
   const ticket = document.getElementById('print-ticket');
   if (!ticket) return;
@@ -846,6 +958,11 @@ function printOrderTicket(order) {
   // Wait for the browser to actually paint the ticket content before printing —
   // calling window.print() synchronously right after setting innerHTML is what
   // caused blank/empty printouts on Mac.
+  if (background) {
+    // Used by the print station: requestAnimationFrame is paused when the tab is in the background, a timer is not
+    setTimeout(() => window.print(), 300);
+    return;
+  }
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       window.print();
