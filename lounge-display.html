@@ -594,6 +594,8 @@ onValue(ref(db, 'coupons'), snap => {
 
 onValue(ref(db, 'menu'), snap => {
   menu = snap.val() ? Object.values(snap.val()) : [];
+  // Secret-menu and test items never appear on the public lounge display
+  menu = menu.map(cat => ({ ...cat, items: (Array.isArray(cat.items) ? cat.items : Object.values(cat.items || {})).filter(i => i && !i.access) }));
   renderMenuList();
   renderDrinkPictures();
 });

@@ -288,16 +288,29 @@ function currentDueScheduledKeys() {
   });
   return set;
 }
-setInterval(() => {
+// Every few seconds, check whether the set of orders that should be on screen has changed
+// (e.g. a scheduled order just reached its 2-minute mark) and, if so, re-render and chime.
+let lastVisibleKeys = null;
+function currentVisibleKeys() {
+  const set = new Set();
+  Object.entries(orders || {}).forEach(([k, o]) => { if (o && o.status !== 'done' && orderIsDue(o)) set.add(k); });
+  return set;
+}
+function checkScheduledArrivals() {
   if (!deviceListenersStarted) return;
-  const now = currentDueScheduledKeys();
-  if (dueScheduledKeys === null) { dueScheduledKeys = now; return; }
-  let changed = now.size !== dueScheduledKeys.size, becameDue = false;
-  now.forEach(k => { if (!dueScheduledKeys.has(k)) { changed = true; becameDue = true; } });
+  const now = currentVisibleKeys();
+  if (lastVisibleKeys === null) { lastVisibleKeys = now; return; }
+  let changed = now.size !== lastVisibleKeys.size, scheduledArrived = false;
+  now.forEach(k => {
+    if (!lastVisibleKeys.has(k)) { changed = true; if (orders[k] && orders[k].scheduledFor && !orders[k].inProgress) scheduledArrived = true; }
+  });
   if (!changed) return;
-  if (becameDue && knownOrderKeys !== null) { try { playNewOrderChime(); } catch (e) {} }
-  renderOrders(); // re-sorts the queue and refreshes the "not due yet" labels
-}, 10000);
+  if (scheduledArrived && knownOrderKeys !== null) { try { playNewOrderChime(); } catch (e) {} }
+  renderOrders();
+}
+setInterval(checkScheduledArrivals, 3000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkScheduledArrivals(); });
+window.addEventListener('focus', checkScheduledArrivals);
 
 // The touchscreen signs in ONCE as one shared "kitchen device" account and stays signed
 // in indefinitely. currentWorkerId/currentWorkerName track WHICH employee has the screen
@@ -691,6 +704,7 @@ function renderOrders() {
   const allOrders = Object.entries(orders).map(([k,v]) => ({fbKey:k,...v}));
   const open = allOrders.filter(o => o.status !== 'done' && orderIsDue(o)).sort(compareQueue); // scheduled orders stay hidden until 2 min before their time
   dueScheduledKeys = currentDueScheduledKeys();
+  lastVisibleKeys = currentVisibleKeys();
 
   document.getElementById('open-pill').textContent = `${open.length} open`;
   if (!open.length) { grid.innerHTML = '<div class="empty">No open orders</div>'; return; }
@@ -711,6 +725,7 @@ function renderOrders() {
       </div>
       <div class="oc-body">
         ${order.delivery?`<div style="font-size:11px;color:#3b82f6;font-weight:700;margin-bottom:5px;padding:5px 8px;background:#0e1a2a;border-radius:5px">🚚 DELIVERY → ${order.deliveryLocation||'—'}${order.deliveryPhone?' · 📞 '+order.deliveryPhone:''}</div>`:''}
+        ${order.testOrder?`<div style="font-size:11px;color:#f472b6;font-weight:700;margin-bottom:5px;padding:5px 8px;background:#2a1020;border-radius:5px">🧪 TEST ORDER (contains admin-only test items)</div>`:''}
         ${order.preorder?`<div style="font-size:11px;color:#a78bfa;font-weight:700;margin-bottom:5px;padding:5px 8px;background:#1a1030;border-radius:5px">⏰ PRE-ORDER</div>`:''}
         ${order.scheduledFor?`<div style="font-size:15px;color:#38bdf8;font-weight:800;margin-bottom:6px;padding:8px 10px;background:#0b1f2e;border:1.5px solid #38bdf8;border-radius:6px;text-align:center;letter-spacing:0.3px">🕒 SCHEDULED FOR ${escapeHtml(order.scheduledLabel||fmtEtTime(order.scheduledFor))}</div>`:''}
         ${order.priority?`<div style="font-size:11px;color:#facc15;font-weight:700;margin-bottom:5px;padding:5px 8px;background:#2a2308;border-radius:5px">⚡ PRIORITY${order.coupon?' — code '+escapeHtml(order.coupon):''}</div>`:''}

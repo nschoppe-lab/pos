@@ -245,6 +245,16 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
         <div id="menu-body"></div>
       </div>
       <div class="asec">
+        <div class="asec-title">🤫 Secret Menu & 🧪 Test Items — Access</div>
+        <div style="font-size:12px;color:#888;margin-bottom:12px">Set an item to "Secret menu" or "Test (admin only)" using the dropdown on its row above. Those items are hidden from everyone except the emails listed here. A person taps "🔑 Secret Menu" on the ordering page and enters their email to see them.</div>
+        <div style="font-size:13px;font-weight:700;color:#a78bfa;margin-bottom:6px">🤫 Secret menu — approved emails</div>
+        <div class="arow" style="margin-bottom:6px"><input type="email" id="access-input-secret" placeholder="customer@email.com"><button class="aadd" onclick="addMenuAccess('secret')">Add</button></div>
+        <div id="access-list-secret" style="margin-bottom:18px"></div>
+        <div style="font-size:13px;font-weight:700;color:#f472b6;margin-bottom:6px">🧪 Test items — admin emails</div>
+        <div class="arow" style="margin-bottom:6px"><input type="email" id="access-input-test" placeholder="admin@email.com"><button class="aadd" onclick="addMenuAccess('test')">Add</button></div>
+        <div id="access-list-test"></div>
+      </div>
+      <div class="asec">
         <div class="asec-title">Sauces</div>
         <div style="font-size:12px;color:#888;margin-bottom:12px">Customers will be asked "Add a side of sauce?" with a checkbox for each of these whenever they add any food item to their order. Drag the ⋮⋮ handles to reorder.</div>
         <div id="sauces-body" style="margin-bottom:14px"></div>
@@ -1203,6 +1213,7 @@ function showAdmin() {
   onValue(ref(db,'orders'), snap => { orders = snap.val()||{}; renderOrders(); renderHistory(); updateBadge(); if(currentTab==='waittime') updateWaitTimeUI(); if(currentTab==='finance') renderFinance(); if(currentTab==='leaderboard') { renderLeaderboard(); renderStaffLeaderboard(); } if(currentTab==='fundraisers') renderFundraisersAdmin(); });
   onValue(ref(db,'fundraisers'), snap => { fundraisersData = snap.val()||{}; if(currentTab==='fundraisers') renderFundraisersAdmin(); if(currentTab==='finance') renderFinance(); });
   onValue(ref(db,'menu'), snap => { const d = snap.val(); menu = d ? Object.values(d) : []; renderMenuAdmin(); renderInventory(); populateCouponItemPicker(); if(currentTab==='lounge'){ populateDrinkPictureItemSelect(); renderDrinkPictures(); } });
+  onValue(ref(db,'menuAccess'), snap => { menuAccessData = snap.val() || {}; renderMenuAccess(); });
   onValue(ref(db,'inventorySettings'), snap => { inventorySettingsData = snap.val()||{}; renderInventory(); });
   onValue(ref(db,'sauces'), snap => { const d = snap.val(); saucesData = d ? Object.values(d) : []; if(currentTab==='menu') renderSauces(); });
   onValue(ref(db,'coupons'), snap => { const d = snap.val(); coupons = d ? Object.entries(d).map(([k,v])=>({fbKey:k,...v})) : []; renderCoupons(); });
@@ -1681,6 +1692,11 @@ function renderMenuAdmin() {
         ${editingThis
           ? `<span class="mi-price-edit">$<input type="number" class="mi-price-input" id="price-input-${ci}-${ii}" step="0.01" min="0" value="${escMenuHtml(priceEditing.value)}" oninput="priceEditing.value=this.value" onkeydown="priceInputKey(event,${ci},${ii})" onfocus="var c=this.closest('.menu-cat-card');if(c)c.draggable=false" onblur="var c=this.closest('.menu-cat-card');if(c)c.draggable=true"><button class="mi-price-save" onclick="saveItemPrice(${ci},${ii})">Save</button><button class="mi-price-cancel" onclick="cancelEditPrice()">✕</button></span>`
           : `<button class="mi-price-btn" onclick="startEditPrice(${ci},${ii})" title="Click to change this item's price">$${parseFloat(item.price).toFixed(2)} ✎</button>`}
+        <select title="Who can see this item on the ordering page" onchange="setItemAccess(${ci},${ii},this.value)" style="background:#111;border:1px solid ${item.access==='secret'?'#a78bfa':(item.access==='test'?'#f472b6':'#444')};color:#ccc;border-radius:5px;padding:3px 4px;font-size:11px">
+          <option value="" ${!item.access?'selected':''}>Public</option>
+          <option value="secret" ${item.access==='secret'?'selected':''}>🤫 Secret menu</option>
+          <option value="test" ${item.access==='test'?'selected':''}>🧪 Test (admin only)</option>
+        </select>
         <button class="mi-mod-btn" onclick="openCustomizeAdmin(${ci},${ii})">Modifiers</button>
         <button class="delbtn" onclick="deleteItem(${ci},${ii})">Remove</button>
       `;
@@ -2423,6 +2439,40 @@ window.toggleAvailability = async function(ci, ii) {
   await setMenu(newMenu);
   renderInventory();
 }
+
+window.setItemAccess = async function(ci, ii, val) {
+  const newMenu = JSON.parse(JSON.stringify(menu));
+  const item = newMenu[ci].items[ii];
+  if (val === 'secret' || val === 'test') item.access = val; else delete item.access;
+  await setMenu(newMenu);
+};
+
+// ── SECRET MENU / TEST MENU ACCESS LISTS (emails the admin personally approves) ──
+let menuAccessData = {};
+function accessEmailKey(email) { return String(email).trim().toLowerCase().replace(/\./g, ',').replace(/@/g, '_at_'); }
+function renderMenuAccess() {
+  ['secret','test'].forEach(kind => {
+    const el = document.getElementById('access-list-' + kind);
+    if (!el) return;
+    const entries = Object.entries((menuAccessData && menuAccessData[kind]) || {});
+    el.innerHTML = entries.length
+      ? entries.map(([k, v]) => `<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid #2a2a2a;font-size:12px;color:#ccc"><span>${escMenuHtml((v && v.email) || k)}</span><button class="delbtn" onclick="removeMenuAccess('${kind}','${k}')">Remove</button></div>`).join('')
+      : '<div style="font-size:12px;color:#666;padding:6px 0">No one added yet.</div>';
+  });
+}
+window.addMenuAccess = async function(kind) {
+  const inp = document.getElementById('access-input-' + kind);
+  const email = (inp.value || '').trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { alert('Enter a valid email address'); return; }
+  try {
+    await set(ref(db, `menuAccess/${kind}/${accessEmailKey(email)}`), { email, addedAt: Date.now() });
+    inp.value = '';
+  } catch (e) { alert('Error: ' + e.message); }
+};
+window.removeMenuAccess = async function(kind, key) {
+  if (!confirm('Remove this email\'s access?')) return;
+  try { await remove(ref(db, `menuAccess/${kind}/${key}`)); } catch (e) { alert('Error: ' + e.message); }
+};
 
 window.toggleItemComments = async function(ci, ii) {
   const newMenu = JSON.parse(JSON.stringify(menu));

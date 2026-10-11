@@ -159,7 +159,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
   <div id="closed-msg-display" style="font-size:16px;color:#888">Check back soon!</div>
 </div>
 
-<div class="topnav" style="justify-content:space-between"><div class="brand">&#9654; Order Here</div><div style="display:flex;gap:8px;align-items:center"><span id="active-order-pill" onclick="openOrdersModal()" style="display:none;align-items:center;gap:6px;background:#1f1a0e;border:1.5px solid #f59e0b;color:#f59e0b;border-radius:20px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;animation:pulse-pill 2s infinite">🧑&zwj;🍳 Order in Progress</span><button class="acct-nav-btn" id="orders-nav-btn" onclick="openOrdersModal()">📦 My Orders</button><a href="leaderboard.html" style="display:flex;align-items:center;gap:6px;background:#1a1a1a;border:1.5px solid #44444455;color:#ccc;text-decoration:none;border-radius:20px;padding:6px 14px;font-size:12px;font-weight:700;transition:all 0.15s" onmouseover="this.style.borderColor='#666'" onmouseout="this.style.borderColor='#44444455'">🏆 Leaderboard</a><a href="ratemybuff.html" style="display:flex;align-items:center;gap:6px;background:#1f1a0e;border:1.5px solid #f59e0b55;color:#f59e0b;text-decoration:none;border-radius:20px;padding:6px 14px;font-size:12px;font-weight:700;transition:all 0.15s" onmouseover="this.style.background='#2a2010'" onmouseout="this.style.background='#1f1a0e'">⭐ Rate My Buff</a></div></div>
+<div class="topnav" style="justify-content:space-between"><div class="brand">&#9654; Order Here</div><div style="display:flex;gap:8px;align-items:center"><span id="active-order-pill" onclick="openOrdersModal()" style="display:none;align-items:center;gap:6px;background:#1f1a0e;border:1.5px solid #f59e0b;color:#f59e0b;border-radius:20px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;animation:pulse-pill 2s infinite">🧑&zwj;🍳 Order in Progress</span><button class="acct-nav-btn" id="access-nav-btn" onclick="openAccessModal()">🔑 Secret Menu</button><button class="acct-nav-btn" id="orders-nav-btn" onclick="openOrdersModal()">📦 My Orders</button><a href="leaderboard.html" style="display:flex;align-items:center;gap:6px;background:#1a1a1a;border:1.5px solid #44444455;color:#ccc;text-decoration:none;border-radius:20px;padding:6px 14px;font-size:12px;font-weight:700;transition:all 0.15s" onmouseover="this.style.borderColor='#666'" onmouseout="this.style.borderColor='#44444455'">🏆 Leaderboard</a><a href="ratemybuff.html" style="display:flex;align-items:center;gap:6px;background:#1f1a0e;border:1.5px solid #f59e0b55;color:#f59e0b;text-decoration:none;border-radius:20px;padding:6px 14px;font-size:12px;font-weight:700;transition:all 0.15s" onmouseover="this.style.background='#2a2010'" onmouseout="this.style.background='#1f1a0e'">⭐ Rate My Buff</a></div></div>
 <div class="content">
   <div class="menu-panel" id="menu-panel"><div class="loading">Loading menu...</div></div>
   <div class="cart-panel">
@@ -275,6 +275,12 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
   </div>
 </div>
 
+<div class="cust-modal-bg" id="access-modal-bg" onclick="if(event.target===this)closeAccessModal()">
+  <div class="cust-modal" id="access-modal">
+    <div id="access-modal-body"></div>
+  </div>
+</div>
+
 <!-- EmailJS -->
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <script>emailjs.init("yoxsvEb1uuAA4Ytcd");</script>
@@ -366,6 +372,7 @@ onValue(ref(db, 'menu'), snap => {
   menu = snap.val() ? Object.values(snap.val()) : [];
   renderMenu();
   refreshCommentsField();
+  if (!window._menuAccessRestored) { window._menuAccessRestored = true; restoreMenuAccess(); }
   // If the stand changed a price while someone has that item in their cart, update the cart to the new price
   if (cart.length && repriceCartFromMenu()) {
     renderCart();
@@ -930,6 +937,79 @@ window.toggleUseCredit = function() {
   renderLoyaltyBanner();
 }
 
+// ── SECRET MENU / TEST ITEMS ──
+// Items with item.access === 'secret' or 'test' are hidden unless the person unlocks them with an approved email.
+let menuAccess = { secret: false, test: false }, menuAccessEmail = '';
+function itemAccessAllowed(item) {
+  if (!item || !item.access) return true;
+  return item.access === 'secret' ? menuAccess.secret : item.access === 'test' ? menuAccess.test : false;
+}
+function liveMenuItem(id) {
+  let live = null;
+  (menu || []).forEach(cat => (cat.items ? Object.values(cat.items) : []).forEach(it => { if (it && String(it.id) === String(id)) live = it; }));
+  return live;
+}
+async function checkMenuAccess(email) {
+  const key = emailToKey(String(email).trim().toLowerCase());
+  const out = { secret: false, test: false };
+  for (const kind of ['secret', 'test']) {
+    try { out[kind] = (await get(ref(db, `menuAccess/${kind}/${key}`))).exists(); } catch (e) { out[kind] = false; }
+  }
+  return out;
+}
+function applyMenuAccess(email, res) {
+  menuAccess = res; menuAccessEmail = (res.secret || res.test) ? email : '';
+  try { if (menuAccessEmail) localStorage.setItem('buff_menu_access_email', menuAccessEmail); else localStorage.removeItem('buff_menu_access_email'); } catch (e) {}
+  const btn = document.getElementById('access-nav-btn');
+  if (btn) btn.textContent = menuAccessEmail ? '🔓 Secret Menu' : '🔑 Secret Menu';
+  // Drop anything from the cart that this person can no longer see
+  const before = cart.length;
+  cart = cart.filter(c => itemAccessAllowed(liveMenuItem(c.id) || c));
+  if (cart.length !== before) renderCart();
+  renderMenu();
+}
+async function restoreMenuAccess() {
+  let saved = ''; try { saved = localStorage.getItem('buff_menu_access_email') || ''; } catch (e) {}
+  if (!saved) return;
+  applyMenuAccess(saved, await checkMenuAccess(saved));
+}
+window.openAccessModal = function() {
+  document.getElementById('access-modal-bg').classList.add('open');
+  renderAccessModal();
+};
+window.closeAccessModal = function() { document.getElementById('access-modal-bg').classList.remove('open'); };
+function renderAccessModal(msg) {
+  const body = document.getElementById('access-modal-body');
+  const unlocked = menuAccess.secret || menuAccess.test;
+  body.innerHTML = `
+    <div class="cust-modal-title">🔑 Secret Menu</div>
+    <div style="font-size:12px;color:#888;margin:4px 0 14px">${unlocked
+      ? 'Unlocked for <b style="color:#fff">' + escapeHtmlAttr(menuAccessEmail) + '</b>' + (menuAccess.secret ? ' — 🤫 secret menu' : '') + (menuAccess.test ? ' — 🧪 test items' : '')
+      : 'Enter the email you were given access with to see the secret menu.'}</div>
+    ${unlocked ? '' : '<input type="email" id="access-email-input" placeholder="your@email.com" style="width:100%;margin-bottom:10px" onkeydown="if(event.key===\'Enter\')submitAccessEmail()">'}
+    ${msg ? '<div style="font-size:12px;color:#ef4444;margin-bottom:10px">' + msg + '</div>' : ''}
+    <div style="display:flex;gap:8px">
+      ${unlocked
+        ? '<button class="place-btn" style="flex:1" onclick="lockMenuAccess()">Lock secret menu</button>'
+        : '<button class="place-btn" style="flex:1" onclick="submitAccessEmail()">Unlock</button>'}
+      <button class="place-btn" style="flex:1;background:#333;color:#ccc" onclick="closeAccessModal()">Close</button>
+    </div>`;
+}
+window.submitAccessEmail = async function() {
+  const inp = document.getElementById('access-email-input');
+  const email = ((inp && inp.value) || '').trim().toLowerCase();
+  if (!email) { renderAccessModal('Please enter your email.'); return; }
+  const res = await checkMenuAccess(email);
+  if (!res.secret && !res.test) { renderAccessModal("That email doesn't have access."); return; }
+  applyMenuAccess(email, res);
+  closeAccessModal();
+  showToast(res.secret ? '🤫 Secret menu unlocked!' : '🧪 Test items unlocked!');
+};
+window.lockMenuAccess = function() {
+  applyMenuAccess('', { secret: false, test: false });
+  closeAccessModal();
+};
+
 function renderMenu() {
   const panel = document.getElementById('menu-panel');
   if (!menu.length) { panel.innerHTML = '<div class="loading">Menu coming soon...</div>'; return; }
@@ -961,12 +1041,33 @@ function renderMenu() {
     panel.appendChild(sg);
   }
 
+  // Secret menu / test items (only for approved emails)
+  [['secret', '🤫 Secret Menu', '#a78bfa', '#161024'], ['test', '🧪 Test Items (admin only)', '#f472b6', '#2a1020']].forEach(([kind, title, color, bg]) => {
+    if (!menuAccess[kind]) return;
+    const list = [];
+    menu.forEach(cat => (cat.items || []).forEach(item => { if (item.access === kind && !item.unavailable) list.push({ item, cat }); }));
+    if (!list.length) return;
+    const h = document.createElement('div'); h.className = 'cat-hdr';
+    h.style.cssText = 'color:' + color + ';border-color:' + color + '44'; h.textContent = title; panel.appendChild(h);
+    const g = document.createElement('div'); g.className = 'menu-grid';
+    list.forEach(({ item, cat }) => {
+      const el = document.createElement('div'); el.className = 'mi';
+      el.style.cssText = 'border-color:' + color + '55;background:' + bg;
+      const hasOptions = item.customizations && item.customizations.length > 0;
+      el.innerHTML = '<div class="mi-name">' + item.name + '</div><div class="mi-price">$' + parseFloat(item.price).toFixed(2) + '</div>' + (hasOptions ? '<div class="mi-arrow">Tap to customize ›</div>' : '');
+      el.onclick = () => openCustModal({ ...item, _catLabel: cat.label });
+      g.appendChild(el);
+    });
+    panel.appendChild(g);
+  });
+
   // Regular menu
   menu.forEach(cat => {
-    if (!cat.items || !cat.items.length) return;
+    const publicItems = (cat.items || []).filter(item => !item.access && !item.unavailable);
+    if (!publicItems.length) return;
     const h = document.createElement('div'); h.className = 'cat-hdr'; h.textContent = cat.label; panel.appendChild(h);
     const g = document.createElement('div'); g.className = 'menu-grid';
-    cat.items.filter(item => !item.unavailable).forEach(item => {
+    publicItems.forEach(item => {
       const el = document.createElement('div'); el.className = 'mi';
       const hasOptions = item.customizations && item.customizations.length > 0;
       el.innerHTML = '<div class="mi-name">' + item.name + '</div><div class="mi-price">$' + parseFloat(item.price).toFixed(2) + '</div>' + (hasOptions ? '<div class="mi-arrow">Tap to customize ›</div>' : '');
@@ -1360,6 +1461,13 @@ window.placeOrder = async function() {
   if (!firstName || !lastName) { alert('Please enter your first and last name'); return; }
   if (!email) { alert('Please enter your email'); return; }
   if (!cart.length) { alert('Your cart is empty'); return; }
+  // Re-check secret/test items against the unlocked access (and the live menu) at checkout
+  const blocked = cart.filter(ci => !itemAccessAllowed(liveMenuItem(ci.id) || ci));
+  if (blocked.length) {
+    cart = cart.filter(ci => !blocked.includes(ci)); renderCart();
+    alert('Some items in your cart need secret-menu access and were removed: ' + blocked.map(b => b.name).join(', '));
+    return;
+  }
   if (repriceCartFromMenu()) {
     renderCart();
     alert('Some prices were just updated. Please review your order total, then place your order again.');
@@ -1503,6 +1611,7 @@ window.placeOrder = async function() {
     preorder: !!preorderOn,
     preorderFee: t.preorderFee,
     scheduledFor: scheduledForVal, scheduledLabel: scheduledLabelVal,
+    testOrder: cart.some(ci => { const li = liveMenuItem(ci.id); return !!(li && li.access === 'test'); }) || null,
     priority: !!(appliedCoupon && appliedCoupon.assignedEmail), // individually-assigned code => front of the (not-yet-started) line
     donations: t.donations.length ? t.donations : null, donationTotal: t.donationTotal || 0,
     loyaltyOrderNum: newOrderCount, total: t.total,
