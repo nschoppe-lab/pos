@@ -1547,6 +1547,41 @@ window.priceInputKey = function(e, ci, ii) {
   else if (e.key === 'Escape') { e.preventDefault(); cancelEditPrice(); }
 };
 
+window.renameItem = async function(ci, ii) {
+  const item = menu[ci] && menu[ci].items && menu[ci].items[ii];
+  if (!item) return;
+  const raw = prompt('Rename "' + item.name + '" to:', item.name);
+  if (raw === null) return;
+  const newName = raw.trim();
+  if (!newName) { alert('The name cannot be blank.'); return; }
+  if (newName === item.name) return;
+  const oldName = item.name, expectedId = item.id;
+  try {
+    // Re-read the live menu so only this item's name is written (price, stock, modifiers etc. are never touched)
+    const snap = await get(ref(db, 'menu'));
+    const root = snap.val() || {};
+    const ck = Object.keys(root)[ci];
+    const cat = ck !== undefined ? root[ck] : null;
+    const ik = (cat && cat.items) ? Object.keys(cat.items)[ii] : undefined;
+    const live = ik !== undefined ? cat.items[ik] : null;
+    if (!live || String(live.id) !== String(expectedId)) {
+      alert('The menu changed while you were editing, so the name was not saved. Please try again.');
+      renderMenuAdmin(); return;
+    }
+    const updates = {};
+    updates[`menu/${ck}/items/${ik}/name`] = newName;
+    // Discount codes that are restricted to specific items match by name, so keep them pointing at this item
+    coupons.forEach(cp => {
+      if (Array.isArray(cp.itemRestriction) && cp.itemRestriction.indexOf(oldName) !== -1) {
+        updates[`coupons/${cp.fbKey}/itemRestriction`] = cp.itemRestriction.map(n => n === oldName ? newName : n);
+      }
+    });
+    await update(ref(db), updates);
+  } catch (e) {
+    alert('Error renaming item: ' + e.message);
+  }
+};
+
 window.saveItemPrice = async function(ci, ii) {
   if (!priceEditing || priceEditing.ci !== ci || priceEditing.ii !== ii) return;
   const raw = String(priceEditing.value).trim();
@@ -1642,7 +1677,7 @@ function renderMenuAdmin() {
 
       row.innerHTML = `
         <span class="drag-handle">⋮⋮</span>
-        <span class="mi-name">${escMenuHtml(item.name)}${item.customizations && item.customizations.length ? `<span class="mi-mod-count">${item.customizations.length} modifier(s)</span>` : ''}</span>
+        <span class="mi-name">${escMenuHtml(item.name)}<button class="mi-price-btn" style="margin-left:6px" onclick="renameItem(${ci},${ii})" title="Rename this item">✎</button>${item.customizations && item.customizations.length ? `<span class="mi-mod-count">${item.customizations.length} modifier(s)</span>` : ''}</span>
         ${editingThis
           ? `<span class="mi-price-edit">$<input type="number" class="mi-price-input" id="price-input-${ci}-${ii}" step="0.01" min="0" value="${escMenuHtml(priceEditing.value)}" oninput="priceEditing.value=this.value" onkeydown="priceInputKey(event,${ci},${ii})" onfocus="var c=this.closest('.menu-cat-card');if(c)c.draggable=false" onblur="var c=this.closest('.menu-cat-card');if(c)c.draggable=true"><button class="mi-price-save" onclick="saveItemPrice(${ci},${ii})">Save</button><button class="mi-price-cancel" onclick="cancelEditPrice()">✕</button></span>`
           : `<button class="mi-price-btn" onclick="startEditPrice(${ci},${ii})" title="Click to change this item's price">$${parseFloat(item.price).toFixed(2)} ✎</button>`}
