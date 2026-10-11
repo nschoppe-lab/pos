@@ -110,6 +110,12 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
 .mi-name{flex:1;font-size:12px;color:#ccc}
 .mi-mod-count{font-size:10px;color:#888;margin-left:6px}
 .mi-price{font-size:12px;color:#fff;font-weight:600;white-space:nowrap}
+.mi-price-btn{background:none;border:1px dashed #444;color:#fff;font-size:12px;font-weight:600;white-space:nowrap;cursor:pointer;border-radius:4px;padding:2px 8px}
+.mi-price-btn:hover{border-color:#ff6b35;color:#ff6b35}
+.mi-price-edit{display:flex;align-items:center;gap:4px;font-size:12px;color:#ccc;white-space:nowrap}
+.mi-price-input{width:76px;background:#111;border:1px solid #ff6b35;color:#fff;border-radius:4px;padding:3px 6px;font-size:12px}
+.mi-price-save{background:#14532d;border:1px solid #22c55e;color:#86efac;border-radius:4px;padding:3px 9px;font-size:11px;font-weight:700;cursor:pointer}
+.mi-price-cancel{background:#222;border:1px solid #555;color:#aaa;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer}
 .mi-mod-btn{background:#1a2a3a;border:1px solid #2e75b6;color:#60a5fa;border-radius:4px;padding:3px 9px;font-size:11px;cursor:pointer;white-space:nowrap}
 .dp-row{display:flex;align-items:center;gap:10px;padding:8px 6px;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:8px;margin-bottom:6px}
 .dp-thumb{width:44px;height:44px;object-fit:contain;background:#111;border-radius:6px;flex-shrink:0}
@@ -271,7 +277,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
         <div style="font-size:11px;color:#666;margin-top:2px" id="new-cmax-hint">Caps how much a % off code can ever take off one order — e.g. 50% off, max $5. Leave blank for no cap. Doesn't apply to $ off codes.</div>
         <div class="arow">
           <label style="font-size:12px;color:#aaa;display:flex;align-items:center;gap:6px;flex:1">Assign to customer (optional):
-            <input type="email" id="new-cemail" placeholder="customer@email.com — leave blank for a public code" style="flex:1;min-width:220px;background:#1a1a1a;border:1px solid #444;border-radius:5px;padding:6px 9px;font-size:12px;color:#fff">
+            <input type="email" id="new-cemail" title="A code assigned to an email also puts that customer's order at the front of the line (behind orders already in progress)" placeholder="customer@email.com — leave blank for a public code" style="flex:1;min-width:220px;background:#1a1a1a;border:1px solid #444;border-radius:5px;padding:6px 9px;font-size:12px;color:#fff">
           </label>
         </div>
         <div style="font-size:11px;color:#666;margin-top:2px">Assigning a code to a customer reserves it — only that email can redeem it, it won't show on the public promo list, and that customer can use it once per day (resets at midnight ET). Check "Single-use only" separately if you also want it to only work once; leave it unchecked to let that customer reuse the code every time (e.g. a standing discount for them).</div>
@@ -1284,10 +1290,30 @@ window.switchTab = function(t) {
 }
 
 // ORDERS
+// Same queue order as the kitchen screen: in progress -> priority (assigned code) -> everyone else oldest first -> scheduled for later
+function orderIsDue(o) { const t = Number(o && o.scheduledFor); return !t || t <= Date.now(); }
+function queueRank(o) {
+  if (o.inProgress) return 0;
+  if (!orderIsDue(o)) return 3;
+  return o.priority ? 1 : 2;
+}
+function queueTime(o) { return queueRank(o) === 0 ? (o.createdAt || 0) : (Number(o.scheduledFor) || o.createdAt || 0); }
+function compareQueue(a, b) { const ra = queueRank(a), rb = queueRank(b); return ra !== rb ? ra - rb : queueTime(a) - queueTime(b); }
+function fmtEtTime(ts) {
+  const n = Number(ts); if (!n) return '';
+  try { return new Date(n).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' }).replace(/[\u202f\u00a0]/g, ' '); } catch (e) { return ''; }
+}
+let adminDueSig = null;
+function adminDueSignature() {
+  return Object.entries(orders || {}).filter(([k, o]) => o && o.status === 'pending' && o.scheduledFor && !o.inProgress && orderIsDue(o)).map(([k]) => k).sort().join(',');
+}
+setInterval(() => { try { if (adminDueSig !== null && adminDueSignature() !== adminDueSig) renderOrders(); } catch (e) {} }, 15000);
+
 function renderOrders() {
+  adminDueSig = adminDueSignature();
   const grid = document.getElementById('orders-grid');
   const all = Object.entries(orders).map(([k,v])=>({fbKey:k,...v}));
-  const open = all.filter(o=>o.status==='pending').sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
+  const open = all.filter(o=>o.status==='pending').sort(compareQueue);
   const recent = all.filter(o=>o.status==='done').sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)).slice(0,8);
   const display = [...open,...recent];
   document.getElementById('open-pill').textContent = `${open.length} open`;
@@ -1297,7 +1323,7 @@ function renderOrders() {
     const card = document.createElement('div');
     card.className = 'oc'+(order.status==='done'?' done':'');
     card.dataset.key = order.fbKey;
-    card.innerHTML = `<div class="oc-hdr"><span class="oc-num">${order.orderNumber ? `<span style="background:#ff6b35;color:#fff;border-radius:5px;padding:1px 7px;margin-right:6px;font-size:14px;font-weight:900">${order.orderNumber}</span>` : ''}#${order.fbKey.slice(-4).toUpperCase()}</span><span class="oc-name">${order.name}</span><span class="oc-time">${order.time||''}</span></div><div class="oc-body">${order.delivery?`<div style="font-size:11px;color:#3b82f6;font-weight:700;margin-bottom:4px;padding:4px 8px;background:#0e1a2a;border-radius:5px">🚚 DELIVERY → ${order.deliveryLocation||'—'}${order.deliveryPhone?' · 📞 '+order.deliveryPhone:''}</div>`:''}${order.preorder?`<div style="font-size:11px;color:#a78bfa;font-weight:700;margin-bottom:4px;padding:4px 8px;background:#1a1030;border-radius:5px">⏰ PRE-ORDER</div>`:''}${(order.items||[]).map(i=>`<div class="oc-line"><span>${i.qty}x</span> ${i.name}${i.customizations&&i.customizations.length?` <span style="color:#a78bfa">(${i.customizations.map(o=>(o.type==='remove'?'No '+o.name:'+ '+o.name)).join(', ')})</span>`:''}${i.sauces&&i.sauces.length?` <span style="color:#f59e0b">(${i.sauces.join(', ')})</span>`:''}</div>`).join('')}${(order.donations&&order.donations.length)?order.donations.map(d=>`<div class="oc-line" style="color:#f472b6">💝 Donation – ${escMenuHtml(d.fundraiserName)}: $${parseFloat(d.amount).toFixed(2)}</div>`).join(''):''}${order.discount>0?`<div style="font-size:11px;color:#22c55e;margin-top:3px">Disc: -$${parseFloat(order.discount).toFixed(2)}</div>`:''}${order.loyaltyDiscount>0?`<div style="font-size:11px;color:#facc15;margin-top:2px">${order.loyaltyLabel||'Loyalty Reward'}: -$${parseFloat(order.loyaltyDiscount).toFixed(2)}</div>`:''}${order.comments?`<div style="font-size:11px;color:#f59e0b;margin-top:4px;padding:4px 8px;background:#2a1f0e;border-radius:5px">&#128172; ${order.comments}</div>`:''}<div class="oc-total">$${parseFloat(order.total).toFixed(2)}</div></div><div class="oc-foot"><span class="sbadge ${order.status==='done'?'done':'pending'}">${order.status==='done'?'Done':'In Progress'}</span><button onclick="event.stopPropagation();openEditOrderModal('${order.fbKey}')" style="background:#0e1a2a;border:1px solid #3b82f644;color:#3b82f6;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">✏️ Edit</button><span class="tap-hint">${order.status==='done'?'Completed':'Double-tap to complete'}</span></div>`;
+    card.innerHTML = `<div class="oc-hdr"><span class="oc-num">${order.orderNumber ? `<span style="background:#ff6b35;color:#fff;border-radius:5px;padding:1px 7px;margin-right:6px;font-size:14px;font-weight:900">${order.orderNumber}</span>` : ''}#${order.fbKey.slice(-4).toUpperCase()}</span><span class="oc-name">${order.name}</span><span class="oc-time">${order.time||''}</span></div><div class="oc-body">${order.delivery?`<div style="font-size:11px;color:#3b82f6;font-weight:700;margin-bottom:4px;padding:4px 8px;background:#0e1a2a;border-radius:5px">🚚 DELIVERY → ${order.deliveryLocation||'—'}${order.deliveryPhone?' · 📞 '+order.deliveryPhone:''}</div>`:''}${order.preorder?`<div style="font-size:11px;color:#a78bfa;font-weight:700;margin-bottom:4px;padding:4px 8px;background:#1a1030;border-radius:5px">⏰ PRE-ORDER</div>`:''}${order.scheduledFor?`<div style="font-size:11px;color:#38bdf8;font-weight:700;margin-bottom:4px;padding:4px 8px;background:#0b1f2e;border-radius:5px">🕒 SCHEDULED FOR ${escMenuHtml(fmtEtTime(order.scheduledFor))}${orderIsDue(order)?'':' — not due yet'}</div>`:''}${order.priority?`<div style="font-size:11px;color:#facc15;font-weight:700;margin-bottom:4px;padding:4px 8px;background:#2a2308;border-radius:5px">⚡ PRIORITY${order.coupon?' — code '+escMenuHtml(order.coupon):''}</div>`:''}${(order.items||[]).map(i=>`<div class="oc-line"><span>${i.qty}x</span> ${i.name}${i.customizations&&i.customizations.length?` <span style="color:#a78bfa">(${i.customizations.map(o=>(o.type==='remove'?'No '+o.name:'+ '+o.name)).join(', ')})</span>`:''}${i.sauces&&i.sauces.length?` <span style="color:#f59e0b">(${i.sauces.join(', ')})</span>`:''}</div>`).join('')}${(order.donations&&order.donations.length)?order.donations.map(d=>`<div class="oc-line" style="color:#f472b6">💝 Donation – ${escMenuHtml(d.fundraiserName)}: $${parseFloat(d.amount).toFixed(2)}</div>`).join(''):''}${order.discount>0?`<div style="font-size:11px;color:#22c55e;margin-top:3px">Disc: -$${parseFloat(order.discount).toFixed(2)}</div>`:''}${order.loyaltyDiscount>0?`<div style="font-size:11px;color:#facc15;margin-top:2px">${order.loyaltyLabel||'Loyalty Reward'}: -$${parseFloat(order.loyaltyDiscount).toFixed(2)}</div>`:''}${order.comments?`<div style="font-size:11px;color:#f59e0b;margin-top:4px;padding:4px 8px;background:#2a1f0e;border-radius:5px">&#128172; ${order.comments}</div>`:''}<div class="oc-total">$${parseFloat(order.total).toFixed(2)}</div></div><div class="oc-foot"><span class="sbadge ${order.status==='done'?'done':'pending'}">${order.status==='done'?'Done':'In Progress'}</span><button onclick="event.stopPropagation();openEditOrderModal('${order.fbKey}')" style="background:#0e1a2a;border:1px solid #3b82f644;color:#3b82f6;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer">✏️ Edit</button><span class="tap-hint">${order.status==='done'?'Completed':'Double-tap to complete'}</span></div>`;
     if (order.status!=='done') card.addEventListener('click',()=>handleTap(order.fbKey,order));
     grid.appendChild(card);
   });
@@ -1498,8 +1524,64 @@ function escMenuHtml(str) {
 
 let menuDragState = {};
 
+// ── EDIT PRICES ON EXISTING MENU ITEMS ──
+let priceEditing = null; // { ci, ii, id, value } while a price is being edited
+Object.defineProperty(window, 'priceEditing', { get() { return priceEditing; }, configurable: true });
+
+window.startEditPrice = function(ci, ii) {
+  const item = menu[ci] && menu[ci].items && menu[ci].items[ii];
+  if (!item) return;
+  priceEditing = { ci: ci, ii: ii, id: item.id, value: (parseFloat(item.price) || 0).toFixed(2) };
+  renderMenuAdmin();
+  const inp = document.getElementById(`price-input-${ci}-${ii}`);
+  if (inp) { inp.focus(); inp.select(); }
+};
+
+window.cancelEditPrice = function() {
+  priceEditing = null;
+  renderMenuAdmin();
+};
+
+window.priceInputKey = function(e, ci, ii) {
+  if (e.key === 'Enter') { e.preventDefault(); saveItemPrice(ci, ii); }
+  else if (e.key === 'Escape') { e.preventDefault(); cancelEditPrice(); }
+};
+
+window.saveItemPrice = async function(ci, ii) {
+  if (!priceEditing || priceEditing.ci !== ci || priceEditing.ii !== ii) return;
+  const raw = String(priceEditing.value).trim();
+  const p = Math.round(parseFloat(raw) * 100) / 100;
+  if (raw === '' || isNaN(p) || p < 0 || p > 9999) { alert('Enter a valid price (0 or more), for example 4.50'); return; }
+  const expectedId = priceEditing.id;
+  try {
+    // Re-read the live menu so only this one item's price is written (stock counts, modifiers, etc. are never touched)
+    const snap = await get(ref(db, 'menu'));
+    const root = snap.val() || {};
+    const catKeys = Object.keys(root);
+    const ck = catKeys[ci];
+    const cat = ck !== undefined ? root[ck] : null;
+    const itemKeys = (cat && cat.items) ? Object.keys(cat.items) : [];
+    const ik = itemKeys[ii];
+    const live = ik !== undefined ? cat.items[ik] : null;
+    if (!live || String(live.id) !== String(expectedId)) {
+      alert('The menu changed while you were editing, so the price was not saved. Please try again.');
+      priceEditing = null; renderMenuAdmin();
+      return;
+    }
+    await set(ref(db, `menu/${ck}/items/${ik}/price`), p);
+    priceEditing = null;
+    renderMenuAdmin();
+  } catch (e) {
+    alert('Error saving price: ' + e.message);
+  }
+};
+
 function renderMenuAdmin() {
   const container = document.getElementById('menu-body');
+  // If a price box is focused (and the menu refreshes from a live update), put the cursor back afterwards
+  const act = document.activeElement;
+  const refocus = (act && act.classList && act.classList.contains('mi-price-input'))
+    ? { id: act.id, start: act.selectionStart, end: act.selectionEnd } : null;
   container.innerHTML = '';
 
   menu.forEach((cat, ci) => {
@@ -1541,7 +1623,8 @@ function renderMenuAdmin() {
     (cat.items || []).forEach((item, ii) => {
       const row = document.createElement('div');
       row.className = 'menu-item-row';
-      row.draggable = true;
+      const editingThis = !!(priceEditing && priceEditing.ci === ci && priceEditing.ii === ii && String(priceEditing.id) === String(item.id));
+      row.draggable = !editingThis; // can't drag a row while typing in its price box
 
       row.ondragstart = (e) => {
         e.stopPropagation();
@@ -1560,7 +1643,9 @@ function renderMenuAdmin() {
       row.innerHTML = `
         <span class="drag-handle">⋮⋮</span>
         <span class="mi-name">${escMenuHtml(item.name)}${item.customizations && item.customizations.length ? `<span class="mi-mod-count">${item.customizations.length} modifier(s)</span>` : ''}</span>
-        <span class="mi-price">$${parseFloat(item.price).toFixed(2)}</span>
+        ${editingThis
+          ? `<span class="mi-price-edit">$<input type="number" class="mi-price-input" id="price-input-${ci}-${ii}" step="0.01" min="0" value="${escMenuHtml(priceEditing.value)}" oninput="priceEditing.value=this.value" onkeydown="priceInputKey(event,${ci},${ii})" onfocus="var c=this.closest('.menu-cat-card');if(c)c.draggable=false" onblur="var c=this.closest('.menu-cat-card');if(c)c.draggable=true"><button class="mi-price-save" onclick="saveItemPrice(${ci},${ii})">Save</button><button class="mi-price-cancel" onclick="cancelEditPrice()">✕</button></span>`
+          : `<button class="mi-price-btn" onclick="startEditPrice(${ci},${ii})" title="Click to change this item's price">$${parseFloat(item.price).toFixed(2)} ✎</button>`}
         <button class="mi-mod-btn" onclick="openCustomizeAdmin(${ci},${ii})">Modifiers</button>
         <button class="delbtn" onclick="deleteItem(${ci},${ii})">Remove</button>
       `;
@@ -1576,6 +1661,10 @@ function renderMenuAdmin() {
   };
 
   const sel=document.getElementById('new-icat');sel.innerHTML=menu.map((c,i)=>`<option value="${i}">${c.label}</option>`).join('');
+  if (refocus) {
+    const inp = document.getElementById(refocus.id);
+    if (inp) { inp.focus(); try { inp.setSelectionRange(refocus.start, refocus.end); } catch (e) {} }
+  }
 }
 
 window.handleItemDrop = async function(targetCi, targetIi) {
@@ -1726,6 +1815,7 @@ window.deleteItem = async function(ci,ii) {
 }
 
 async function setMenu(newMenu) {
+  priceEditing = null;
   await set(ref(db,'menu'),newMenu.reduce((acc,cat,i)=>{acc[i]=cat;return acc},{}));
 }
 
@@ -2983,7 +3073,7 @@ function updateWaitTimeUI() {
   if (lbl)  { lbl.textContent = closed ? 'The Buff is Closed' : 'The Buff is Open'; lbl.style.color = closed ? '#ef4444' : '#22c55e'; }
 
   // Wait time
-  const openOrders  = Object.values(orders).filter(o => o.status === 'pending').length;
+  const openOrders  = Object.values(orders).filter(o => o.status === 'pending' && orderIsDue(o)).length;
   const minsPerOrder = parseInt(d.minsPerOrder) || 2;
   const totalMins   = openOrders * minsPerOrder;
   const waitEl = document.getElementById('current-wait-display');

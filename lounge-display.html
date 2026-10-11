@@ -417,6 +417,18 @@ let menu = [];
 let waittimeSettings = {};
 let openOrderCount = 0;
 let doneOrderCount = 0;
+let lastAllOrders = [];
+
+// Queue order (matches the kitchen screen): in progress -> priority -> everyone else oldest first.
+// Scheduled orders only join the queue/wait count once their scheduled time arrives.
+function orderIsDue(o) { const t = Number(o && o.scheduledFor); return !t || t <= Date.now(); }
+function queueRank(o) {
+  if (o.inProgress) return 0;
+  if (!orderIsDue(o)) return 3;
+  return o.priority ? 1 : 2;
+}
+function queueTime(o) { return queueRank(o) === 0 ? (o.createdAt || 0) : (Number(o.scheduledFor) || o.createdAt || 0); }
+function compareQueue(a, b) { const ra = queueRank(a), rb = queueRank(b); return ra !== rb ? ra - rb : queueTime(a) - queueTime(b); }
 let drinkPictures = {};
 
 const DEFAULT_CUSTOMIZE_OPTIONS = ['Buffalo Sauce','Ranch','Hot Honey','BBQ Sauce','Bacon','Extra Cheese'];
@@ -641,12 +653,21 @@ onValue(ref(db, 'waittime'), snap => {
 onValue(ref(db, 'orders'), snap => {
   const data = snap.val() || {};
   const all = Object.entries(data).map(([k,v]) => ({ fbKey: k, ...v }));
-  openOrderCount = all.filter(o => o.status === 'pending').length;
+  lastAllOrders = all;
+  openOrderCount = all.filter(o => o.status === 'pending' && orderIsDue(o)).length;
   doneOrderCount = all.filter(o => o.status === 'done').length;
   updateWaitDisplay();
   renderOrderQueue(all);
   renderLeaderboard(all);
 });
+
+// Scheduled orders become due as time passes, so refresh the count and queue even if no order changed
+setInterval(() => {
+  if (!lastAllOrders.length) return;
+  openOrderCount = lastAllOrders.filter(o => o.status === 'pending' && orderIsDue(o)).length;
+  updateWaitDisplay();
+  renderOrderQueue(lastAllOrders);
+}, 20000);
 
 // Shows the live pending-order queue with a short (privacy-safe) order number and an
 // estimated ready time per position — never customer names.
@@ -655,7 +676,7 @@ function renderOrderQueue(allOrders) {
   const container = document.getElementById('queue-section');
   if (!wrap || !container) return;
 
-  const pending = allOrders.filter(o => o.status === 'pending').sort((a,b) => (a.createdAt||0) - (b.createdAt||0));
+  const pending = allOrders.filter(o => o.status === 'pending' && orderIsDue(o)).sort(compareQueue);
   if (!pending.length) {
     wrap.style.display = 'none';
     container.innerHTML = '';

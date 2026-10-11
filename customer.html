@@ -225,6 +225,22 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
           </div>
         </label>
       </div>
+      <div class="oo-option" id="schedule-card">
+        <label class="oo-row" for="schedule-toggle">
+          <div class="oo-row-left">
+            <span class="oo-label">🕒 Schedule for Later</span>
+            <span class="oo-sub" id="schedule-sub">Loading availability...</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <input type="checkbox" id="schedule-toggle" class="oo-toggle" disabled onchange="onScheduleToggle(this.checked)">
+          </div>
+        </label>
+        <div class="oo-fields" id="schedule-fields">
+          <div style="font-size:11px;color:#38bdf8;background:#0b1f2e;border:1px solid #38bdf844;border-radius:6px;padding:7px 9px;margin-bottom:4px">🕒 Your order goes into the kitchen queue at the time you pick (Eastern Time). Orders waiting in line before then are made first.</div>
+          <label>Time today (Eastern Time)</label>
+          <select id="schedule-time"><option value="">Select a time...</option></select>
+        </div>
+      </div>
     </div>
     <div class="fundraiser-box" id="fundraiser-box" style="display:none"></div>
     <div class="cart-footer">
@@ -291,6 +307,8 @@ let fundraisers = [], donationSelections = {}; // donationSelections: fundraiser
 let customMilestones = {};
 let deliveryLocations = {};
 let deliveryOn = false, preorderOn = false;
+let scheduleOn = false;
+let ordersDataCache = {}; // latest snapshot of all orders (used for the live wait count)
 let deliveryTestOverride = false;
 let preorderTestOverride = false;
 let preorderSettings = {}; // sourced from the 'deliverySettings' node — also holds delivery window times, despite the name
@@ -347,7 +365,29 @@ onValue(ref(db, 'branding'), snap => { applyBranding(snap.val() || {}); });
 onValue(ref(db, 'menu'), snap => {
   menu = snap.val() ? Object.values(snap.val()) : [];
   renderMenu();
+  // If the stand changed a price while someone has that item in their cart, update the cart to the new price
+  if (cart.length && repriceCartFromMenu()) {
+    renderCart();
+    showToast('Some prices were updated — please review your order.', 5000);
+  }
 });
+
+// Re-prices regular (non-special) cart lines against the live menu. Returns true if anything changed.
+function repriceCartFromMenu() {
+  let changed = false;
+  cart.forEach(c => {
+    if (c.isSpecial) return;
+    let live = null;
+    menu.forEach(cat => (cat.items || []).forEach(it => { if (String(it.id) === String(c.id)) live = it; }));
+    if (!live) return;
+    const base = parseFloat(live.price);
+    if (isNaN(base)) return;
+    const extras = (c.customizations || []).reduce((sum, o) => sum + ((o.type === 'add' && o.price > 0) ? parseFloat(o.price) : 0), 0);
+    const np = Math.round((base + extras) * 100) / 100;
+    if (Math.abs(np - c.price) > 0.001) { c.price = np; changed = true; }
+  });
+  return changed;
+}
 
 onValue(ref(db, 'coupons'), snap => {
   coupons = snap.val() ? Object.entries(snap.val()).map(([k,v]) => ({fbKey:k,...v})) : [];
@@ -430,10 +470,16 @@ onValue(ref(db, 'waittime'), snap => {
   if (typeof refreshOrderOptionAvailability === 'function') refreshOrderOptionAvailability();
 });
 
+// A scheduled order only counts toward the wait (and the queue) once its scheduled time has arrived
+function orderIsDue(o) { const t = Number(o && o.scheduledFor); return !t || t <= Date.now(); }
+function recomputeOpenOrderCount() {
+  openOrderCount = Object.values(ordersDataCache || {}).filter(function(o){ return o && o.status === 'pending' && orderIsDue(o); }).length;
+}
 // Track open orders for wait time
 onValue(ref(db, 'orders'), snap => {
   const data = snap.val() || {};
-  openOrderCount = Object.values(data).filter(function(o){ return o.status === 'pending'; }).length;
+  ordersDataCache = data;
+  recomputeOpenOrderCount();
   var panel = document.getElementById('menu-panel');
   if (panel) renderWaitBlock(panel);
 });
@@ -632,6 +678,95 @@ function isPreorderWindowOpen() {
   return nowMins >= start || nowMins < end;
 }
 
+// ── SCHEDULE FOR LATER: pick a time today, within today's operating hours (hours come from the admin Wait Time tab, Eastern Time) ──
+const SCHEDULE_STEP_MIN = 5;       // a time slot every 5 minutes
+const SCHEDULE_MIN_LEAD_MIN = 10;  // earliest slot is this many minutes from now
+function getEasternDateParts(date) {
+  date = date || new Date();
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York', year: 'numeric', month: 'numeric', day: 'numeric',
+    weekday: 'long', hour: 'numeric', minute: 'numeric', hour12: false
+  });
+  const m = {};
+  fmt.formatToParts(date).forEach(p => { m[p.type] = p.value; });
+  let hour = parseInt(m.hour, 10); if (hour === 24) hour = 0;
+  return { year: parseInt(m.year, 10), month: parseInt(m.month, 10), day: parseInt(m.day, 10), weekday: m.weekday, hour: hour, minute: parseInt(m.minute, 10) || 0 };
+}
+// Converts "Eastern wall-clock date + minutes after midnight" into a real timestamp (handles daylight saving)
+function easternWallToEpoch(y, mo, d, minutes) {
+  const target = Date.UTC(y, mo - 1, d, 0, minutes);
+  let guess = target;
+  for (let i = 0; i < 3; i++) {
+    const p = getEasternDateParts(new Date(guess));
+    const shown = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute);
+    const diff = target - shown;
+    if (diff === 0) break;
+    guess += diff;
+  }
+  return guess;
+}
+function fmtEtClock(ms) {
+  try {
+    return new Date(Number(ms)).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' }).replace(/[\u202f\u00a0]/g, ' ');
+  } catch (e) { return ''; }
+}
+function getScheduleInfo() {
+  const info = { slots: [], openMs: 0, closeMs: 0, closeLabel: '', reason: '' };
+  const now = new Date();
+  const p = getEasternDateParts(now);
+  const h = waittimeSnap && waittimeSnap['hours_' + p.weekday];
+  if (!h || h.enabled !== true) { info.reason = "we're not open today"; return info; }
+  const openM = parseHHMM(h.open || '10:00');
+  const closeRaw = parseHHMM(h.close || '22:00');
+  if (openM === null || closeRaw === null) { info.reason = "today's hours aren't available"; return info; }
+  const closeM = closeRaw <= openM ? closeRaw + 1440 : closeRaw;
+  info.openMs = easternWallToEpoch(p.year, p.month, p.day, openM);
+  info.closeMs = info.openMs + (closeM - openM) * 60000;
+  info.closeLabel = formatMinutesAsClock(closeM);
+  const earliest = now.getTime() + SCHEDULE_MIN_LEAD_MIN * 60000;
+  for (let m = Math.ceil(openM / SCHEDULE_STEP_MIN) * SCHEDULE_STEP_MIN; m < closeM; m += SCHEDULE_STEP_MIN) {
+    const ms = info.openMs + (m - openM) * 60000;
+    if (ms < earliest) continue;
+    info.slots.push({ ms: ms, label: fmtEtClock(ms) });
+  }
+  return info;
+}
+function refreshScheduleOption() {
+  const toggle = document.getElementById('schedule-toggle');
+  const card = document.getElementById('schedule-card');
+  const sub = document.getElementById('schedule-sub');
+  const fields = document.getElementById('schedule-fields');
+  const sel = document.getElementById('schedule-time');
+  if (!toggle || !card || !sub || !fields || !sel) return;
+  const storeOpen = !(waittimeSnap && waittimeSnap.closed === true);
+  const info = getScheduleInfo();
+  const ok = storeOpen && !deliveryOn && info.slots.length > 0;
+  toggle.disabled = !ok;
+  card.classList.toggle('unavailable', !ok);
+  if (!ok && toggle.checked) {
+    toggle.checked = false; scheduleOn = false;
+    card.classList.remove('active'); fields.classList.remove('show');
+  }
+  if (deliveryOn) sub.textContent = 'Not available with Delivery selected';
+  else if (!storeOpen) sub.textContent = "Not available while we're closed";
+  else if (info.reason) sub.textContent = 'Not available — ' + info.reason;
+  else if (!info.slots.length) sub.textContent = 'No more times available today';
+  else sub.textContent = `Pick a time today — we're open until ${info.closeLabel} ET`;
+  if (document.activeElement === sel) return; // don't rebuild the list while the customer has it open
+  const keep = parseInt(sel.value, 10) || 0;
+  let slots = info.slots.slice();
+  // keep a chosen time that is still in the future/within hours even if it just fell inside the lead window
+  if (scheduleOn && keep && !slots.some(x => x.ms === keep) && keep > Date.now() && keep >= info.openMs && keep < info.closeMs) {
+    slots.unshift({ ms: keep, label: fmtEtClock(keep) });
+  }
+  const html = '<option value="">Select a time...</option>' + slots.map(x => `<option value="${x.ms}">${x.label}</option>`).join('');
+  if (sel.dataset.sig !== html) {
+    sel.innerHTML = html;
+    sel.dataset.sig = html;
+    if (keep && slots.some(x => x.ms === keep)) sel.value = String(keep);
+  }
+}
+
 function refreshOrderOptionAvailability() {
   const delivToggle = document.getElementById('delivery-toggle');
   const delivCard = document.getElementById('delivery-card');
@@ -675,6 +810,7 @@ function refreshOrderOptionAvailability() {
     }
   }
 
+  refreshScheduleOption();
   updateTotals();
 }
 
@@ -696,8 +832,25 @@ window.onPreorderToggle = function(checked) {
   updateTotals();
 };
 
+window.onScheduleToggle = function(checked) {
+  scheduleOn = checked;
+  const card = document.getElementById('schedule-card');
+  if (card) card.classList.toggle('active', checked);
+  const fields = document.getElementById('schedule-fields');
+  if (fields) fields.classList.toggle('show', checked);
+  if (!checked) { const sel = document.getElementById('schedule-time'); if (sel) sel.value = ''; }
+  refreshOrderOptionAvailability();
+};
+
 refreshOrderOptionAvailability();
-setInterval(() => { refreshOrderOptionAvailability(); renderPromoBanner(); }, 20000);
+setInterval(() => {
+  refreshOrderOptionAvailability(); renderPromoBanner();
+  // scheduled orders become "due" as time passes, so refresh the live wait count and the My Orders list
+  const prevOpen = openOrderCount;
+  recomputeOpenOrderCount();
+  if (prevOpen !== openOrderCount) { const panel = document.getElementById('menu-panel'); if (panel) renderWaitBlock(panel); }
+  renderOrderHistoryList();
+}, 20000);
 
 function renderLoyaltyBanner() {
   if (!loyaltyData) { hideLoyaltyBanner(); return; }
@@ -1140,7 +1293,7 @@ window.applyDiscount = async function() {
   }
   const cappedNote = (cp.type==='percent' && cp.maxOff) ? ` (max $${parseFloat(cp.maxOff).toFixed(2)})` : '';
   const restrictionNote = (cp.itemRestriction && cp.itemRestriction.length) ? ` · applies to ${cp.itemRestriction.join(', ')}` : '';
-  msg.className='disc-msg ok'; msg.textContent=`Applied! ${cp.type==='percent'?cp.value+'% off'+cappedNote:'$'+cp.value.toFixed(2)+' off'}${restrictionNote} (-$${(Math.round(disc*100)/100).toFixed(2)})`;
+  msg.className='disc-msg ok'; msg.textContent=`Applied! ${cp.type==='percent'?cp.value+'% off'+cappedNote:'$'+cp.value.toFixed(2)+' off'}${restrictionNote} (-$${(Math.round(disc*100)/100).toFixed(2)})${cp.assignedEmail ? ' · ⚡ Priority: your order goes ahead of orders that haven\'t been started.' : ''}`;
   updateTotals();
   if (loyaltyData) renderLoyaltyBanner();
 }
@@ -1171,6 +1324,11 @@ window.placeOrder = async function() {
   if (!firstName || !lastName) { alert('Please enter your first and last name'); return; }
   if (!email) { alert('Please enter your email'); return; }
   if (!cart.length) { alert('Your cart is empty'); return; }
+  if (repriceCartFromMenu()) {
+    renderCart();
+    alert('Some prices were just updated. Please review your order total, then place your order again.');
+    return;
+  }
 
   if (appliedCoupon) {
     const now = Date.now();
@@ -1227,6 +1385,21 @@ window.placeOrder = async function() {
     alert("Pre-orders are no longer available right now. Please uncheck Pre-Order to continue, or place your order without it.");
     refreshOrderOptionAvailability();
     return;
+  }
+
+  // Scheduled order: re-validate the chosen time at the moment of submission
+  let scheduledForVal = null, scheduledLabelVal = null;
+  if (scheduleOn) {
+    const ms = parseInt((document.getElementById('schedule-time') || {}).value, 10);
+    if (!ms) { alert('Please choose a time for your scheduled order, or uncheck "Schedule for Later".'); return; }
+    const info = getScheduleInfo();
+    if (!(ms > Date.now() && info.openMs && ms >= info.openMs && ms < info.closeMs)) {
+      alert('That time is no longer available. Please pick a different time.');
+      refreshOrderOptionAvailability();
+      return;
+    }
+    scheduledForVal = ms;
+    scheduledLabelVal = fmtEtClock(ms);
   }
 
   const t = updateTotals();
@@ -1293,6 +1466,8 @@ window.placeOrder = async function() {
     deliveryFee: t.deliveryFee,
     preorder: !!preorderOn,
     preorderFee: t.preorderFee,
+    scheduledFor: scheduledForVal, scheduledLabel: scheduledLabelVal,
+    priority: !!(appliedCoupon && appliedCoupon.assignedEmail), // individually-assigned code => front of the (not-yet-started) line
     donations: t.donations.length ? t.donations : null, donationTotal: t.donationTotal || 0,
     loyaltyOrderNum: newOrderCount, total: t.total,
     coupon: appliedCoupon ? appliedCoupon.code : null,
@@ -1319,8 +1494,8 @@ window.placeOrder = async function() {
       localStorage.setItem('rmbOrderToken', JSON.stringify(token));
     } catch(e) {}
     cart = []; appliedCoupon = null; loyaltyData = null; loyaltyDiscount = 0; useCredit = true; donationSelections = {}; renderFundraiserBox();
-    deliveryOn = false; preorderOn = false;
-    ['delivery-toggle','preorder-toggle'].forEach(function(id) {
+    deliveryOn = false; preorderOn = false; scheduleOn = false;
+    ['delivery-toggle','preorder-toggle','schedule-toggle'].forEach(function(id) {
       var el = document.getElementById(id); if (el) el.checked = false;
     });
     ['delivery-location','delivery-phone'].forEach(function(id) {
@@ -1332,6 +1507,12 @@ window.placeOrder = async function() {
     if (delivCard) delivCard.classList.remove('active');
     var preCard = document.getElementById('preorder-card');
     if (preCard) preCard.classList.remove('active');
+    var schedCard = document.getElementById('schedule-card');
+    if (schedCard) schedCard.classList.remove('active');
+    var schedFields = document.getElementById('schedule-fields');
+    if (schedFields) schedFields.classList.remove('show');
+    var schedSel = document.getElementById('schedule-time');
+    if (schedSel) schedSel.value = '';
     // Clear the form for the next person — order tracking (the pill / My Orders) stays
     // alive on the email that was just used, since it's tracked in JS state, not the input.
     ['cust-fname','cust-lname','cust-email','cust-comments','disc-code'].forEach(function(id) {
@@ -1341,7 +1522,8 @@ window.placeOrder = async function() {
     if (discMsg) discMsg.className = 'disc-msg';
     hideLoyaltyBanner(); renderCart();
     var numPart = orderNumber ? ' Your order number is #' + orderNumber + '.' : '';
-    var toastMsg = loyaltyMsg ? 'Order placed!' + numPart + ' ' + loyaltyMsg : "Order placed!" + numPart + " We'll email you when it's ready.";
+    var placedWord = scheduledLabelVal ? ('Order scheduled for ' + scheduledLabelVal + '!') : 'Order placed!';
+    var toastMsg = loyaltyMsg ? placedWord + numPart + ' ' + loyaltyMsg : placedWord + numPart + (scheduledLabelVal ? " We'll start it at your scheduled time and email you when it's ready." : " We'll email you when it's ready.");
     showToast(toastMsg, loyaltyMsg ? 7000 : 6000);
   } catch(e) { alert('Error placing order. Please try again.'); console.error(e); }
 }
@@ -1449,10 +1631,15 @@ function orderHistoryCardHtml(o, isActive) {
   const statusHtml = o.status === 'done'
     ? '<span style="color:#22c55e;font-weight:700;font-size:11px;white-space:nowrap">✅ Ready</span>'
     : '<span style="color:#f59e0b;font-weight:700;font-size:11px;white-space:nowrap">🧑\u200d🍳 Being Prepared</span>';
+  let statusShown = statusHtml;
+  const schedTs = Number(o.scheduledFor) || 0;
+  if (o.status !== 'done' && schedTs && schedTs > Date.now() && !o.inProgress) {
+    statusShown = '<span style="color:#38bdf8;font-weight:700;font-size:11px;white-space:nowrap">🕒 Scheduled · ' + escapeHtmlAttr(fmtEtClock(schedTs)) + '</span>';
+  }
   return `<div class="order-hist-item"${isActive ? ' style="border-color:#f59e0b66;background:#1f1a0e"' : ''}>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
       <div class="order-hist-date">${o.orderNumber ? '<strong style="color:#ff6b35">#' + escapeHtmlAttr(String(o.orderNumber)) + '</strong> · ' : ''}${escapeHtmlAttr(dateLabel)}${o.time ? ' · ' + escapeHtmlAttr(o.time) : ''}</div>
-      ${statusHtml}
+      ${statusShown}
     </div>
     <div class="order-hist-items">${itemsText}</div>
     <div class="order-hist-total">$${parseFloat(o.total||0).toFixed(2)}</div>

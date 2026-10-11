@@ -107,6 +107,8 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
   .pt-wrap{width:80mm;padding:6mm 4mm;font-family:'Courier New',monospace;color:#000;text-align:center;box-sizing:border-box}
   .pt-num{font-size:calc(54px * var(--receipt-scale,1));font-weight:900;line-height:1;text-align:left;margin-bottom:2mm}
   .pt-name{font-size:calc(15px * var(--receipt-scale,1));font-weight:700;margin-bottom:3mm;word-break:break-word}
+  .pt-times{font-size:calc(12px * var(--receipt-scale,1));text-align:left;margin-bottom:3mm}
+  .pt-sched{font-weight:900}
   .pt-items{font-size:calc(13px * var(--receipt-scale,1));margin-bottom:3mm;text-align:left;width:100%}
   .pt-line{padding:1mm 0;border-bottom:1px dashed #000}
   .pt-line:last-child{border-bottom:none}
@@ -243,6 +245,57 @@ let waittimeSettings = {};
 let receiptScale = 1;
 let printSettings = {};
 const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+
+// ── QUEUE ORDER, SCHEDULED ORDERS & PRIORITY ──
+// Queue order (top of the screen = next up):
+//   0) orders already in progress
+//   1) PRIORITY orders (placed with a customer's individually-assigned code) that are due and not started yet
+//   2) everything else that is due, oldest first (a scheduled order counts from its scheduled time)
+//   3) scheduled orders whose time hasn't arrived yet, soonest first
+const TICKET_TZ = 'America/New_York';
+function fmtEtTime(ts) {
+  const n = Number(ts);
+  if (!n) return '';
+  try {
+    return new Date(n).toLocaleTimeString('en-US', { timeZone: TICKET_TZ, hour: 'numeric', minute: '2-digit' })
+      .replace(/[\u202f\u00a0]/g, ' ');
+  } catch (e) { return ''; }
+}
+function orderIsDue(o) { const s = Number(o && o.scheduledFor); return !s || s <= Date.now(); }
+function queueRank(o) {
+  if (o.inProgress) return 0;
+  if (!orderIsDue(o)) return 3;
+  return o.priority ? 1 : 2;
+}
+function queueTime(o) {
+  const r = queueRank(o);
+  if (r === 0) return o.createdAt || 0;
+  return Number(o.scheduledFor) || o.createdAt || 0;
+}
+function compareQueue(a, b) {
+  const ra = queueRank(a), rb = queueRank(b);
+  if (ra !== rb) return ra - rb;
+  return queueTime(a) - queueTime(b);
+}
+// Keys of scheduled orders that are due now and not started (used to notice when one becomes due)
+let dueScheduledKeys = null;
+function currentDueScheduledKeys() {
+  const set = new Set();
+  Object.entries(orders || {}).forEach(([k, o]) => {
+    if (o && o.status !== 'done' && !o.inProgress && o.scheduledFor && orderIsDue(o)) set.add(k);
+  });
+  return set;
+}
+setInterval(() => {
+  if (!deviceListenersStarted) return;
+  const now = currentDueScheduledKeys();
+  if (dueScheduledKeys === null) { dueScheduledKeys = now; return; }
+  let changed = now.size !== dueScheduledKeys.size, becameDue = false;
+  now.forEach(k => { if (!dueScheduledKeys.has(k)) { changed = true; becameDue = true; } });
+  if (!changed) return;
+  if (becameDue && knownOrderKeys !== null) { try { playNewOrderChime(); } catch (e) {} }
+  renderOrders(); // re-sorts the queue and refreshes the "not due yet" labels
+}, 10000);
 
 // The touchscreen signs in ONCE as one shared "kitchen device" account and stays signed
 // in indefinitely. currentWorkerId/currentWorkerName track WHICH employee has the screen
@@ -619,6 +672,11 @@ function updateOrderTimers() {
     const created = parseInt(el.dataset.created, 10);
     if (!created) { el.textContent = '--:--'; return; }
     const elapsedSec = Math.floor((Date.now() - created) / 1000);
+    if (elapsedSec < 0) { // scheduled order that isn't due yet: count down instead of up
+      el.textContent = '⏰ in ' + formatElapsed(-elapsedSec);
+      el.classList.remove('warn', 'alert');
+      return;
+    }
     el.textContent = formatElapsed(elapsedSec);
     el.classList.remove('warn', 'alert');
     if (elapsedSec >= 600) el.classList.add('alert');
@@ -629,7 +687,8 @@ function updateOrderTimers() {
 function renderOrders() {
   const grid = document.getElementById('orders-grid');
   const allOrders = Object.entries(orders).map(([k,v]) => ({fbKey:k,...v}));
-  const open = allOrders.filter(o => o.status !== 'done').sort((a,b) => (a.createdAt||0)-(b.createdAt||0));
+  const open = allOrders.filter(o => o.status !== 'done').sort(compareQueue);
+  dueScheduledKeys = currentDueScheduledKeys();
 
   document.getElementById('open-pill').textContent = `${open.length} open`;
   if (!open.length) { grid.innerHTML = '<div class="empty">No open orders</div>'; return; }
@@ -642,7 +701,7 @@ function renderOrders() {
     const badgeClass = order.inProgress ? 'working' : 'pending';
     const badgeLabel = order.inProgress ? 'In Progress' : 'New';
     card.innerHTML = `
-      <span class="oc-timer" data-created="${order.createdAt||''}">--:--</span>
+      <span class="oc-timer" data-created="${order.scheduledFor||order.createdAt||''}">--:--</span>
       <div class="oc-hdr">
         <span style="display:flex;align-items:center;gap:9px"><span class="oc-bignum${order.orderNumber ? '' : ' none'}">${order.orderNumber || '—'}</span><span class="oc-num">#${order.fbKey.slice(-4).toUpperCase()}</span></span>
         <span class="oc-name">${order.name}</span>
@@ -651,6 +710,8 @@ function renderOrders() {
       <div class="oc-body">
         ${order.delivery?`<div style="font-size:11px;color:#3b82f6;font-weight:700;margin-bottom:5px;padding:5px 8px;background:#0e1a2a;border-radius:5px">🚚 DELIVERY → ${order.deliveryLocation||'—'}${order.deliveryPhone?' · 📞 '+order.deliveryPhone:''}</div>`:''}
         ${order.preorder?`<div style="font-size:11px;color:#a78bfa;font-weight:700;margin-bottom:5px;padding:5px 8px;background:#1a1030;border-radius:5px">⏰ PRE-ORDER</div>`:''}
+        ${order.scheduledFor?`<div style="font-size:11px;color:#38bdf8;font-weight:700;margin-bottom:5px;padding:5px 8px;background:#0b1f2e;border-radius:5px">🕒 SCHEDULED FOR ${escapeHtml(fmtEtTime(order.scheduledFor))}${orderIsDue(order)?'':' — not due yet'}</div>`:''}
+        ${order.priority?`<div style="font-size:11px;color:#facc15;font-weight:700;margin-bottom:5px;padding:5px 8px;background:#2a2308;border-radius:5px">⚡ PRIORITY${order.coupon?' — code '+escapeHtml(order.coupon):''}</div>`:''}
         ${order.paymentMethod==='paypal'?`<div style="font-size:11px;color:#22c55e;font-weight:700;margin-bottom:5px;padding:5px 8px;background:#052e16;border-radius:5px">💳 PAID VIA PAYPAL</div>`:''}
         ${(order.items||[]).map(i=>`<div class="oc-line"><span>${i.qty}x</span> ${i.name}</div>${i.customizations&&i.customizations.length?`<div style="font-size:11px;color:#a78bfa;padding-left:18px">${i.customizations.map(o=>(o.type==='remove'?'No '+o.name:'+ '+o.name)).join(', ')}</div>`:''}${i.sauces&&i.sauces.length?`<div style="font-size:11px;color:#f59e0b;padding-left:18px">🥫 Side: ${i.sauces.join(', ')}</div>`:''}`).join('')}
         ${(order.donations&&order.donations.length)?order.donations.map(d=>`<div class="oc-line" style="color:#f472b6;display:flex;justify-content:space-between"><span>💝 Donation – ${escapeHtml(d.fundraiserName)}</span><span>$${parseFloat(d.amount).toFixed(2)}</span></div>`).join(''):''}
@@ -866,10 +927,11 @@ window.startOrder = async function(key) {
   if (!order || order.inProgress) return; // guard against double-fire (already started, or stale data)
   // Print here if this screen is the print station, or if no print station is currently online (fallback).
   // Otherwise just flag the order and let the print station pick it up.
+  const startedAt = Date.now(); // the moment the order is started — printed on the ticket
   const stationUp = isPrintStationOnline();
   const printHere = isPrintStation || !stationUp;
   if (printHere) {
-    printOrderTicket(order);
+    printOrderTicket({ ...order, inProgressAt: startedAt });
     if (!isPrintStation) flashPrintNote('🖨️ No print station online — printing on this screen');
   } else {
     flashPrintNote('🖨️ Ticket sent to the print station');
@@ -877,7 +939,7 @@ window.startOrder = async function(key) {
   try {
     await update(ref(db, `orders/${key}`), {
       inProgress: true, paid: true,
-      inProgressBy: currentWorkerId || null, inProgressByName: currentWorkerName || 'Unknown', inProgressAt: Date.now(),
+      inProgressBy: currentWorkerId || null, inProgressByName: currentWorkerName || 'Unknown', inProgressAt: startedAt,
       printRequestedAt: Date.now(), printedAt: printHere ? Date.now() : null
     });
   } catch(e) { alert('Error: ' + e.message); return; }
@@ -935,10 +997,15 @@ function buildTicketHtml(order) {
     ? `<div class="pt-msg-label">Credit Balance</div><div class="pt-msg">$${parseFloat(order.remainingCredit).toFixed(2)} on file for ${escapeHtml(order.email||'this email')}</div>`
     : '';
   const totalHtml = `<div class="pt-total">Total: $${parseFloat(order.total||0).toFixed(2)}</div>`;
+  const placedTxt = fmtEtTime(order.createdAt), startedTxt = fmtEtTime(order.inProgressAt), schedTxt = fmtEtTime(order.scheduledFor);
+  const timesHtml = (placedTxt || startedTxt || schedTxt)
+    ? `<div class="pt-times">${schedTxt ? `<div class="pt-sched">SCHEDULED FOR ${escapeHtml(schedTxt)}</div>` : ''}${placedTxt ? `<div>Placed: ${escapeHtml(placedTxt)}</div>` : ''}${startedTxt ? `<div>Started: ${escapeHtml(startedTxt)}</div>` : ''}</div>`
+    : '';
   return `
     <div class="pt-wrap" style="--receipt-scale:${receiptScale}">
       ${order.orderNumber ? `<div class="pt-num">#${escapeHtml(order.orderNumber)}</div>` : ''}
       <div class="pt-name">${escapeHtml(order.name)}</div>
+      ${timesHtml}
       <div class="pt-items">${itemsHtml}${donationLinesHtml}</div>
       ${deliveryHtml}
       ${couponHtml}
@@ -1109,6 +1176,10 @@ function escposTicket(order) {
   align(0);
   if (order.orderNumber) { bold(true); para('#' + order.orderNumber, numM); bold(false); }
   align(1); bold(true); para(order.name || '', nameM); bold(false); align(0);
+  const tSched = fmtEtTime(order.scheduledFor), tPlaced = fmtEtTime(order.createdAt), tStarted = fmtEtTime(order.inProgressAt);
+  if (tSched) { bold(true); para('SCHEDULED FOR ' + tSched, bodyM); bold(false); }
+  if (tPlaced) para('Placed:  ' + tPlaced, modM);
+  if (tStarted) para('Started: ' + tStarted, modM);
   lf();
 
   const items = order.items || [];

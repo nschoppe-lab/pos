@@ -88,6 +88,19 @@ const db = getDatabase(app);
 
 let waittimeSettings = {};
 let openOrderCount = 0;
+let ordersCache = {};
+
+// A scheduled order only counts toward the wait once its scheduled time has arrived
+function orderIsDue(o) { const t = Number(o && o.scheduledFor); return !t || t <= Date.now(); }
+function applyOrderCounts() {
+  const all = Object.values(ordersCache);
+  openOrderCount = all.filter(o => o && o.status === 'pending' && orderIsDue(o)).length;
+  const done = all.filter(o => o && o.status === 'done').length;
+  document.getElementById('open-count').textContent = openOrderCount;
+  document.getElementById('done-count').textContent = done;
+  updateDisplay(); // recalculate wait time with latest open count
+}
+setInterval(applyOrderCounts, 20000);
 
 function updateDisplay() {
   const data = waittimeSettings;
@@ -180,13 +193,8 @@ onValue(ref(db, 'waittime'), snap => {
 
 // Listen to live order counts — calculates wait time directly
 onValue(ref(db, 'orders'), snap => {
-  const data = snap.val() || {};
-  const all = Object.values(data);
-  openOrderCount = all.filter(o => o.status === 'pending').length;
-  const done = all.filter(o => o.status === 'done').length;
-  document.getElementById('open-count').textContent = openOrderCount;
-  document.getElementById('done-count').textContent = done;
-  updateDisplay(); // recalculate wait time with latest open count
+  ordersCache = snap.val() || {};
+  applyOrderCounts();
 });
 </script>
 </body>
