@@ -182,7 +182,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
       </div>
       <label>Email (we'll email you when your order is ready)</label>
       <input type="email" id="cust-email" placeholder="e.g. youremail@gmail.com">
-      <label>Comments / Special Requests (optional)</label>
+      <label id="cust-comments-label">Comments / Special Requests (optional)</label>
       <textarea id="cust-comments" placeholder="e.g. No onions, extra sauce, allergy info..."></textarea>
       <div class="promo-banner" id="promo-banner" style="display:none"></div>
       <label>Discount Code (optional)</label>
@@ -365,6 +365,7 @@ onValue(ref(db, 'branding'), snap => { applyBranding(snap.val() || {}); });
 onValue(ref(db, 'menu'), snap => {
   menu = snap.val() ? Object.values(snap.val()) : [];
   renderMenu();
+  refreshCommentsField();
   // If the stand changed a price while someone has that item in their cart, update the cart to the new price
   if (cart.length && repriceCartFromMenu()) {
     renderCart();
@@ -1080,7 +1081,27 @@ window.clearCart = function() {
   renderCart();
 }
 
+// Admin can turn comments off per item (item.noComments). The comments box is per-order, so it is hidden
+// only when EVERY item in the cart has comments off; if any item allows comments, the box stays.
+function itemCommentsOff(c) {
+  let live = null;
+  (menu || []).forEach(cat => (cat.items ? Object.values(cat.items) : []).forEach(it => { if (it && String(it.id) === String(c.id)) live = it; }));
+  return (live || c).noComments === true;
+}
+function commentsAllowedForCart() {
+  return !cart.length || cart.some(c => !itemCommentsOff(c));
+}
+function refreshCommentsField() {
+  const ta = document.getElementById('cust-comments'), lb = document.getElementById('cust-comments-label');
+  if (!ta || !lb) return;
+  const ok = commentsAllowedForCart();
+  ta.style.display = ok ? '' : 'none';
+  lb.style.display = ok ? '' : 'none';
+  if (!ok) ta.value = '';
+}
+
 function renderCart() {
+  refreshCommentsField();
   const el = document.getElementById('cart-items');
   if (!cart.length) { el.innerHTML = '<div class="cart-empty">Tap items to add them</div>'; updateTotals(); return; }
   el.innerHTML = '';
@@ -1335,7 +1356,7 @@ window.placeOrder = async function() {
   const lastName = document.getElementById('cust-lname').value.trim();
   const name = (firstName + ' ' + lastName).trim();
   const email = document.getElementById('cust-email').value.trim().toLowerCase();
-  const comments = document.getElementById('cust-comments').value.trim();
+  const comments = commentsAllowedForCart() ? document.getElementById('cust-comments').value.trim() : '';
   if (!firstName || !lastName) { alert('Please enter your first and last name'); return; }
   if (!email) { alert('Please enter your email'); return; }
   if (!cart.length) { alert('Your cart is empty'); return; }

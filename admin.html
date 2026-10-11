@@ -391,7 +391,7 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
   <div class="tab-content" id="tab-inventory">
     <div class="admin-scroll"><div class="admin-wrap">
       <div class="admin-title">Inventory / Availability</div>
-      <div class="admin-sub">Toggle items on or off instantly, or set a stock quantity — items automatically go unavailable when their quantity hits 0, and come back the moment you restock.</div>
+      <div class="admin-sub">Toggle items on or off instantly, turn customer comments off for specific items, or set a stock quantity — items automatically go unavailable when their quantity hits 0, and come back the moment you restock.</div>
       <div id="inventory-body"></div>
     </div></div>
   </div>
@@ -2348,6 +2348,12 @@ function renderInventory() {
               <button onclick="adjustItemStock(${ci},${ii})" title="Add or subtract from current stock" style="background:#1a2a3a;border:1px solid #2e75b6;color:#60a5fa;border-radius:6px;padding:5px 9px;font-size:13px;font-weight:700;cursor:pointer">±</button>
             </div>
           </div>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer" title="When off, customers can't leave comments/special requests on orders that contain only comment-off items">
+            <span style="font-size:12px;color:${item.noComments===true?'#ef4444':'#22c55e'}">💬 Comments ${item.noComments===true?'Off':'On'}</span>
+            <div onclick="toggleItemComments(${ci},${ii})" style="width:44px;height:24px;border-radius:12px;background:${item.noComments===true?'#444':'#22c55e'};position:relative;cursor:pointer;transition:background 0.2s">
+              <div style="width:20px;height:20px;border-radius:50%;background:#fff;position:absolute;top:2px;${item.noComments===true?'left:2px':'left:22px'};transition:left 0.2s"></div>
+            </div>
+          </label>
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
             <span style="font-size:12px;color:${unavailable?'#ef4444':'#22c55e'}">${unavailable?'Off':'On'}</span>
             <div onclick="toggleAvailability(${ci},${ii})" style="width:44px;height:24px;border-radius:12px;background:${unavailable?'#444':'#22c55e'};position:relative;cursor:pointer;transition:background 0.2s">
@@ -2379,6 +2385,14 @@ window.saveLowStockThreshold = async function() {
 window.toggleAvailability = async function(ci, ii) {
   const newMenu = JSON.parse(JSON.stringify(menu));
   newMenu[ci].items[ii].unavailable = !newMenu[ci].items[ii].unavailable;
+  await setMenu(newMenu);
+  renderInventory();
+}
+
+window.toggleItemComments = async function(ci, ii) {
+  const newMenu = JSON.parse(JSON.stringify(menu));
+  const item = newMenu[ci].items[ii];
+  if (item.noComments === true) delete item.noComments; else item.noComments = true;
   await setMenu(newMenu);
   renderInventory();
 }
