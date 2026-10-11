@@ -261,7 +261,9 @@ function fmtEtTime(ts) {
       .replace(/[\u202f\u00a0]/g, ' ');
   } catch (e) { return ''; }
 }
-function orderIsDue(o) { const s = Number(o && o.scheduledFor); return !s || s <= Date.now(); }
+// A scheduled order stays off the kitchen screen until 2 minutes before its scheduled time
+const SCHEDULE_LEAD_MS = 2 * 60 * 1000;
+function orderIsDue(o) { const s = Number(o && o.scheduledFor); return !s || (s - SCHEDULE_LEAD_MS) <= Date.now(); }
 function queueRank(o) {
   if (o.inProgress) return 0;
   if (!orderIsDue(o)) return 3;
@@ -429,7 +431,7 @@ function setupDeviceListeners() {
     } else {
       let hasNewPending = false;
       currentKeys.forEach(k => {
-        if (!knownOrderKeys.has(k) && data[k] && data[k].status === 'pending') hasNewPending = true;
+        if (!knownOrderKeys.has(k) && data[k] && data[k].status === 'pending' && orderIsDue(data[k])) hasNewPending = true; // scheduled orders chime when they appear (2 min before), not when placed
       });
       if (hasNewPending) playNewOrderChime();
       knownOrderKeys = currentKeys;
@@ -687,7 +689,7 @@ function updateOrderTimers() {
 function renderOrders() {
   const grid = document.getElementById('orders-grid');
   const allOrders = Object.entries(orders).map(([k,v]) => ({fbKey:k,...v}));
-  const open = allOrders.filter(o => o.status !== 'done').sort(compareQueue);
+  const open = allOrders.filter(o => o.status !== 'done' && orderIsDue(o)).sort(compareQueue); // scheduled orders stay hidden until 2 min before their time
   dueScheduledKeys = currentDueScheduledKeys();
 
   document.getElementById('open-pill').textContent = `${open.length} open`;
@@ -710,7 +712,7 @@ function renderOrders() {
       <div class="oc-body">
         ${order.delivery?`<div style="font-size:11px;color:#3b82f6;font-weight:700;margin-bottom:5px;padding:5px 8px;background:#0e1a2a;border-radius:5px">🚚 DELIVERY → ${order.deliveryLocation||'—'}${order.deliveryPhone?' · 📞 '+order.deliveryPhone:''}</div>`:''}
         ${order.preorder?`<div style="font-size:11px;color:#a78bfa;font-weight:700;margin-bottom:5px;padding:5px 8px;background:#1a1030;border-radius:5px">⏰ PRE-ORDER</div>`:''}
-        ${order.scheduledFor?`<div style="font-size:11px;color:#38bdf8;font-weight:700;margin-bottom:5px;padding:5px 8px;background:#0b1f2e;border-radius:5px">🕒 SCHEDULED FOR ${escapeHtml(fmtEtTime(order.scheduledFor))}${orderIsDue(order)?'':' — not due yet'}</div>`:''}
+        ${order.scheduledFor?`<div style="font-size:15px;color:#38bdf8;font-weight:800;margin-bottom:6px;padding:8px 10px;background:#0b1f2e;border:1.5px solid #38bdf8;border-radius:6px;text-align:center;letter-spacing:0.3px">🕒 SCHEDULED FOR ${escapeHtml(order.scheduledLabel||fmtEtTime(order.scheduledFor))}</div>`:''}
         ${order.priority?`<div style="font-size:11px;color:#facc15;font-weight:700;margin-bottom:5px;padding:5px 8px;background:#2a2308;border-radius:5px">⚡ PRIORITY${order.coupon?' — code '+escapeHtml(order.coupon):''}</div>`:''}
         ${order.paymentMethod==='paypal'?`<div style="font-size:11px;color:#22c55e;font-weight:700;margin-bottom:5px;padding:5px 8px;background:#052e16;border-radius:5px">💳 PAID VIA PAYPAL</div>`:''}
         ${(order.items||[]).map(i=>`<div class="oc-line"><span>${i.qty}x</span> ${i.name}</div>${i.customizations&&i.customizations.length?`<div style="font-size:11px;color:#a78bfa;padding-left:18px">${i.customizations.map(o=>(o.type==='remove'?'No '+o.name:'+ '+o.name)).join(', ')}</div>`:''}${i.sauces&&i.sauces.length?`<div style="font-size:11px;color:#f59e0b;padding-left:18px">🥫 Side: ${i.sauces.join(', ')}</div>`:''}`).join('')}

@@ -526,6 +526,7 @@ function getActiveMilestones() {
 }
 
 // Highest % discount triggered on this order number (built-in 5th-order rule + any custom % milestones)
+const BUILTIN_PERCENT_MAX_OFF = 5; // the built-in 5th-order 50% off takes at most $5 off the order
 function getPercentRewardForOrder(orderNum) {
   let best = 0;
   if (orderNum % 5 === 0 && orderNum % 10 !== 0) best = 50;
@@ -535,6 +536,17 @@ function getPercentRewardForOrder(orderNum) {
     }
   });
   return best;
+}
+// Max $ the % reward may take off (null = no cap). Only the built-in 5th-order 50% is capped;
+// if a custom admin milestone gives an equal or bigger % on the same order, that one is used uncapped.
+function getPercentRewardMaxOff(orderNum) {
+  const builtIn = (orderNum % 5 === 0 && orderNum % 10 !== 0) ? 50 : 0;
+  if (!builtIn) return null;
+  let custom = 0;
+  getActiveMilestones().forEach(m => {
+    if (m.type === 'percent' && orderNum % parseInt(m.interval) === 0) custom = Math.max(custom, parseFloat(m.value) || 0);
+  });
+  return custom >= builtIn ? null : BUILTIN_PERCENT_MAX_OFF;
 }
 
 // Total $ credit earned for reaching this order number (built-in $5-at-10th rule + any custom credit milestones)
@@ -890,7 +902,7 @@ function renderLoyaltyBanner() {
       rewardEl.innerHTML = `💾 $${credits.toFixed(2)} credit saved — not used on this order. <button type="button" class="credit-toggle-btn" onclick="toggleUseCredit()">Use it now instead</button>`;
     }
   } else if (pctReward > 0) {
-    nextEl.textContent = `🎉 Your next order is your ${ord} — you get ${pctReward}% off! (Can't be combined with discount codes.)`;
+    { const mo = getPercentRewardMaxOff(nextOrder); nextEl.textContent = `🎉 Your next order is your ${ord} — you get ${pctReward}% off${mo !== null ? ' (up to $' + mo.toFixed(0) + ' off)' : ''}! (Can't be combined with discount codes.)`; }
   } else if (getCreditRewardForOrder(nextOrder) > 0) {
     const c = getCreditRewardForOrder(nextOrder);
     nextEl.textContent = `🎉 Your next order is your ${ord} — you get a free $${c.toFixed(2)} credit!`;
@@ -1110,8 +1122,11 @@ function getLoyaltyPlan(sub, ignoreCoupon) {
     return { type: 'credit', amount: Math.round(Math.min(credits, sub) * 100) / 100, percent: 0, label: '⭐ Loyalty Credit' };
   }
   if (pct > 0) {
-    return { type: 'percent', amount: Math.round(sub * (pct / 100) * 100) / 100, percent: pct,
-             label: `⭐ ${nextOrder}${ordinalSuffix(nextOrder)} Order (${pct}% off)` };
+    const maxOff = getPercentRewardMaxOff(nextOrder);
+    let amt = sub * (pct / 100);
+    if (maxOff !== null) amt = Math.min(amt, maxOff);
+    return { type: 'percent', amount: Math.round(amt * 100) / 100, percent: pct,
+             label: `⭐ ${nextOrder}${ordinalSuffix(nextOrder)} Order (${pct}% off${maxOff !== null ? ', up to $' + maxOff.toFixed(0) : ''})` };
   }
   return none;
 }
