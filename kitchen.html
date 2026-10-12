@@ -261,9 +261,13 @@ function fmtEtTime(ts) {
       .replace(/[\u202f\u00a0]/g, ' ');
   } catch (e) { return ''; }
 }
-// A scheduled order stays off the kitchen screen until 2 minutes before its scheduled time
-const SCHEDULE_LEAD_MS = 2 * 60 * 1000;
-function orderIsDue(o) { const s = Number(o && o.scheduledFor); return !s || (s - SCHEDULE_LEAD_MS) <= Date.now(); }
+// A scheduled order stays off the kitchen screen until this many minutes before its scheduled time.
+// Set from the admin screen (Wait Time tab -> Kitchen Lead Time); defaults to 2 minutes.
+function scheduleLeadMs() {
+  const m = parseFloat(waittimeSettings && waittimeSettings.kitchenLeadMins);
+  return (isFinite(m) && m >= 0 ? m : 2) * 60 * 1000;
+}
+function orderIsDue(o) { const s = Number(o && o.scheduledFor); return !s || (s - scheduleLeadMs()) <= Date.now(); }
 function queueRank(o) {
   if (o.inProgress) return 0;
   if (!orderIsDue(o)) return 3;
@@ -289,7 +293,7 @@ function currentDueScheduledKeys() {
   return set;
 }
 // Every few seconds, check whether the set of orders that should be on screen has changed
-// (e.g. a scheduled order just reached its 2-minute mark) and, if so, re-render and chime.
+// (e.g. a scheduled order just reached its lead-time mark) and, if so, re-render and chime.
 let lastVisibleKeys = null;
 function currentVisibleKeys() {
   const set = new Set();
@@ -444,7 +448,7 @@ function setupDeviceListeners() {
     } else {
       let hasNewPending = false;
       currentKeys.forEach(k => {
-        if (!knownOrderKeys.has(k) && data[k] && data[k].status === 'pending' && orderIsDue(data[k])) hasNewPending = true; // scheduled orders chime when they appear (2 min before), not when placed
+        if (!knownOrderKeys.has(k) && data[k] && data[k].status === 'pending' && orderIsDue(data[k])) hasNewPending = true; // scheduled orders chime when they appear (lead-time before), not when placed
       });
       if (hasNewPending) playNewOrderChime();
       knownOrderKeys = currentKeys;
@@ -466,6 +470,7 @@ function setupDeviceListeners() {
   onValue(ref(db, 'waittime'), snap => {
     waittimeSettings = snap.val() || {};
     updateReopenUI();
+    try { checkScheduledArrivals(); } catch (e) {} // lead time may have changed -> re-evaluate what's on screen
   });
   onValue(ref(db, 'printSettings'), snap => {
     printSettings = snap.val() || {};
@@ -702,7 +707,7 @@ function updateOrderTimers() {
 function renderOrders() {
   const grid = document.getElementById('orders-grid');
   const allOrders = Object.entries(orders).map(([k,v]) => ({fbKey:k,...v}));
-  const open = allOrders.filter(o => o.status !== 'done' && orderIsDue(o)).sort(compareQueue); // scheduled orders stay hidden until 2 min before their time
+  const open = allOrders.filter(o => o.status !== 'done' && orderIsDue(o)).sort(compareQueue); // scheduled orders stay hidden until the lead time before their time
   dueScheduledKeys = currentDueScheduledKeys();
   lastVisibleKeys = currentVisibleKeys();
 

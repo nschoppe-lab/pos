@@ -527,6 +527,16 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
       </div>
 
       <div class="asec">
+        <div class="asec-title">Kitchen Lead Time (scheduled orders)</div>
+        <div style="font-size:12px;color:#888;margin-bottom:10px">Scheduled orders stay off the kitchen screen until this many minutes before their scheduled time. Currently: <strong style="color:#ff6b35"><span id="kitchen-lead-display">2</span> min</strong>. Changes apply to the kitchen screen right away.</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="number" id="kitchen-lead-input" min="0" max="120" step="1" value="2" style="width:100px;background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:7px 9px;font-size:13px;color:#fff">
+          <span style="font-size:12px;color:#888">minutes before scheduled time</span>
+          <button class="aadd" onclick="saveKitchenLead()">Save</button>
+        </div>
+      </div>
+
+      <div class="asec">
         <div class="asec-title">Weekly Hours Schedule</div>
         <div style="font-size:12px;color:#888;margin-bottom:12px">Set your open hours for each day. The Buff will automatically open and close at these times. Leave a day blank to keep it closed all day.</div>
         <div id="hours-schedule"></div>
@@ -625,6 +635,11 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
         <table class="mtable">
           <thead><tr><th>Fundraiser</th><th>Donations</th><th>Amount Collected</th></tr></thead>
           <tbody id="finance-fundraisers"></tbody>
+        </table>
+        <div style="font-size:12px;font-weight:700;color:#f472b6;margin:16px 0 6px">Donations by Day</div>
+        <table class="mtable">
+          <thead><tr><th>Date</th><th>Donations</th><th>Amount Collected</th><th>By Fundraiser</th></tr></thead>
+          <tbody id="finance-donations-by-day"></tbody>
         </table>
       </div>
 
@@ -1083,6 +1098,11 @@ body{background:#1a1a1a;color:#fff;min-height:100vh}
       <table class="mtable"><thead><tr><th>Fundraiser</th><th>Amounts</th><th>Raised Today</th><th>Raised All-Time</th><th>Donations</th><th>Status</th><th></th></tr></thead>
       <tbody id="fundraiser-body"></tbody></table>
       <div style="font-size:11px;color:#666;margin-top:10px">Totals count every order placed with a donation. Deleting a fundraiser stops it appearing to customers, but past donations stay in your orders and Finance report.</div>
+    </div>
+    <div class="asec">
+      <div class="asec-title">Donations by Day</div>
+      <table class="mtable"><thead><tr><th>Date</th><th>Donations</th><th>Amount Collected</th><th>By Fundraiser</th></tr></thead>
+      <tbody id="fundraiser-by-day-body"></tbody></table>
     </div>
   </div></div>
 </div>
@@ -1947,6 +1967,34 @@ window.addCoupon = async function() {
 window.deleteCoupon = async function(key) { await remove(ref(db,`coupons/${key}`)); }
 
 // FUNDRAISERS
+// Groups donations by calendar day (same local-date grouping as Revenue by Day), newest day first.
+function donationsByDayRows(orderList, colspan) {
+  const days = {};
+  orderList.forEach(o => {
+    const dons = o.donations || [];
+    if (!dons.length) return;
+    const ts = typeof o.createdAt === 'number' ? o.createdAt : 0;
+    const label = ts ? new Date(ts).toLocaleDateString('en-US') : (o.date || 'Unknown');
+    if (!days[label]) days[label] = { label, sortTs: ts, count: 0, total: 0, by: {} };
+    const d = days[label];
+    if (ts > d.sortTs) d.sortTs = ts;
+    dons.forEach(x => {
+      const amt = parseFloat(x.amount) || 0;
+      const nm = x.fundraiserName || 'Unknown';
+      d.count += 1; d.total += amt;
+      if (!d.by[nm]) d.by[nm] = { count: 0, total: 0 };
+      d.by[nm].count += 1; d.by[nm].total += amt;
+    });
+  });
+  const rows = Object.values(days).sort((a, b) => b.sortTs - a.sortTs);
+  if (!rows.length) return '<tr><td colspan="' + colspan + '" style="color:#555;text-align:center;padding:16px;font-size:12px">No donations in this range</td></tr>';
+  return rows.map(d => {
+    const detail = Object.entries(d.by).map(([nm, v]) => escMenuHtml(nm) + ': ' + v.count + ' ($' + v.total.toFixed(2) + ')').join('<br>');
+    return '<tr><td style="font-weight:600;color:#fff;white-space:nowrap">' + d.label + '</td><td>' + d.count + '</td>'
+      + '<td style="color:#22c55e;font-weight:700">$' + d.total.toFixed(2) + '</td>'
+      + '<td style="font-size:11px;color:#f472b6">' + detail + '</td></tr>';
+  }).join('');
+}
 function fundraiserTotalsFromOrders(orderList) {
   // Groups donations by fundraiser id. Uses the name saved on the order so history survives a rename/delete.
   const out = {};
@@ -1963,6 +2011,8 @@ window.renderFundraisersAdmin = function() {
   const body = document.getElementById('fundraiser-body');
   if (!body) return;
   const all = Object.values(orders);
+  const byDayBody = document.getElementById('fundraiser-by-day-body');
+  if (byDayBody) byDayBody.innerHTML = donationsByDayRows(all, 4);
   const startToday = new Date(); startToday.setHours(0,0,0,0);
   const todays = all.filter(o => typeof o.createdAt === 'number' && o.createdAt >= startToday.getTime());
   const allTotals = fundraiserTotalsFromOrders(all);
@@ -3186,6 +3236,11 @@ function updateWaitTimeUI() {
   var mpoDisp2 = document.getElementById('mins-per-order-display');
   if (mpoInput2 && document.activeElement !== mpoInput2) mpoInput2.value = minsPerOrder;
   if (mpoDisp2) mpoDisp2.textContent = minsPerOrder;
+  // Kitchen lead time for scheduled orders
+  var klIn = document.getElementById('kitchen-lead-input'), klDisp = document.getElementById('kitchen-lead-display');
+  var klVal = parseFloat(d.kitchenLeadMins); if (!isFinite(klVal) || klVal < 0) klVal = 2;
+  if (klIn && document.activeElement !== klIn) klIn.value = klVal;
+  if (klDisp) klDisp.textContent = klVal;
   renderStaffSpeedList();
 
   // Custom message
@@ -3285,6 +3340,14 @@ window.toggleClosed = async function() {
 window.saveClosedMsg = async function() {
   const msg = (document.getElementById('closed-msg-input') || {}).value || '';
   await update(ref(db, 'waittime'), { closedMsg: msg.trim() });
+}
+
+window.saveKitchenLead = async function() {
+  const raw = parseFloat((document.getElementById('kitchen-lead-input') || {}).value);
+  if (!isFinite(raw) || raw < 0 || raw > 120) { alert('Enter a number of minutes between 0 and 120.'); return; }
+  const val = Math.round(raw * 10) / 10;
+  await update(ref(db, 'waittime'), { kitchenLeadMins: val });
+  alert('✅ Scheduled orders will now reach the kitchen screen ' + val + ' min before their scheduled time.');
 }
 
 window.saveMinsPerOrder = async function() {
@@ -4056,6 +4119,8 @@ window.renderFinance = function() {
   const frTotals = fundraiserTotalsFromOrders(arr);
   Object.entries(fundraisersData).forEach(([id, f]) => { if (!frTotals[id]) frTotals[id] = { id, name: f.name, count: 0, total: 0 }; });
   const frEl = document.getElementById('finance-fundraisers');
+  const frDayEl = document.getElementById('finance-donations-by-day');
+  if (frDayEl) frDayEl.innerHTML = donationsByDayRows(arr, 4);
   if (frEl) {
     const rows = Object.values(frTotals).sort((a,b) => b.total - a.total);
     frEl.innerHTML = rows.length
